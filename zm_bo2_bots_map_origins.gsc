@@ -452,7 +452,7 @@ bot_quest_origins_generators()
     level.bot_origins_generator_target = best_zone;
     level.bot_origins_generator_owner_until = gettime() + 15000;
 
-    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
         best_zone.origin, "bot_origins_generator_activate", 64, 12000);
 
     if(!arrived ||
