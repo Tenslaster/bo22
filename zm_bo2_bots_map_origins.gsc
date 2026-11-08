@@ -86,7 +86,7 @@ bot_quest_origins_shovel()
     // above it. Navigate to the model position, not the elevated trigger
     // center (a 24-unit 3D arrival test can never be satisfied on level ground).
     if(distancesquared(self.origin, best_shovel.origin) > 36 * 36)
-        return self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+        return self scripts\zm\zm_bo2_bots::bot_quest_move_to(
             best_shovel.origin, "bot_origins_shovel_pickup", 36, 9000);
 
     self.bot.is_objective_using = 1;
@@ -150,10 +150,10 @@ bot_quest_origins_generators()
         if(isdefined(active_zone) && isdefined(active_zone.origin))
         {
             if(distancesquared(self.origin, active_zone.origin) > 220 * 220)
-                self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
                     active_zone.origin, "bot_origins_generator_support", 175, 9000);
             else
-                self scripts\\zm\\zm_bo2_bots::bot_quest_hold_in_volume(
+                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(
                     active_zone.origin, "bot_origins_generator_hold", 190, 2.0);
         }
 
@@ -257,7 +257,7 @@ bot_quest_origins_generators()
 
     // The native unitrigger is a 128x128x64 box around the generator. Approach
     // its actual center, then attempt the normal use input first.
-    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
         target_origin, "bot_origins_generator_activate", 64, 10000);
 
     if(!arrived)
