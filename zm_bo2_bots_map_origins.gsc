@@ -259,10 +259,10 @@ bot_quest_origins_generators()
         if(isdefined(active_zone) && isdefined(active_zone.origin))
         {
             if(distancesquared(self.origin, active_zone.origin) > 220 * 220)
-                self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
                     active_zone.origin, "bot_origins_generator_support", 175, 9000);
             else
-                self scripts\\zm\\zm_bo2_bots::bot_quest_hold_in_volume(
+                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(
                     active_zone.origin, "bot_origins_generator_hold", 190, 2.0);
         }
 
@@ -341,7 +341,7 @@ bot_quest_origins_generators()
     // origin. The stock unitrigger callback rejects scripted test clients via
     // is_player_valid(), so do not wait for its per-player trigger thread.
     // Move inside that box and dispatch the zone's native capture event below.
-    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
         best_zone.origin, "bot_origins_generator_activate", 64, 12000);
 
     if(!arrived ||
