@@ -4208,9 +4208,14 @@ bot_run_craftable_task(task)
 					if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)) &&
 					   isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece) &&
 					   gettime() >= next_take_attempt &&
+					   (!isdefined(task.piece.bot_auto_take_pending_until) ||
+					    gettime() >= task.piece.bot_auto_take_pending_until) &&
 					   self isonground() && !self isonladder() && !self ismantling())
 					{
-						next_take_attempt = gettime() + 500;
+						// Prevent overlapping pickup threads if a map onpickup callback
+						// takes a little time to finish its stock state updates.
+						next_take_attempt = gettime() + 2000;
+						task.piece.bot_auto_take_pending_until = gettime() + 2000;
 						self thread [[ take_piece_func ]](task.piece);
 					}
 				}
