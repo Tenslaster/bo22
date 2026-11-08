@@ -3573,7 +3573,13 @@ bot_run_buildable_task(task)
 		return;
 	}
 
-	self addgoal(task.origin, 140, 2, goal_name);
+	// Do not let the navigation goal finish at the old 140-unit radius:
+	// the stock pickup/build triggers are much smaller and require physical contact.
+	self addgoal(task.origin, 24, 2, goal_name);
+
+	unitrigger_trigger_func = undefined;
+	if(task.kind != "pickup")
+		unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
 
 	deadline = gettime() + 45000;
 	arrived = false;
@@ -3637,7 +3643,6 @@ bot_run_buildable_task(task)
 			// accepted only while the bot is touching its own per-player trigger.
 			// A loose 50-unit distance check can stop at the edge of the table
 			// trigger, where player_continue_crafting() rejects the interaction.
-			unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
 			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
 			{
 				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
