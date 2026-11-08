@@ -3288,6 +3288,7 @@ bot_find_buildable_task()
 
 	best_piece = undefined;
 	best_stub = undefined;
+	best_piece_approach = undefined;
 	best_dist_sq = 999999999;
 	path_checks = 0;
 
@@ -3341,11 +3342,19 @@ bot_find_buildable_task()
 
 			path_checks++;
 
-			if(!findpath(self.origin, piece.model.origin, undefined, 0, 1))
-				continue;
+			// Some pickups are suspended over gaps or have a model point that is
+			// not reachable by the nav graph. Try the visual point, then just below it.
+			approach_origin = piece.model.origin;
+			if(!findpath(self.origin, approach_origin, undefined, 0, 1))
+			{
+				approach_origin = piece.model.origin + (0, 0, -16);
+				if(!findpath(self.origin, approach_origin, undefined, 0, 1))
+					continue;
+			}
 
 			best_piece = piece;
 			best_stub = stub;
+			best_piece_approach = approach_origin;
 			best_dist_sq = dist_sq;
 		}
 	}
@@ -3359,6 +3368,7 @@ bot_find_buildable_task()
 	task = spawnstruct();
 	task.kind = "pickup";
 	task.origin = best_piece.model.origin;
+	task.approach_origin = best_piece_approach;
 	task.piece = best_piece;
 	task.stub = best_stub;
 	task.slot = best_piece.buildable_slot;
@@ -3623,7 +3633,11 @@ bot_run_buildable_task(task)
 	else if(isdefined(task.stub))
 		task.stub.ignore_player_valid = 1;
 
-	if(!findpath(self.origin, task.origin, undefined, 0, 1))
+	nav_origin = task.origin;
+	if(task.kind == "pickup" && isdefined(task.approach_origin))
+		nav_origin = task.approach_origin;
+
+	if(!findpath(self.origin, nav_origin, undefined, 0, 1))
 	{
 		if(task.kind == "build")
 			self bot_drop_stuck_buildable_piece(task, 12000);
@@ -3631,7 +3645,9 @@ bot_run_buildable_task(task)
 		return;
 	}
 
-	self addgoal(task.origin, 140, 2, goal_name);
+	// The stock trigger checks its own bounds. A wide 140-unit bot goal lets
+	// navigation stop outside the actual interaction volume.
+	self addgoal(nav_origin, 24, 2, goal_name);
 
 	deadline = gettime() + 45000;
 	arrived = false;
