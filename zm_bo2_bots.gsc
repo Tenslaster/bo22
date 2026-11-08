@@ -3439,6 +3439,21 @@ bot_craftables_func(name)
 
 bot_player_can_craft(craftablespawn)
 {
+	// Origins staff recipes require all three physical staff pieces before the
+	// crystal can be assembled. Enforce the stock staff counter here as well as
+	// in the crystal pickup filter, so a missing per-player table trigger cannot
+	// make a bot try to craft an incomplete staff.
+	if(getdvar("mapname") == "zm_tomb" && isdefined(craftablespawn) &&
+	   isdefined(craftablespawn.craftable_name) &&
+	   issubstr(craftablespawn.craftable_name, "elemental_staff_"))
+	{
+		staff_name = craftablespawn.craftable_name;
+		if(!isdefined(level.staff_part_count) ||
+		   !isdefined(level.staff_part_count[staff_name]) ||
+		   level.staff_part_count[staff_name] > 0)
+			return false;
+	}
+
 	can_craft = bot_craftables_func("player_can_craft");
 
 	if(!isdefined(can_craft))
@@ -3471,7 +3486,8 @@ bot_craftable_piece_is_available(piece)
     craftable_name = piece.craftablename;
     piece_name = piece.piecename;
 
-    // Avoid taking staff crystals before their three physical staff parts.
+    // A staff crystal is the final ingredient, not a substitute for the three
+    // physical pieces. The stock pickup watcher decrements this counter.
     if(issubstr(craftable_name, "elemental_staff_") && piece_name == "gem")
     {
         if(!isdefined(level.staff_part_count) ||
@@ -3491,6 +3507,37 @@ bot_craftable_piece_is_available(piece)
     if(craftable_name == "elemental_staff_fire" && piece_name == "lower_staff")
     {
         if(!isdefined(piece.canmove) || !piece.canmove)
+            return false;
+    }
+
+    // The Fire Staff upper piece is initially only a ghost at the church.
+    // Stock assigns its wrapper to the church challenge box only after the
+    // correct zone has been captured. Do not let the generic nearby-piece
+    // fallback bypass that required Origins step.
+    if(craftable_name == "elemental_staff_fire" && piece_name == "upper_staff")
+    {
+        unlocked = false;
+
+        if(isdefined(level.a_uts_challenge_boxes))
+        {
+            foreach(challenge_box in level.a_uts_challenge_boxes)
+            {
+                if(!isdefined(challenge_box) ||
+                   !isdefined(challenge_box.str_location) ||
+                   challenge_box.str_location != "church_capture" ||
+                   !isdefined(challenge_box.s_staff_piece) ||
+                   !isdefined(challenge_box.s_staff_piece.piecespawn))
+                    continue;
+
+                if(challenge_box.s_staff_piece.piecespawn == piece)
+                {
+                    unlocked = true;
+                    break;
+                }
+            }
+        }
+
+        if(!unlocked)
             return false;
     }
 
