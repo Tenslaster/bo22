@@ -14,6 +14,19 @@
 // these routines navigate bots to those real triggers instead of faking flags.
 // -----------------------------------------------------------------------------
 
+// Origins-only stock file. A direct file::function reference is resolved when the
+// script loads, so it fails with "Unresolved external" on every map that does not
+// ship _zm_weap_one_inch_punch. getfunction() resolves it at runtime instead and
+// returns undefined when the file is not loaded.
+bot_origins_punch_func(name)
+{
+    if(!isdefined(level.bot_origins_punch_funcs))
+        level.bot_origins_punch_funcs = [];
+    if(!isdefined(level.bot_origins_punch_funcs[name]))
+        level.bot_origins_punch_funcs[name] = getfunction("maps/mp/zombies/_zm_weap_one_inch_punch", name);
+    return level.bot_origins_punch_funcs[name];
+}
+
 bot_quest_origins_shovel()
 {
     if(!isdefined(self.dig_vars) || !isdefined(self.dig_vars["has_shovel"]) || self.dig_vars["has_shovel"])
@@ -1021,7 +1034,11 @@ bot_quest_origins_main_steps()
         if(!self hasweapon("one_inch_punch_zm") && !self hasweapon("one_inch_punch_upgraded_zm"))
         {
             if(!isdefined(self.one_inch_punch_flag_has_been_init))
-                self thread [[ maps\mp\zombies\_zm_weap_one_inch_punch::one_inch_punch_melee_attack ]]();
+            {
+                punch_attack = bot_origins_punch_func("one_inch_punch_melee_attack");
+                if(isdefined(punch_attack))
+                    self thread [[ punch_attack ]]();
+            }
         }
 
         if(self hasweapon("one_inch_punch_zm") || self hasweapon("one_inch_punch_upgraded_zm"))
@@ -1224,15 +1241,16 @@ bot_origins_spawn_punch_upgrade_tablet(v_origin, e_player)
     {
         e_player thread [[ maps\mp\gametypes_zm\_hud::fadetoblackforxsec ]](0, 0.3, 0.5, 0.5, "white");
         a_zombies = getaispeciesarray(level.zombie_team, "all");
+        knockdown_func = bot_origins_punch_func("knockdown_zombie_animate");
 
         foreach(zombie in a_zombies)
         {
-            if(distance2dsquared(e_player.origin, zombie.origin) < 65536 &&
+            if(isdefined(knockdown_func) && distance2dsquared(e_player.origin, zombie.origin) < 65536 &&
                !is_true(zombie.is_mechz) && is_true(zombie.has_legs) &&
                is_true(zombie.completed_emerging_into_playable_area))
             {
                 zombie.v_punched_from = e_player.origin;
-                zombie animcustom(maps\mp\zombies\_zm_weap_one_inch_punch::knockdown_zombie_animate);
+                zombie animcustom(knockdown_func);
             }
         }
 
@@ -1250,7 +1268,9 @@ bot_origins_spawn_punch_upgrade_tablet(v_origin, e_player)
         else
             e_player.str_punch_element = "upgraded";
 
-        e_player thread [[ maps\mp\zombies\_zm_weap_one_inch_punch::one_inch_punch_melee_attack ]]();
+        punch_attack = bot_origins_punch_func("one_inch_punch_melee_attack");
+        if(isdefined(punch_attack))
+            e_player thread [[ punch_attack ]]();
         a_players = getplayers();
 
         foreach(player in a_players)
