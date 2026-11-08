@@ -2334,6 +2334,21 @@ MM_OriginsCollectAllSharedParts()
     self MM_OriginsCollectSharedParts(false);
 }
 
+// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
+// direct file::function reference is resolved at script load and causes
+// "Unresolved external" on every other map, so look the functions up at runtime.
+// getfunction() returns undefined when the file is not loaded.
+MM_CraftablesFunc(name)
+{
+    if(!isDefined(level.mm_craftables_funcs))
+        level.mm_craftables_funcs = [];
+
+    if(!isDefined(level.mm_craftables_funcs[name]))
+        level.mm_craftables_funcs[name] = getfunction("maps/mp/zombies/_zm_craftables", name);
+
+    return level.mm_craftables_funcs[name];
+}
+
 MM_OriginsCollectSharedParts(quiet)
 {
     if(level.script != "zm_tomb")
@@ -2397,13 +2412,22 @@ MM_OriginsCollectSharedParts(quiet)
             {
                 // Use the stock generator so map-specific spawn points,
                 // callbacks, clientfields and unitrigger data stay correct.
-                piece = maps\mp\zombies\_zm_craftables::generate_piece(piecestub);
+                generate_piece_func = MM_CraftablesFunc("generate_piece");
+                if(isDefined(generate_piece_func))
+                    piece = [[ generate_piece_func ]](piecestub);
                 piecestub.piecespawn = piece;
             }
 
             if(isDefined(piece) && isDefined(piece.model) && isDefined(piece.unitrigger))
             {
-                self maps\mp\zombies\_zm_craftables::player_take_piece(piece);
+                take_piece_func = MM_CraftablesFunc("player_take_piece");
+                if(!isDefined(take_piece_func))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                self [[ take_piece_func ]](piece);
                 collected++;
                 wait 0.05;
             }
