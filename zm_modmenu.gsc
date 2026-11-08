@@ -1,11 +1,13 @@
 // ============================================================================
-//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v3.4
+//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v3.6
 //  Install: %localappdata%\Plutonium\storage\t6\scripts\zm\zm_modmenu.gsc
 //
 //  Controls (menu closed):  AIM + MELEE ............ open menu
 //  Controls (menu open)  :  Action Slot 1 / 2 ...... scroll up / down
 //                           JUMP .................... select
 //                           MELEE ................... back / close
+//  Spectator (any time)  :  G (bind g "+actionslot 3" once) enter / leave
+//                           (also in Personal Mods)
 //
 //  Maps: TranZit / Nuketown / Die Rise / Mob of the Dead / Buried / Origins
 //  Every weapon / drop / perk entry is checked against what the current map
@@ -51,7 +53,7 @@ MM_OnPlayerSpawned()
             if(firstSpawn)
             {
                 self iprintlnbold("^2ULTIMATE ZM MENU LOADED");
-                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots");
+                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots | G: spectator");
                 firstSpawn = false;
             }
         }
@@ -412,6 +414,24 @@ MM_InputListener(cmd, action)
     }
 }
 
+MM_SpectatorKeyListener()
+{
+    self endon("disconnect");
+    self endon("stop_menu_input");
+
+    for(;;)
+    {
+        self waittill("mm_spec");
+
+        // Slot 3 is not used by the menu, but ignore it while the menu is open.
+        if(isDefined(self.menuOpen) && self.menuOpen)
+            continue;
+
+        if(self MM_Gate("spec", 500))
+            self thread ToggleSpectator();
+    }
+}
+
 MenuInput()
 {
     self endon("disconnect");
@@ -429,6 +449,10 @@ MenuInput()
     self thread MM_InputListener("mm_down", "down");
     self thread MM_InputListener("mm_select", "select");
     self thread MM_InputListener("mm_back", "back");
+
+    // Spectator hotkey (bind g "+actionslot 3" in the console once).
+    self notifyOnPlayerCommand("mm_spec", "+actionslot 3");
+    self thread MM_SpectatorKeyListener();
 
     // The loop below is the fallback (and handles hold-to-repeat scrolling).
     upSince = 0;
@@ -505,10 +529,15 @@ MM_MenuTitle(name)
         case "personal":       return "PERSONAL MODS";
         case "weapons":        return "WEAPON MODS";
         case "mapweapons":     return "MAP WEAPONS";
+        case "guns":           return "MORE GUNS";
         case "lobby":          return "SPAWNS & LOBBY";
         case "zombies":        return "ZOMBIE MANIPULATION";
         case "vision":         return "AIMBOT & ESP";
         case "origins":        return "ORIGINS TOOLS";
+        case "prison":         return "MOB OF THE DEAD TOOLS";
+        case "transit":        return "TRANZIT TOOLS";
+        case "highrise":       return "DIE RISE TOOLS";
+        case "buried":         return "BURIED TOOLS";
         case "players":        return "PLAYERS";
         case "player_actions": return "PLAYER ACTIONS";
     }
@@ -609,12 +638,22 @@ BuildMenuStructure()
     self addSubMenu("main", "Aimbot & ESP", "vision");
     if(level.script == "zm_tomb")
         self addSubMenu("main", "Origins Tools", "origins");
+    if(level.script == "zm_prison")
+        self addSubMenu("main", "Mob of the Dead Tools", "prison");
+    if(level.script == "zm_transit")
+        self addSubMenu("main", "TranZit Tools", "transit");
+    if(level.script == "zm_highrise")
+        self addSubMenu("main", "Die Rise Tools", "highrise");
+    if(level.script == "zm_buried")
+        self addSubMenu("main", "Buried Tools", "buried");
     if(self isHost())
         self addSubMenu("main", "Players Menu", "players");
 
     // --- PERSONAL ---
     self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
     self addToggleOpt("personal", "Noclip", ::ToggleNoclip, "noclip");
+    self addToggleOpt("personal", "Spectator Mode (Free Cam)", ::ToggleSpectator, "spectate");
+    self addMenuOpt("personal", "Leave Spectator At Camera", ::SpectatorExitHere);
     self addToggleOpt("personal", "Jetpack (Hold Jump)", ::ToggleJetpack, "jetpack");
     self addToggleOpt("personal", "Super Jump", ::ToggleSuperJump, "superjump");
     self addToggleOpt("personal", "Auto-Bhop", ::ToggleBhop, "bhop");
@@ -641,6 +680,41 @@ BuildMenuStructure()
     self addMenuOpt("weapons", "Pack-A-Punch ALL Guns", ::PapAllWeapons);
     self addMenuOpt("weapons", "Max Ammo Current", ::FillCurrentAmmo);
     self addMenuOpt("weapons", "Max Ammo ALL", ::FillAllAmmo);
+    self addSubMenu("weapons", "More Guns (PaP)", "guns");
+    // Each entry only appears if the current map actually has that weapon loaded.
+    self MM_AddWeaponOpt("guns", "HAMR (PaP)", "hamr_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "LSAT (PaP)", "lsat_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "War Machine (PaP)", "m32_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "AN-94 (PaP)", "an94_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "M27 (PaP)", "hk416_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Type 25 (PaP)", "type95_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "SCAR-H (PaP)", "scar_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "FAL (PaP)", "fnfal_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "M14 (PaP)", "m14_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "STG-44 (PaP)", "mp44_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "M16 (PaP)", "m16_gl_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "MTAR (PaP)", "tar21_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "XM8 (PaP)", "xm8_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "RPD (PaP)", "rpd_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Chicom CQB (PaP)", "qcw05_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "AK74u (PaP)", "ak74u_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "MP5 (PaP)", "mp5k_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Skorpion EVO (PaP)", "evoskorpion_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "KAP-40 (PaP)", "kard_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Python (PaP)", "python_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Five-seven Dual Wield (PaP)", "fivesevendw_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Executioner (PaP)", "judge_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "S12 (PaP)", "saiga12_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "KSG (PaP)", "ksg_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "M1216 (PaP)", "srm1216_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Olympia (PaP)", "rottweil72_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "SVU-AS (PaP)", "svu_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "DSR 50 (PaP)", "dsr50_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Barrett M82A1 (PaP)", "barretm82_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Ballista (PaP)", "ballista_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Ballistic Knife (PaP)", "knife_ballistic_upgraded_zm");
+    self MM_AddWeaponOpt("guns", "Semtex", "sticky_grenade_zm");
+    self MM_AddWeaponOpt("guns", "Claymores", "claymore_zm");
     self MM_AddWeaponOpt("weapons", "Ray Gun Mark II (PaP)", "raygun_mark2_upgraded_zm");
     self MM_AddWeaponOpt("weapons", "Ray Gun (PaP)", "ray_gun_upgraded_zm");
     self MM_AddWeaponOpt("weapons", "RPG (PaP)", "usrpg_upgraded_zm");
@@ -729,10 +803,83 @@ BuildMenuStructure()
         self addMenuOpt("origins", "Collect All Shared Parts", ::MM_OriginsCollectAllSharedParts);
         self addToggleOpt("origins", "Auto-Collect Shared Parts", ::MM_OriginsToggleAutoCollect, "origcollect");
         self addMenuOpt("origins", "Force All Four Staff Upgrades", ::MM_OriginsUpgradeAllStaffs);
+        self addMenuOpt("origins", "Turn On All Generators (Pack-a-Punch)", ::MM_OriginsTurnOnAllGenerators);
         self addToggleOpt("origins", "Ignore Mud Slowdown", ::MM_OriginsToggleNoMudSlow, "nomud");
         if(self isHost())
             self addMenuOpt("origins", "Complete Little Lost Girl (ends match)", ::MM_OriginsConfirmCompleteSecret);
         self.menuParents["origins"] = "main";
+    }
+
+    // --- MOB OF THE DEAD (only present on zm_prison) ---
+    if(level.script == "zm_prison")
+    {
+        self addMenuOpt("prison", "Unlock Everything", ::MM_PrisonUnlockEverything);
+        self addMenuOpt("prison", "Power All Perk Machines", ::MM_PrisonPowerPerks);
+        self addMenuOpt("prison", "Power The Gondola", ::MM_PrisonPowerGondola);
+        self addMenuOpt("prison", "Open Afterlife Doors", ::MM_PrisonOpenAfterlifeDoors);
+        self addMenuOpt("prison", "Send Gondola (Free)", ::MM_PrisonSendGondola);
+        self addMenuOpt("prison", "Afterlife: Refill My Life", ::MM_PrisonAfterlifeRefill);
+        self addToggleOpt("prison", "Afterlife: Infinite Mana", ::MM_PrisonToggleInfMana, "prmana");
+        self addMenuOpt("prison", "Spawn Brutus", ::MM_PrisonSpawnBrutus, false);
+        self addMenuOpt("prison", "Spawn Brutus (Ignore Limit)", ::MM_PrisonSpawnBrutus, true);
+        self addMenuOpt("prison", "Kill Brutus", ::MM_PrisonKillBrutus);
+        self addMenuOpt("prison", "Give Spoon", ::MM_PrisonGiveSpoon, false);
+        self addMenuOpt("prison", "Give Golden Spork", ::MM_PrisonGiveSpoon, true);
+        if(self isHost())
+        {
+            self addMenuOpt("prison", "Afterlife: Refill Everyone's Life", ::MM_PrisonAfterlifeRefillAll);
+            self addMenuOpt("prison", "Build Plane (Skip Parts)", ::MM_PrisonBuildPlane);
+            self addMenuOpt("prison", "Refuel Plane (Skip 5 Cans)", ::MM_PrisonRefuelPlane);
+        }
+        self.menuParents["prison"] = "main";
+    }
+
+    // --- TRANZIT (only present on zm_transit) ---
+    if(level.script == "zm_transit")
+    {
+        self addMenuOpt("transit", "Build Power Switch", ::MM_MapBuildable, "zm_transit", "powerswitch");
+        self addMenuOpt("transit", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_transit");
+        self addMenuOpt("transit", "Build Turbine", ::MM_MapBuildable, "zm_transit", "turbine");
+        self addMenuOpt("transit", "Build Zombie Shield", ::MM_MapBuildable, "zm_transit", "riotshield_zm");
+        self addMenuOpt("transit", "Build Jet Gun", ::MM_MapBuildable, "zm_transit", "jetgun_zm");
+        self addMenuOpt("transit", "Build Turret", ::MM_MapBuildable, "zm_transit", "turret");
+        self addMenuOpt("transit", "Build Electric Trap", ::MM_MapBuildable, "zm_transit", "electric_trap");
+        self addMenuOpt("transit", "Build Bus Cattle Catcher", ::MM_MapBuildable, "zm_transit", "cattlecatcher");
+        self addMenuOpt("transit", "Build Bus Hatch", ::MM_MapBuildable, "zm_transit", "bushatch");
+        self addMenuOpt("transit", "Build Diner Hatch", ::MM_MapBuildable, "zm_transit", "dinerhatch");
+        self addMenuOpt("transit", "Build Bus Ladder", ::MM_MapBuildable, "zm_transit", "busladder");
+        self addMenuOpt("transit", "Build Pack-a-Punch", ::MM_MapBuildable, "zm_transit", "pap");
+        self addMenuOpt("transit", "Build Navcard Table", ::MM_MapBuildable, "zm_transit", "sq_common");
+        self.menuParents["transit"] = "main";
+    }
+
+    // --- DIE RISE (only present on zm_highrise) ---
+    if(level.script == "zm_highrise")
+    {
+        self addMenuOpt("highrise", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_highrise");
+        self addMenuOpt("highrise", "Build Trample Steam", ::MM_MapBuildable, "zm_highrise", "springpad_zm");
+        self addMenuOpt("highrise", "Build Sliquifier", ::MM_MapBuildable, "zm_highrise", "slipgun_zm");
+        self addMenuOpt("highrise", "Build Escape Pod Keys", ::MM_MapBuildable, "zm_highrise", "keys_zm");
+        self addMenuOpt("highrise", "Build Elevator Control Key", ::MM_MapBuildable, "zm_highrise", "ekeys_zm");
+        self addMenuOpt("highrise", "Build Navcard Table", ::MM_MapBuildable, "zm_highrise", "sq_common");
+        self addMenuOpt("highrise", "Call All Elevators to First Stop", ::MM_HighriseSendElevators, 0);
+        self.menuParents["highrise"] = "main";
+    }
+
+    // --- BURIED (only present on zm_buried) ---
+    if(level.script == "zm_buried")
+    {
+        self addMenuOpt("buried", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_buried");
+        self addMenuOpt("buried", "Open Leroy's Cell", ::MM_BuriedOpenCell);
+        self addMenuOpt("buried", "Build Turbine", ::MM_MapBuildable, "zm_buried", "turbine");
+        self addMenuOpt("buried", "Build Trample Steam", ::MM_MapBuildable, "zm_buried", "springpad_zm");
+        self addMenuOpt("buried", "Build Subwoofer", ::MM_MapBuildable, "zm_buried", "subwoofer_zm");
+        self addMenuOpt("buried", "Build Head Chopper", ::MM_MapBuildable, "zm_buried", "headchopper_zm");
+        self addMenuOpt("buried", "Build Cell Key", ::MM_MapBuildable, "zm_buried", "keys_zm");
+        self addMenuOpt("buried", "Build Navcard Table", ::MM_MapBuildable, "zm_buried", "sq_common");
+        self addMenuOpt("buried", "Build Maxis Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_m_tower");
+        self addMenuOpt("buried", "Build Richtofen Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_r_tower");
+        self.menuParents["buried"] = "main";
     }
 
     // --- PLAYERS (host only) ---
@@ -1171,6 +1318,7 @@ MM_KillPlayer(p)
         p.mmToggle = [];
     p.mmToggle["god"] = false;
     p.mmToggle["noclip"] = false;
+    p MM_SpectatorExit(true);
 
     p disableInvulnerability();
     p unlink();
@@ -1293,6 +1441,125 @@ MM_NoclipCleanup(obj)
     self waittill_any("disconnect", "mm_stop_noclip");
     if(isDefined(obj))
         obj delete();
+}
+
+// ---- Spectator (free cam) ----
+// Hides you, makes you untouchable and detaches the camera so you can fly
+// anywhere. Leaving puts you back where you started (or at the camera).
+// Fly with the move stick, Jump = up, Frag = down, Attack = fast.
+
+ToggleSpectator()
+{
+    if(self MM_IsOn("spectate"))
+        self MM_SpectatorExit(false);
+    else
+        self MM_SpectatorEnter();
+}
+
+SpectatorExitHere()
+{
+    if(!self MM_IsOn("spectate"))
+    {
+        self iprintln("^3You are not spectating.");
+        return;
+    }
+    self MM_SpectatorExit(true);
+}
+
+MM_SpectatorEnter()
+{
+    if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+    {
+        self iprintln("^1Cannot spectate while downed.");
+        return;
+    }
+
+    // Noclip and spectator both link the player, so only one at a time.
+    if(self MM_IsOn("noclip"))
+    {
+        self.mmToggle["noclip"] = false;
+        self notify("mm_stop_noclip");
+        self unlink();
+    }
+
+    self.mmToggle["spectate"] = true;
+    self.mmSpecOrigin = self.origin;
+    self.mmSpecAngles = self getPlayerAngles();
+    self thread SpectatorLoop();
+    self iprintln("Spectator ^2ON ^7- Stick: fly | Jump: up | Frag: down | Attack: fast | G: leave");
+}
+
+SpectatorLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_spectate");
+
+    obj = spawn("script_origin", self.origin);
+    obj.angles = self.angles;
+    self playerLinkTo(obj);
+    self thread MM_SpectatorCleanup(obj);
+
+    self hide();
+    self.ignoreme = true;
+    self enableInvulnerability();
+    self disableWeapons();
+
+    for(;;)
+    {
+        wait 0.05;
+
+        // Hold still while the menu is open (Jump selects entries there).
+        if(isDefined(self.menuOpen) && self.menuOpen)
+            continue;
+
+        speed = 18;
+        if(self attackButtonPressed())
+            speed = 50;
+
+        ang = self getPlayerAngles();
+        mv = self getNormalizedMovement();
+        move = (anglesToForward(ang) * (mv[0] * speed)) + (anglesToRight(ang) * (mv[1] * speed));
+
+        if(self jumpButtonPressed())
+            move = move + (0, 0, speed);
+        if(self fragButtonPressed())
+            move = move - (0, 0, speed);
+
+        obj.origin = obj.origin + move;
+    }
+}
+
+MM_SpectatorCleanup(obj)
+{
+    self waittill_any("disconnect", "mm_stop_spectate");
+    if(isDefined(obj))
+        obj delete();
+}
+
+MM_SpectatorExit(atCamera)
+{
+    if(!self MM_IsOn("spectate"))
+        return;
+
+    self.mmToggle["spectate"] = false;
+    self unlink();
+    self notify("mm_stop_spectate");
+
+    if(!atCamera && isDefined(self.mmSpecOrigin))
+    {
+        self setOrigin(self.mmSpecOrigin);
+        self setPlayerAngles(self.mmSpecAngles);
+    }
+
+    // Restore anything the other toggles control.
+    if(!self MM_IsOn("invis"))
+        self show();
+    self.ignoreme = self MM_IsOn("ignore");
+    if(!self MM_IsOn("god"))
+        self disableInvulnerability();
+    self enableWeapons();
+
+    self iprintln("Spectator ^1OFF");
 }
 
 ToggleJetpack()      { self MM_Toggle("jetpack", "Jetpack", ::JetpackLoop); }
@@ -2520,6 +2787,103 @@ MM_OriginsUpgradeAllStaffs()
     self iprintln("^7Use Map Weapons to give an upgraded staff; normal weapon-slot limits still apply.");
 }
 
+// zm_tomb_capture_zones only exists on Origins. A direct file::function
+// reference would raise "Unresolved external" on every other map, so the stock
+// capture-zone functions are looked up at runtime (same approach as
+// MM_CraftablesFunc). getfunction() returns undefined if the file is not loaded.
+MM_OriginsCaptureFunc(name)
+{
+    if(!isDefined(level.mm_capture_funcs))
+        level.mm_capture_funcs = [];
+
+    if(!isDefined(level.mm_capture_funcs[name]))
+        level.mm_capture_funcs[name] = getfunction("maps/mp/zm_tomb_capture_zones", name);
+
+    return level.mm_capture_funcs[name];
+}
+
+// Captures all six Origins generators so the stock logic powers up the
+// Pack-a-Punch (all_zones_captured -> pack_a_punch_enable -> power_on).
+// Zones are switched through the game's own set_player_controlled_area(), the
+// same call a real capture ends with, so perk machines, mystery boxes, HUD and
+// the Pack-a-Punch assembly animation all update normally.
+MM_OriginsTurnOnAllGenerators()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1This action is only available on Origins.");
+        return;
+    }
+
+    if(!self isHost())
+    {
+        self iprintln("^1Turning on the generators requires the host.");
+        return;
+    }
+
+    if(!flag("start_zombie_round_logic") || !flag("capture_zones_init_done"))
+    {
+        self iprintln("^1Start the first round before turning on the generators.");
+        return;
+    }
+
+    if(!isDefined(level.zone_capture) || !isDefined(level.zone_capture.zones))
+    {
+        self iprintln("^1The generator system is not initialized yet.");
+        return;
+    }
+
+    setControlled = MM_OriginsCaptureFunc("set_player_controlled_area");
+    if(!isDefined(setControlled))
+    {
+        self iprintln("^1Could not find the Origins capture-zone functions.");
+        return;
+    }
+
+    switched = 0;
+    foreach(zone in level.zone_capture.zones)
+    {
+        if(!isDefined(zone))
+            continue;
+
+        if(zone ent_flag("zone_contested"))
+        {
+            // A capture or recapture event is running on this generator: push
+            // it to 100% and let the stock capture loop finish it (it also
+            // clears the capture zombies and the event flags by itself).
+            zone.n_current_progress = 100;
+            level setclientfield(zone.script_noteworthy, 1);
+            zone ent_flag_clear("zone_contested");
+            switched++;
+        }
+        else if(!zone ent_flag("player_controlled"))
+        {
+            zone [[ setControlled ]]();
+            zone.n_last_progress = zone.n_current_progress;
+            zone.n_current_progress = 100;
+            level setclientfield("state_" + zone.script_noteworthy, 2);
+            level setclientfield(zone.script_noteworthy, 1);
+            switched++;
+        }
+
+        wait_network_frame();
+    }
+
+    wait 0.5;
+
+    if(flag("all_zones_captured"))
+    {
+        if(switched > 0)
+            self iprintlnbold("^2All generators are on. Pack-a-Punch is powered.");
+        else
+            self iprintln("^3All generators were already on.");
+    }
+    else
+    {
+        self iprintln("^3Generators updated: " + switched + ". Captured now: " + level.total_capture_zones + " / 6");
+    }
+}
+
 // Origins' Little Lost Girl quest is an eight-stage sidequest. This option
 // intentionally bypasses those objectives; the final flag triggers the stock
 // sidequest ending and ends the current match for everyone.
@@ -2640,6 +3004,623 @@ MM_OriginsNoMudSlowLoop()
 
 
 // ============================================================================
+//  ULTIMATE ZM MOD MENU - MOB OF THE DEAD MODULE
+//  Mob of the Dead (zm_prison) only. Everything here hooks into the stock
+//  scripts (zm_alcatraz_*, _zm_afterlife, _zm_ai_brutus, zm_prison_spoon):
+//  the same notifies / flags / functions the game itself uses. Files that only
+//  exist on this map are looked up at runtime with getfunction(), so loading
+//  the menu on any other map never raises "Unresolved external".
+// ============================================================================
+
+MM_PrisonFunc(file, name)
+{
+    if(!isDefined(level.mm_prison_funcs))
+        level.mm_prison_funcs = [];
+
+    key = file + "::" + name;
+    if(!isDefined(level.mm_prison_funcs[key]))
+        level.mm_prison_funcs[key] = getfunction(file, name);
+
+    return level.mm_prison_funcs[key];
+}
+
+// Common checks: right map, host if required, and the round logic started.
+MM_PrisonReady(needHost)
+{
+    if(level.script != "zm_prison")
+    {
+        self iprintln("^1This action is only available on Mob of the Dead.");
+        return false;
+    }
+
+    if(needHost && !self isHost())
+    {
+        self iprintln("^1This action requires the host.");
+        return false;
+    }
+
+    if(!flag("start_zombie_round_logic"))
+    {
+        self iprintln("^1Start the first round first.");
+        return false;
+    }
+
+    return true;
+}
+
+// Notifies the stock thread that powers every perk machine's shock box
+// (the same notify the game's own debug command uses). It runs one machine
+// per second, so give it a few seconds. Classic mode only.
+MM_PrisonPowerPerks()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    level notify("unlock_all_perk_machines");
+    self iprintln("^2Powering all perk machines (about one per second)...");
+}
+
+// Same notify as the stock debug path: it powers the gondola from the roof
+// side and shuts the opposite shock box, exactly like a real power-up.
+MM_PrisonPowerGondola()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    if(!flag_exists("gondola_initialized"))
+    {
+        self iprintln("^1The gondola is not available in this game mode.");
+        return;
+    }
+
+    if(flag("gondola_initialized"))
+    {
+        self iprintln("^3The gondola is already powered.");
+        return;
+    }
+
+    level notify("gondola_powered_on_roof");
+    self iprintln("^2Gondola powered.");
+}
+
+// Mob's custom Afterlife doors are zombie_door entities marked with
+// script_noteworthy="afterlife_door". Use the stock blocker transition, but
+// resolve it at runtime so the map-only module cannot cause load-time externals.
+MM_PrisonOpenAfterlifeDoors()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    doorOpenedFunc = MM_PrisonFunc("maps/mp/zombies/_zm_blockers", "door_opened");
+    if(!isDefined(doorOpenedFunc))
+    {
+        self iprintln("^1Mob of the Dead door handler is not loaded.");
+        return;
+    }
+
+    opened = 0;
+    doors = getEntArray("zombie_door", "targetname");
+    foreach(door in doors)
+    {
+        if(!isDefined(door) || !isDefined(door.script_noteworthy))
+            continue;
+        if(door.script_noteworthy != "afterlife_door")
+            continue;
+        if(isDefined(door.has_been_opened) && door.has_been_opened)
+            continue;
+        if(isDefined(door.door_is_moving) && door.door_is_moving)
+            continue;
+
+        // Same native transition used by Mob's hidden open_sesame debug path.
+        door [[ doorOpenedFunc ]](0);
+        opened++;
+        wait 0.1;
+    }
+
+    if(opened > 0)
+        self iprintln("^2Afterlife doors opened: ^7" + opened);
+    else
+        self iprintln("^3No closed Afterlife doors found (or they are still moving).");
+}
+
+MM_PrisonUnlockEverything()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    self MM_PrisonPowerPerks();
+    self MM_PrisonPowerGondola();
+    self MM_PrisonOpenAfterlifeDoors();
+}
+
+// Free gondola ride. The stock call trigger on the side the gondola is NOT on
+// is parked waiting for a player, so trigger it like a player would: the stock
+// code then moves the gondola and re-arms its own buttons correctly.
+MM_PrisonSendGondola()
+{
+    if(!self MM_PrisonReady(false))
+        return;
+
+    if(!flag_exists("gondola_initialized") || !flag("gondola_initialized"))
+    {
+        self iprintln("^1Power the gondola first.");
+        return;
+    }
+
+    if(flag("gondola_in_motion"))
+    {
+        self iprintln("^3The gondola is already moving.");
+        return;
+    }
+
+    if(!isDefined(level.e_gondola) || !isDefined(level.e_gondola.location))
+        return;
+
+    here = level.e_gondola.location;
+    if(!flag("gondola_at_" + here))
+    {
+        self iprintln("^3The gondola is still settling. Try again in a moment.");
+        return;
+    }
+
+    if(!is_player_valid(self))
+    {
+        self iprintln("^1You can't call the gondola while downed.");
+        return;
+    }
+
+    other = "roof";
+    if(here == "roof")
+        other = "docks";
+
+    triggers = getEntArray("gondola_call_trigger", "targetname");
+    foreach(trig in triggers)
+    {
+        if(isDefined(trig) && isDefined(trig.script_string) && trig.script_string == other)
+        {
+            trig notify("trigger", self);
+            self iprintln("^2Gondola sent to the " + other + ".");
+            return;
+        }
+    }
+
+    self iprintln("^1Could not find the gondola call button.");
+}
+
+// ---- Afterlife ----
+
+MM_PrisonRefillLife(player)
+{
+    addFunc = MM_PrisonFunc("maps/mp/zombies/_zm_afterlife", "afterlife_add");
+    if(!isDefined(addFunc) || !isDefined(player.lives))
+        return false;
+
+    player [[ addFunc ]]();
+    return true;
+}
+
+MM_PrisonAfterlifeRefill()
+{
+    if(!self MM_PrisonReady(false))
+        return;
+
+    if(self MM_PrisonRefillLife(self))
+        self iprintln("^2Afterlife life refilled.");
+    else
+        self iprintln("^1Afterlife is not available right now.");
+}
+
+MM_PrisonAfterlifeRefillAll()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    done = 0;
+    foreach(player in getPlayers())
+    {
+        if(isDefined(player) && self MM_PrisonRefillLife(player))
+            done++;
+    }
+
+    self iprintln("^2Afterlife life refilled for ^7" + done + "^2 player(s).");
+}
+
+MM_PrisonToggleInfMana()
+{
+    if(!self MM_PrisonReady(false))
+        return;
+
+    self scripts\zm\zm_modmenu::MM_Toggle("prmana", "Afterlife Infinite Mana", ::MM_PrisonInfManaLoop);
+}
+
+// The stock afterlife_reduce_mana() skips the drain when infinite_mana is set.
+MM_PrisonInfManaLoop()
+{
+    self endon("disconnect");
+
+    while(self scripts\zm\zm_modmenu::MM_IsOn("prmana"))
+    {
+        self.infinite_mana = 1;
+        wait 0.5;
+    }
+
+    self.infinite_mana = 0;
+}
+
+// ---- Brutus ----
+
+// Same notify the stock spawner (and its debug command) uses. The normal
+// option respects the game's own Brutus limit; the other one ignores it.
+MM_PrisonSpawnBrutus(ignoreLimit)
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    if(!isDefined(level.brutus_spawners) || level.brutus_spawners.size < 1 || !isDefined(level.brutus_count))
+    {
+        self iprintln("^1Brutus is not available in this game mode.");
+        return;
+    }
+
+    if(!ignoreLimit && level.brutus_count >= level.brutus_max_count)
+    {
+        self iprintln("^3Brutus limit reached (" + level.brutus_max_count + "). Use the ignore-limit option.");
+        return;
+    }
+
+    level notify("spawn_brutus", 1);
+    self iprintln("^2Brutus spawned.");
+}
+
+MM_PrisonKillBrutus()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    // MM_AliveZombies() deliberately skips bosses, so scan all enemies here.
+    killed = 0;
+    enemies = MM_AllEnemies();
+    foreach(z in enemies)
+    {
+        if(!isDefined(z) || !isAlive(z))
+            continue;
+        if(!isDefined(z.is_brutus) || !z.is_brutus)
+            continue;
+
+        z doDamage(z.health + 666, z.origin);
+        killed++;
+    }
+
+    if(killed > 0)
+        self iprintln("^2Brutus killed: ^7" + killed);
+    else
+        self iprintln("^3No Brutus is alive right now.");
+}
+
+// ---- Golden Spork quest items ----
+
+// Same weapon names and calls the stock spoon quest uses (zm_prison_spoon).
+MM_PrisonGiveSpoon(spork)
+{
+    if(!self MM_PrisonReady(false))
+        return;
+
+    if(!flag_exists("spoon_obtained"))
+    {
+        self iprintln("^1The spoon quest is not available in this game mode.");
+        return;
+    }
+
+    if(self hasWeapon("spork_zm_alcatraz"))
+    {
+        self iprintln("^3You already have the Golden Spork.");
+        return;
+    }
+
+    if(spork)
+    {
+        self takeWeapon("spoon_zm_alcatraz");
+        self takeWeapon("knife_zm_alcatraz");
+        self giveWeapon("spork_zm_alcatraz");
+        self set_player_melee_weapon("spork_zm_alcatraz");
+        self setClientFieldToPlayer("spoon_visual_state", 3);
+        self iprintln("^2Golden Spork given.");
+        return;
+    }
+
+    if(self hasWeapon("spoon_zm_alcatraz"))
+    {
+        self iprintln("^3You already have the Spoon.");
+        return;
+    }
+
+    self giveWeapon("spoon_zm_alcatraz");
+    self set_player_melee_weapon("spoon_zm_alcatraz");
+    self iprintln("^2Spoon given.");
+}
+
+// ---- Plane ----
+
+// Finishes the plane craftable with the game's own complete_craftable(), the
+// same end state as crafting every part: plane_built flag, VO and clientfield.
+MM_PrisonBuildPlane()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    if(!flag_exists("plane_built"))
+    {
+        self iprintln("^1The plane is not available in this game mode.");
+        return;
+    }
+
+    if(flag("plane_built"))
+    {
+        self iprintln("^3The plane is already built.");
+        return;
+    }
+
+    found = false;
+    if(isDefined(level.a_uts_craftables))
+    {
+        foreach(uts in level.a_uts_craftables)
+        {
+            if(isDefined(uts) && isDefined(uts.craftablestub) && isDefined(uts.craftablestub.name) && uts.craftablestub.name == "plane")
+                found = true;
+        }
+    }
+
+    completeFunc = MM_CraftablesFunc("complete_craftable");
+    if(!found || !isDefined(completeFunc))
+    {
+        self iprintln("^1The plane craftable is not ready yet.");
+        return;
+    }
+
+    [[ completeFunc ]]("plane");
+    self iprintlnbold("^2Plane built.");
+}
+
+// The fuel cans use a separate stock craftable. Completing it calls Mob's
+// native refuel callback instead of only setting a visual or quest flag.
+MM_PrisonRefuelPlane()
+{
+    if(!self MM_PrisonReady(true))
+        return;
+
+    if(!flag_exists("plane_built") || !flag("plane_built"))
+    {
+        self iprintln("^1Build the plane first.");
+        return;
+    }
+
+    found = false;
+    if(isDefined(level.a_uts_craftables))
+    {
+        foreach(uts in level.a_uts_craftables)
+        {
+            if(isDefined(uts) && isDefined(uts.craftablestub) && isDefined(uts.craftablestub.name) && uts.craftablestub.name == "refuelable_plane")
+                found = true;
+        }
+    }
+
+    completeFunc = MM_CraftablesFunc("complete_craftable");
+    if(!found || !isDefined(completeFunc))
+    {
+        self iprintln("^3The fuel craftable is already complete or not initialized.");
+        return;
+    }
+
+    [[ completeFunc ]]("refuelable_plane");
+    self iprintlnbold("^2Plane refueled.");
+}
+
+// ============================================================================
+//  MAP-SPECIFIC TOOLS - TRANZIT / DIE RISE / BURIED
+//  Map-only stock systems are resolved with getfunction() at runtime. This
+//  keeps the shared menu script safe on maps that do not load those modules.
+// ============================================================================
+
+MM_MapToolName(mapName)
+{
+    switch(mapName)
+    {
+        case "zm_transit":  return "TranZit";
+        case "zm_highrise": return "Die Rise";
+        case "zm_buried":   return "Buried";
+    }
+    return mapName;
+}
+
+MM_MapToolReady(mapName, needHost)
+{
+    if(level.script != mapName)
+    {
+        self iprintln("^1This action is only available on " + MM_MapToolName(mapName) + ".");
+        return false;
+    }
+
+    if(needHost && !self isHost())
+    {
+        self iprintln("^1This map action requires the host.");
+        return false;
+    }
+
+    if(!flag("start_zombie_round_logic"))
+    {
+        self iprintln("^1Start the first round before using map tools.");
+        return false;
+    }
+
+    return true;
+}
+
+MM_MapBuildableFunction(name)
+{
+    if(!isDefined(level.mm_map_buildable_funcs))
+        level.mm_map_buildable_funcs = [];
+
+    if(!isDefined(level.mm_map_buildable_funcs[name]))
+        level.mm_map_buildable_funcs[name] = getfunction("maps/mp/zombies/_zm_buildables", name);
+
+    return level.mm_map_buildable_funcs[name];
+}
+
+// Mirrors Buried's stock buildbuildable() sequence: finish the selected
+// station through the game, unregister it, and unspawn its loose pieces.
+MM_MapBuildable(mapName, equipName)
+{
+    if(!self MM_MapToolReady(mapName, true))
+        return;
+
+    if(!isDefined(level.buildable_stubs) || level.buildable_stubs.size < 1)
+    {
+        self iprintln("^1No buildable stations are active in this area yet.");
+        return;
+    }
+
+    finishFunc = MM_MapBuildableFunction("buildablestub_finish_build");
+    removeFunc = MM_MapBuildableFunction("buildablestub_remove");
+    unspawnFunc = MM_MapBuildableFunction("piece_unspawn");
+    if(!isDefined(finishFunc) || !isDefined(removeFunc) || !isDefined(unspawnFunc))
+    {
+        self iprintln("^1The stock buildable system is not ready on this map.");
+        return;
+    }
+
+    // The stock remove helper mutates the registry, so finish one station and
+    // return immediately rather than continuing through the changed array.
+    stubs = level.buildable_stubs;
+    foreach(stub in stubs)
+    {
+        if(!isDefined(stub) || !isDefined(stub.equipname) || stub.equipname != equipName)
+            continue;
+        if(!isDefined(stub.buildablezone) || !isDefined(stub.buildablezone.pieces))
+            continue;
+
+        pieces = stub.buildablezone.pieces;
+        stub [[ finishFunc ]](self);
+        stub [[ removeFunc ]]();
+
+        foreach(piece in pieces)
+        {
+            if(isDefined(piece))
+                piece [[ unspawnFunc ]]();
+        }
+
+        if(isDefined(stub.model))
+        {
+            stub.model notsolid();
+            stub.model show();
+        }
+
+        self iprintln("^2Completed buildable: ^7" + equipName);
+        return;
+    }
+
+    self iprintln("^3Buildable not available here, already completed, or not enabled: ^7" + equipName);
+}
+
+// Fires the native switch trigger; do not set power_on manually, because the
+// stock routines handle animations, power callbacks, doors and perks.
+MM_MapPowerSwitch(mapName)
+{
+    if(!self MM_MapToolReady(mapName, true))
+        return;
+
+    if(flag_exists("power_on") && flag("power_on"))
+    {
+        self iprintln("^3Power is already on.");
+        return;
+    }
+
+    if(mapName == "zm_transit" && isDefined(level.power_event_in_progress) && level.power_event_in_progress)
+    {
+        self iprintln("^3The TranZit reactor sequence is already running.");
+        return;
+    }
+
+    triggerName = "use_elec_switch";
+    if(mapName == "zm_transit")
+        triggerName = "powerswitch_buildable_trigger_power";
+
+    triggers = getEntArray(triggerName, "targetname");
+    if(!isDefined(triggers) || triggers.size < 1 || !isDefined(triggers[0]))
+    {
+        if(mapName == "zm_transit")
+            self iprintln("^1Build the Power Switch first, then use this option.");
+        else
+            self iprintln("^1The electric-switch trigger is not initialized yet.");
+        return;
+    }
+
+    triggers[0] notify("trigger", self);
+    if(mapName == "zm_transit")
+        self iprintln("^2TranZit reactor started. The native power sequence takes about 30 seconds.");
+    else
+        self iprintln("^2Electric-switch activation requested.");
+}
+
+MM_BuriedOpenCell()
+{
+    if(!self MM_MapToolReady("zm_buried", true))
+        return;
+
+    cellDoor = getEnt("sloth_cell_door", "targetname");
+    if(!isDefined(cellDoor))
+    {
+        self iprintln("^1Leroy's cell door is not present in this game mode.");
+        return;
+    }
+
+    if(isDefined(level.cell_open) && level.cell_open)
+    {
+        self iprintln("^3Leroy's cell is already open.");
+        return;
+    }
+
+    // Match Buried's own cell-open event path: notify the watcher and invoke
+    // the map-installed jail animation callback.
+    level notify("cell_open");
+    if(isDefined(level.jail_open_door))
+        [[ level.jail_open_door ]]();
+    self iprintln("^2Leroy's cell opened.");
+}
+
+// Elevator floor arguments are zero-based in elevator_next_floor(); setting
+// zero selects the first scripted stop (or the elevator's own start floor).
+MM_HighriseSendElevators(floorIndex)
+{
+    if(!self MM_MapToolReady("zm_highrise", true))
+        return;
+
+    if(!isDefined(level.elevators))
+    {
+        self iprintln("^1Die Rise elevators are not initialized yet.");
+        return;
+    }
+
+    keys = getarraykeys(level.elevators);
+    sent = 0;
+    foreach(key in keys)
+    {
+        elevator = level.elevators[key];
+        if(!isDefined(elevator) || !isDefined(elevator.body))
+            continue;
+
+        elevator.body.force_starting_floor = floorIndex;
+        elevator.body notify("forcego");
+        sent++;
+        wait 0.05;
+    }
+
+    if(sent > 0)
+        self iprintln("^2Elevator dispatch sent: ^7" + sent);
+    else
+        self iprintln("^3No active elevators were found.");
+}
+
+// ============================================================================
 //  ULTIMATE ZM MOD MENU - MAP-WIDE PARTS ESP
 //  Included by zm_modmenu.gsc. Supports the stock Zombies craftable and
 //  buildable registries used by Origins, Mob, TranZit, Die Rise and Buried.
@@ -2650,9 +3631,32 @@ MM_TogglePartsESP()
     self scripts\zm\zm_modmenu::MM_Toggle("partesp", "Parts ESP", ::MM_PartsESPLoop);
 }
 
+// Adds one live part model to the list (skips undefined models and duplicates).
+// GSC arrays are passed by value, so the updated list is returned.
+MM_PushPartModel(models, model)
+{
+    if(!isDefined(model) || !isDefined(model.origin))
+        return models;
+
+    foreach(existing in models)
+    {
+        if(existing == model)
+            return models;
+    }
+
+    models[models.size] = model;
+    return models;
+}
+
 // Return currently spawned part models from the stock game registries.
-// This deliberately uses the game's own piece objects instead of guessing
-// model names or drawing markers at hard-coded coordinates.
+// The two stock systems store their world models in different places:
+//   - _zm_craftables (Origins, Mob of the Dead):
+//       level.zombie_include_craftables[].a_piecestubs[].piecespawn.model
+//   - _zm_buildables (TranZit, Die Rise, Buried):
+//       level.buildable_stubs[].buildablezone.pieces[].model
+//       level.zombie_buildables[].buildablepieces[].generated_piece.model
+// On the buildables maps, buildablepieces[] only holds the *template*, which
+// has no model, so the spawned instances must be read from the places above.
 MM_CollectMapPartModels()
 {
     models = [];
@@ -2668,24 +3672,25 @@ MM_CollectMapPartModels()
             {
                 if(!isDefined(piecestub) || !isDefined(piecestub.piecespawn))
                     continue;
-                if(!isDefined(piecestub.piecespawn.model))
+
+                models = MM_PushPartModel(models, piecestub.piecespawn.model);
+            }
+        }
+    }
+
+    if(isDefined(level.buildable_stubs))
+    {
+        foreach(stub in level.buildable_stubs)
+        {
+            if(!isDefined(stub) || !isDefined(stub.buildablezone) || !isDefined(stub.buildablezone.pieces))
+                continue;
+
+            foreach(piece in stub.buildablezone.pieces)
+            {
+                if(!isDefined(piece))
                     continue;
 
-                model = piecestub.piecespawn.model;
-                if(!isDefined(model.origin))
-                    continue;
-
-                duplicate = false;
-                foreach(existing in models)
-                {
-                    if(existing == model)
-                    {
-                        duplicate = true;
-                        break;
-                    }
-                }
-                if(!duplicate)
-                    models[models.size] = model;
+                models = MM_PushPartModel(models, piece.model);
             }
         }
     }
@@ -2697,24 +3702,15 @@ MM_CollectMapPartModels()
             if(!isDefined(buildable) || !isDefined(buildable.buildablepieces))
                 continue;
 
-            foreach(piece in buildable.buildablepieces)
+            foreach(template in buildable.buildablepieces)
             {
-                if(!isDefined(piece) || !isDefined(piece.model))
-                    continue;
-                if(!isDefined(piece.model.origin))
+                if(!isDefined(template))
                     continue;
 
-                duplicate = false;
-                foreach(existing in models)
-                {
-                    if(existing == piece.model)
-                    {
-                        duplicate = true;
-                        break;
-                    }
-                }
-                if(!duplicate)
-                    models[models.size] = piece.model;
+                if(isDefined(template.generated_piece))
+                    models = MM_PushPartModel(models, template.generated_piece.model);
+
+                models = MM_PushPartModel(models, template.model);
             }
         }
     }
