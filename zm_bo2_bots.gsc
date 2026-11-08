@@ -479,7 +479,7 @@ bot_main()
 
         // Keep generator defenders on the capture objective; they still fight
         // through bot_combat_think above this guard.
-        if(is_true(self.bot.is_holding_generator))
+        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using))
         {
             wait 0.05;
             continue;
@@ -2584,7 +2584,7 @@ bot_update_wander()
 
         // A generator defender must not have its objective goal overwritten by
         // the normal stay/follow/wander controller.
-        if(is_true(self.bot.is_holding_generator))
+        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using))
         {
             if(self getgoal("wander") || self hasgoal("wander"))
                 self cancelgoal("wander");
