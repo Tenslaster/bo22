@@ -355,7 +355,8 @@ bot_quest_origins_generators()
     // This also handles a generator that zombies are trying to recapture.
     active_zone = undefined;
 
-    if(isdefined(level.bot_origins_generator_target) &&
+    if(flag("zone_capture_in_progress") &&
+       isdefined(level.bot_origins_generator_target) &&
        isdefined(level.bot_origins_generator_target.origin) &&
        !level.bot_origins_generator_target ent_flag("player_controlled"))
         active_zone = level.bot_origins_generator_target;
