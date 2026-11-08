@@ -670,14 +670,9 @@ bot_mob_afterlife_needs_entry()
     return false;
 }
 
-// Use the real ZM_PRISON_AFTERLIFE_KILL unitrigger. Its stock callback
-// consumes the life and starts Afterlife; the bot never edits those states.
-// Mob's trigger is created by _zm_unitrigger and its callback owns the real
-// life consumption / afterlife_laststand transition. Sending its native
-// "trigger" notification avoids the unreliable bot look-at + use-button path.
-// Activate the bot's actual per-player stock Afterlife unitrigger.
-// Mob's callback consumes the life and starts Afterlife; the bot never edits
-// those states or relies on scripted look-at/use-button input.
+// Use the real ZM_PRISON_AFTERLIFE_KILL unitrigger. The bot routes through
+// the stock unitrigger manager and notifies its original callback, which owns
+// life consumption and the afterlife_laststand transition.
 bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
 {
     if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
