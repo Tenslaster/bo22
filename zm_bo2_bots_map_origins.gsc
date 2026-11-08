@@ -1495,7 +1495,7 @@ bot_quest_origins_main_steps()
         primary = self scripts\zm\zm_bo2_bots::bot_quest_primary_weapon();
         if(isdefined(plane) && isdefined(plane.origin) && isdefined(primary))
         {
-            self scripts\zm\zm_bo2_bots::bot_quest_fire_at(plane.origin, primary, "bot_origins_blood_plane", 1500, 10, 0.1);
+            self bot_origins_shoot_blood_plane(plane, primary);
             return true;
         }
     }
@@ -1601,6 +1601,49 @@ bot_quest_origins_main_steps()
 // Scripted bots cannot press the player's two-button action-slot input. Use
 // the same stock quadrotor watchers as a human activation, but launch the
 // vehicle directly once this bot owns the crafted drone and has a live target.
+
+bot_origins_shoot_blood_plane(plane, weapon)
+{
+    if(!isdefined(plane) || !isdefined(plane.origin) ||
+       !isdefined(weapon) || !self hasweapon(weapon) ||
+       !isdefined(self.zombie_vars) ||
+       !isdefined(self.zombie_vars["zombie_powerup_zombie_blood_on"]) ||
+       !self.zombie_vars["zombie_powerup_zombie_blood_on"])
+        return false;
+
+    current_weapon = self getcurrentweapon();
+    self.bot.is_objective_using = 1;
+    self switchtoweaponimmediate(weapon);
+    wait 0.25;
+
+    // The plane is a moving vehicle, not a ground navigation target. Stay put
+    // and refresh its live origin before every shot; stock needs one valid hit
+    // while the attacking player has Zombie Blood active.
+    fire_deadline = gettime() + 16000;
+    while(gettime() < fire_deadline && isalive(self) &&
+          !flag("ee_maxis_drone_retrieved") &&
+          isdefined(plane) && isdefined(plane.origin) &&
+          !plane ent_flag("biplane_down") &&
+          isdefined(self.zombie_vars) &&
+          isdefined(self.zombie_vars["zombie_powerup_zombie_blood_on"]) &&
+          self.zombie_vars["zombie_powerup_zombie_blood_on"])
+    {
+        self lookat(plane.origin);
+        self pressattackbutton(0.18);
+        wait 0.12;
+    }
+
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
+
+    if(isdefined(current_weapon) && current_weapon != "none" &&
+       current_weapon != weapon && self hasweapon(current_weapon) &&
+       isalive(self))
+        self switchtoweaponimmediate(current_weapon);
+
+    return true;
+}
+
 bot_origins_try_deploy_drone()
 {
     if(!self hasweapon("equip_dieseldrone_zm"))
