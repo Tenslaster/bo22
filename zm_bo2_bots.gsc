@@ -3457,6 +3457,47 @@ bot_player_can_take_piece(piece)
 	return self [[ can_take ]](piece);
 }
 
+bot_craftable_piece_is_available(piece)
+{
+    if(!isdefined(piece) || !isdefined(piece.piecestub))
+        return false;
+
+    if(getdvar("mapname") != "zm_tomb")
+        return true;
+
+    if(!isdefined(piece.craftablename) || !isdefined(piece.piecename))
+        return true;
+
+    craftable_name = piece.craftablename;
+    piece_name = piece.piecename;
+
+    // Avoid taking staff crystals before their three physical staff parts.
+    if(issubstr(craftable_name, "elemental_staff_") && piece_name == "gem")
+    {
+        if(!isdefined(level.staff_part_count) ||
+           !isdefined(level.staff_part_count[craftable_name]) ||
+           level.staff_part_count[craftable_name] > 0)
+            return false;
+    }
+
+    // Ice Staff parts become available only after stock digging reveals them.
+    if(craftable_name == "elemental_staff_water" && piece_name != "gem")
+    {
+        if(!isdefined(piece.canmove) || !piece.canmove)
+            return false;
+    }
+
+    // The Fire Staff lower piece is released by the Panzer-death callback.
+    if(craftable_name == "elemental_staff_fire" && piece_name == "lower_staff")
+    {
+        if(!isdefined(piece.canmove) || !piece.canmove)
+            return false;
+    }
+
+    return true;
+}
+
+
 bot_drop_stuck_craftable_piece(task, retry_ms)
 {
 	if(!isdefined(task) || !isdefined(self.current_craftable_piece))
@@ -3833,6 +3874,9 @@ bot_find_craftable_task()
 			if(!self bot_player_can_take_piece(piece))
 				continue;
 
+			if(!self bot_craftable_piece_is_available(piece))
+				continue;
+
 			if(isdefined(piece.in_shared_inventory) && piece.in_shared_inventory)
 				continue;
 
@@ -3897,6 +3941,15 @@ bot_run_craftable_task(task)
 		return;
 
 	goal_name = "bot_craftable";
+
+	// Make Origins' per-player part/table triggers eligible for scripted bots.
+	if(getdvar("mapname") == "zm_tomb")
+	{
+		if(task.kind == "pickup" && isdefined(task.piece) && isdefined(task.piece.unitrigger))
+			task.piece.unitrigger.ignore_player_valid = 1;
+		else if(isdefined(task.stub))
+			task.stub.ignore_player_valid = 1;
+	}
 
 	if(!findpath(self.origin, task.origin, undefined, 0, 1))
 	{
@@ -4001,6 +4054,9 @@ bot_run_craftable_task(task)
 				if(!isdefined(task.piece.model))
 					break;
 
+				if(!self bot_craftable_piece_is_available(task.piece))
+					break;
+
 				if(is_shared)
 				{
 					if(isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
@@ -4019,6 +4075,34 @@ bot_run_craftable_task(task)
 
 				self pressusebutton(0.15);
 				wait 0.1;
+			}
+
+			// If the engine does not dispatch pickup to this scripted client, invoke
+			// the exact stock pickup routine. Stock callbacks still update inventory,
+			// quest fields, staff counters, and shared-piece state.
+			if(getdvar("mapname") == "zm_tomb" && isdefined(task.piece) &&
+			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
+			   self bot_craftable_piece_is_available(task.piece) &&
+			   distancesquared(self.origin, task.piece.model.origin) <= 48 * 48)
+			{
+				is_shared = isdefined(task.piece.piecestub) &&
+				            isdefined(task.piece.piecestub.is_shared) &&
+				            task.piece.piecestub.is_shared;
+				already_picked = 0;
+
+				if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+					already_picked = 1;
+				else if(!is_shared && isdefined(self.current_craftable_piece) &&
+				        self.current_craftable_piece.piecename == task.piece.piecename &&
+				        self.current_craftable_piece.craftablename == task.piece.craftablename)
+					already_picked = 1;
+
+				if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)))
+				{
+					take_piece_func = bot_craftables_func("player_take_piece");
+					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
+						self [[ take_piece_func ]](task.piece);
+				}
 			}
 		}
 		else if(task.kind == "craft")
