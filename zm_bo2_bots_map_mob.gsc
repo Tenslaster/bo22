@@ -732,21 +732,42 @@ bot_mob_afterlife_should_return()
     if(!self bot_mob_is_afterlife() || !isdefined(self.e_afterlife_corpse))
         return false;
 
-    // Leave enough mana for navigation back to the corpse. Stock mana drain
-    // scales with afterlifedeaths, so scale the reserve with that same counter.
+    // Stock Mob drains about 3 mana per second at the first Afterlife death.
+    // A 150-mana threshold forced an immediate retreat before the bot could
+    // reach even the nearest panel. Retreat only when the reserve is critical.
     death_count = 1;
     if(isdefined(self.afterlifedeaths) && self.afterlifedeaths > 0)
         death_count = self.afterlifedeaths;
 
-    return_mana = death_count * 90;
-    if(return_mana > 150)
-        return_mana = 150;
+    return_mana = death_count * 24;
+    if(return_mana > 48)
+        return_mana = 48;
 
     if(isdefined(self.manacur) && self.manacur <= return_mana)
         return true;
 
-    // Return only when the Mob Afterlife objectives and ghost-side quest steps
-    // that this bot supports are no longer waiting for its help.
+    // Never infer completion from missing entities or uninitialized client
+    // fields. All core electrical objectives must positively report complete.
+    power_door = getent("powerup_door", "targetname");
+    if(!isdefined(power_door) || !isdefined(power_door.opened) || !power_door.opened)
+        return false;
+
+    if(!isdefined(level.is_master_key_west) ||
+       !is_true(level getclientfield("master_key_is_lowered")))
+        return false;
+
+    if(!flag("generator_challenge_completed"))
+        return false;
+
+    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open"))
+        return false;
+
+    dryer_stage = level getclientfield("dryer_stage");
+    if(!isdefined(dryer_stage) || dryer_stage < 1)
+        return false;
+
+    // Also finish the supported soul/skull, spoon, nixie and audio objectives
+    // before returning; missing state is treated as unfinished, not complete.
     return !self bot_mob_afterlife_needs_entry();
 }
 
