@@ -1688,10 +1688,314 @@ bot_origins_try_deploy_drone()
     return true;
 }
 
+
+// -----------------------------------------------------------------------------
+// Origins robot Wind Staff parts: shoot the live hatch sole, then stand on the
+// stock footprint and let the native stomp trigger teleport the bot inside.
+// -----------------------------------------------------------------------------
+bot_origins_robot_bullet_weapon()
+{
+    weapons = self getweaponslistprimaries();
+    foreach(weapon in weapons)
+    {
+        if(!isdefined(weapon) || weapon == "none")
+            continue;
+
+        // The sole needs ordinary bullet damage; the Ray Guns and BOOMHILDA do
+        // not open it.
+        if(issubstr(weapon, "staff_") || issubstr(weapon, "ray") ||
+           issubstr(weapon, "boomhilda") || issubstr(weapon, "mauser_upgraded") ||
+           issubstr(weapon, "mauser_zm_upgraded") ||
+           weapon == "jetgun_zm" || weapon == "slipgun_zm")
+            continue;
+
+        return weapon;
+    }
+    return undefined;
+}
+
+bot_origins_robot_footprint(robot)
+{
+    if(!isdefined(robot) || !isdefined(robot.giant_robot_id) ||
+       !isdefined(robot.hatch_foot))
+        return undefined;
+
+    if(robot.hatch_foot == "left")
+        foot_tag = "TAG_ATTACH_HATCH_LE";
+    else if(robot.hatch_foot == "right")
+        foot_tag = "TAG_ATTACH_HATCH_RI";
+    else
+        return undefined;
+
+    foot_origin = robot gettagorigin(foot_tag);
+    if(!isdefined(foot_origin))
+        return undefined;
+
+    footprints = getstructarray("giant_robot_footprint_center", "targetname");
+    nearest = undefined;
+    nearest_dist = 999999999;
+
+    foreach(footprint in footprints)
+    {
+        if(!isdefined(footprint) || !isdefined(footprint.origin) ||
+           !isdefined(footprint.script_int) ||
+           footprint.script_int != robot.giant_robot_id)
+            continue;
+
+        if(isdefined(footprint.bot_origins_wind_owner) &&
+           footprint.bot_origins_wind_owner != self &&
+           isdefined(footprint.bot_origins_wind_owner_until) &&
+           gettime() < footprint.bot_origins_wind_owner_until &&
+           isalive(footprint.bot_origins_wind_owner))
+            continue;
+
+        distance = distancesquared(foot_origin, footprint.origin);
+        if(distance < nearest_dist)
+        {
+            nearest = footprint;
+            nearest_dist = distance;
+        }
+    }
+
+    return nearest;
+}
+
+bot_origins_release_robot_wind_claim(robot, footprint, reserve)
+{
+    if(!isdefined(robot))
+        return;
+
+    if(isdefined(reserve) && reserve)
+    {
+        robot.bot_origins_wind_owner = self;
+        robot.bot_origins_wind_owner_until = gettime() + 30000;
+
+        if(isdefined(footprint))
+        {
+            footprint.bot_origins_wind_owner = self;
+            footprint.bot_origins_wind_owner_until = gettime() + 30000;
+        }
+        return;
+    }
+
+    if(isdefined(robot.bot_origins_wind_owner) && robot.bot_origins_wind_owner == self)
+    {
+        robot.bot_origins_wind_owner = undefined;
+        robot.bot_origins_wind_owner_until = 0;
+    }
+
+    if(isdefined(footprint) && isdefined(footprint.bot_origins_wind_owner) &&
+       footprint.bot_origins_wind_owner == self)
+    {
+        footprint.bot_origins_wind_owner = undefined;
+        footprint.bot_origins_wind_owner_until = 0;
+    }
+}
+
+bot_quest_origins_robot_wind_parts()
+{
+    if(!isdefined(level.staff_part_count) ||
+       !isdefined(level.staff_part_count["elemental_staff_air"]) ||
+       level.staff_part_count["elemental_staff_air"] <= 0)
+        return false;
+
+    // Once inside, stay put so the generic craftable worker can collect the part.
+    if(isdefined(self.in_giant_robot_head))
+        return true;
+
+    if(isdefined(self.bot.origins_wind_robot_retry_after) &&
+       gettime() < self.bot.origins_wind_robot_retry_after)
+        return false;
+
+    if(!isdefined(level.a_giant_robots) || level.a_giant_robots.size == 0)
+        return false;
+
+    best_robot = undefined;
+    best_footprint = undefined;
+    best_stage_origin = undefined;
+    best_dist_sq = 999999999;
+
+    for(robot_index = 0; robot_index < level.a_giant_robots.size; robot_index++)
+    {
+        robot = level.a_giant_robots[robot_index];
+
+        if(!isdefined(robot) || !isdefined(robot.giant_robot_id) ||
+           !isdefined(robot.is_walking) || !robot.is_walking ||
+           !isdefined(robot.b_has_hatch) || !robot.b_has_hatch ||
+           !isdefined(robot.hatch_foot))
+            continue;
+
+        robot_id = robot.giant_robot_id;
+        if(!isdefined(level.gr_foot_hatch_closed[robot_id]))
+            continue;
+
+        if(isdefined(robot.bot_origins_wind_owner) &&
+           robot.bot_origins_wind_owner != self &&
+           isdefined(robot.bot_origins_wind_owner_until) &&
+           gettime() < robot.bot_origins_wind_owner_until &&
+           isalive(robot.bot_origins_wind_owner))
+            continue;
+
+        footprint = self bot_origins_robot_footprint(robot);
+        if(!isdefined(footprint))
+            continue;
+
+        // Stage just outside the stomp zone while shooting the moving sole.
+        offsets = [];
+        offsets[0] = (180, 0, 0);
+        offsets[1] = (-180, 0, 0);
+        offsets[2] = (0, 180, 0);
+        offsets[3] = (0, -180, 0);
+        offsets[4] = (128, 128, 0);
+        offsets[5] = (128, -128, 0);
+        offsets[6] = (-128, 128, 0);
+        offsets[7] = (-128, -128, 0);
+
+        for(offset_index = 0; offset_index < offsets.size; offset_index++)
+        {
+            stage_origin = footprint.origin + offsets[offset_index];
+            if(!findpath(self.origin, stage_origin, undefined, 0, 1))
+                continue;
+
+            stage_dist = distancesquared(self.origin, stage_origin);
+            if(stage_dist < best_dist_sq)
+            {
+                best_robot = robot;
+                best_footprint = footprint;
+                best_stage_origin = stage_origin;
+                best_dist_sq = stage_dist;
+            }
+        }
+    }
+
+    if(!isdefined(best_robot) || !isdefined(best_footprint) ||
+       !isdefined(best_stage_origin))
+        return false;
+
+    robot_id = best_robot.giant_robot_id;
+
+    if(isdefined(best_robot.bot_origins_wind_owner) &&
+       best_robot.bot_origins_wind_owner != self &&
+       isdefined(best_robot.bot_origins_wind_owner_until) &&
+       gettime() < best_robot.bot_origins_wind_owner_until &&
+       isalive(best_robot.bot_origins_wind_owner))
+        return false;
+
+    self bot_origins_release_robot_wind_claim(best_robot, best_footprint, 1);
+    self.bot.is_objective_using = 1;
+
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+        best_stage_origin, "bot_origins_robot_stage", 40, 9000);
+
+    entered = false;
+
+    if(arrived && isalive(self) && !isdefined(self.in_giant_robot_head))
+    {
+        sole = getent("target_sole_" + robot_id, "targetname");
+
+        if(isdefined(sole) && isdefined(sole.origin) &&
+           level.gr_foot_hatch_closed[robot_id])
+        {
+            bullet_weapon = self bot_origins_robot_bullet_weapon();
+
+            if(isdefined(bullet_weapon))
+            {
+                self switchtoweaponimmediate(bullet_weapon);
+                wait 0.35;
+
+                // Stock only accepts damage after a robot-walk notetrack.
+                // Keep firing at the sole's live origin until the hatch opens.
+                fire_deadline = gettime() + 22000;
+                while(gettime() < fire_deadline &&
+                      level.gr_foot_hatch_closed[robot_id] &&
+                      isdefined(sole) && isdefined(sole.origin) &&
+                      isdefined(best_robot.is_walking) && best_robot.is_walking &&
+                      !isdefined(self.in_giant_robot_head) &&
+                      self scripts\zm\zm_bo2_bots::bot_objective_can_run())
+                {
+                    self lookat(sole.origin);
+                    self pressattackbutton(0.12);
+                    wait 0.16;
+                }
+            }
+        }
+
+        self clearlookat();
+
+        if(!level.gr_foot_hatch_closed[robot_id] &&
+           !isdefined(self.in_giant_robot_head))
+        {
+            // Re-evaluate the closest footprint after the robot has moved.
+            current_footprint = self bot_origins_robot_footprint(best_robot);
+            if(isdefined(current_footprint))
+            {
+                if(current_footprint != best_footprint)
+                {
+                    if(isdefined(best_footprint.bot_origins_wind_owner) &&
+                       best_footprint.bot_origins_wind_owner == self)
+                    {
+                        best_footprint.bot_origins_wind_owner = undefined;
+                        best_footprint.bot_origins_wind_owner_until = 0;
+                    }
+                    best_footprint = current_footprint;
+                    best_footprint.bot_origins_wind_owner = self;
+                    best_footprint.bot_origins_wind_owner_until = gettime() + 30000;
+                }
+            }
+
+            if(isdefined(best_footprint) &&
+               findpath(self.origin, best_footprint.origin, undefined, 0, 1))
+            {
+                self addgoal(best_footprint.origin, 24, 2, "bot_origins_robot_enter");
+                entry_deadline = gettime() + 18000;
+
+                while(gettime() < entry_deadline && isalive(self))
+                {
+                    if(isdefined(self.in_giant_robot_head) &&
+                       self.in_giant_robot_head == robot_id)
+                    {
+                        entered = true;
+                        break;
+                    }
+
+                    if(!isdefined(best_robot.is_walking) || !best_robot.is_walking)
+                        break;
+
+                    wait 0.1;
+                }
+
+                self cancelgoal("bot_origins_robot_enter");
+            }
+        }
+        else if(isdefined(self.in_giant_robot_head) &&
+                self.in_giant_robot_head == robot_id)
+            entered = true;
+    }
+
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
+
+    if(entered || (isdefined(self.in_giant_robot_head) &&
+                   self.in_giant_robot_head == robot_id))
+    {
+        // Keep this robot reserved during the stock in-head collection/eject.
+        self bot_origins_release_robot_wind_claim(best_robot, best_footprint, 1);
+        self.bot.origins_wind_robot_retry_after = gettime() + 30000;
+        return true;
+    }
+
+    self bot_origins_release_robot_wind_claim(best_robot, best_footprint, 0);
+    self.bot.origins_wind_robot_retry_after = gettime() + 5000;
+    return false;
+}
+
 bot_quest_origins()
 {
     // Hard runtime gate: never run Origins objectives on TranZit or any other map.
     if(getdvar("mapname") != "zm_tomb")
+        return;
+
+    if(isdefined(self.in_giant_robot_head))
         return;
 
     // Deploy the assembled Maxis drone during combat. Stock quadrotor watchers
@@ -1711,6 +2015,8 @@ bot_quest_origins()
     if(self bot_quest_origins_generators())
         return;
     if(self bot_quest_origins_dig_ice_staff_parts())
+        return;
+    if(self bot_quest_origins_robot_wind_parts())
         return;
     if(self bot_quest_origins_chamber_door())
         return;
