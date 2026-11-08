@@ -732,16 +732,22 @@ bot_mob_afterlife_should_return()
     if(!self bot_mob_is_afterlife() || !isdefined(self.e_afterlife_corpse))
         return false;
 
-    // Stock Mob drains about 3 mana per second at the first Afterlife death.
-    // A 150-mana threshold forced an immediate retreat before the bot could
-    // reach even the nearest panel. Retreat only when the reserve is critical.
+    // Do not interrupt a live panel interaction from the bot's main thread.
+    if(is_true(self.bot.is_objective_using))
+        return false;
+
+    // Stock Mob drains roughly 3 mana/sec per Afterlife death. Estimate the
+    // trip back from the corpse and keep a proportional return reserve. This
+    // is deliberately far below the old 150-mana threshold, which made bots
+    // retreat almost immediately after entering with 200 mana.
     death_count = 1;
     if(isdefined(self.afterlifedeaths) && self.afterlifedeaths > 0)
         death_count = self.afterlifedeaths;
 
-    return_mana = death_count * 24;
-    if(return_mana > 48)
-        return_mana = 48;
+    corpse_distance = distance(self.origin, self.e_afterlife_corpse.origin);
+    return_mana = death_count * (30 + int(corpse_distance / 40));
+    if(return_mana > 90)
+        return_mana = 90;
 
     if(isdefined(self.manacur) && self.manacur <= return_mana)
         return true;
