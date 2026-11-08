@@ -5075,7 +5075,7 @@ bot_weapon_switch_think()
 			continue;
 		}
 		
-        if(is_true(self.bot.is_meleeing) || is_true(self.bot.is_throwing_grenade) || is_true(self.bot.is_getting_shield) || is_true(self.bot.is_buying) || is_true(self.bot.is_using_box) || is_true(self.bot.is_reviving) || is_true(self.bot.is_selfreviving) || is_true(self.bot.is_building) || is_true(self.bot.is_crafting) || is_true(self.bot.is_perk_buying))
+        if(is_true(self.bot.is_meleeing) || is_true(self.bot.is_throwing_grenade) || is_true(self.bot.is_getting_shield) || is_true(self.bot.is_buying) || is_true(self.bot.is_using_box) || is_true(self.bot.is_reviving) || is_true(self.bot.is_selfreviving) || is_true(self.bot.is_building) || is_true(self.bot.is_crafting) || is_true(self.bot.is_objective_using) || is_true(self.bot.is_perk_buying))
 		{
 			wait 0.05;
 			
