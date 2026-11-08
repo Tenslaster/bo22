@@ -502,6 +502,25 @@ bot_quest_mob_sidequests()
 
 // Find a map-native Afterlife interaction by the event its stock script
 // publishes. The stock _zm_afterlife handler owns the damage callback.
+bot_mob_afterlife_has_interact(event_name)
+{
+    if(!isdefined(event_name))
+        return false;
+
+    interactions = getentarray("afterlife_interact", "targetname");
+    if(!isdefined(interactions))
+        return false;
+
+    foreach(interaction in interactions)
+    {
+        if(isdefined(interaction) && isdefined(interaction.script_string) &&
+           interaction.script_string == event_name)
+            return true;
+    }
+
+    return false;
+}
+
 bot_mob_afterlife_find_interact(event_name)
 {
     if(!isdefined(event_name))
@@ -758,12 +777,9 @@ bot_mob_afterlife_needs_entry()
         return true;
 
     dryer_stage = level getclientfield("dryer_stage");
-    if(!is_true(dryer_stage))
-    {
-        laundry_switch = self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife");
-        if(isdefined(laundry_switch))
-            return true;
-    }
+    if(!is_true(dryer_stage) &&
+       self bot_mob_afterlife_has_interact("laundry_power_switch_afterlife"))
+        return true;
 
     if(flag("soul_catchers_charged") && !flag("spoon_obtained"))
         return true;
