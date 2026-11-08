@@ -6,6 +6,10 @@
 
 bot_combat_think(damage, attacker, direction)
 {
+	// Map quest interactions own aim and attack input while this flag is set.
+	if(is_true(self.bot.is_objective_using))
+		return;
+
 	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade))
 	{
 		self allowattack(0);
