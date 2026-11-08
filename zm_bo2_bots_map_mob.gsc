@@ -729,8 +729,11 @@ bot_mob_afterlife_entry_think()
     best_trigger.bot_mob_entry_until = gettime() + 15000;
 
     self.bot_mob_afterlife_retry_until = gettime() + 5000;
+    // The stock trigger radius is 36 units. Stop well inside it, aim
+    // directly at the trigger origin, and retry the use input in case the
+    // bot's view needs a moment to settle.
     self scripts\zm\zm_bo2_bots::bot_quest_use_target(
-        best_trigger, "bot_mob_afterlife_kill", 40, 1);
+        best_trigger, "bot_mob_afterlife_kill", 24, 4, 0, 0);
 
     if(is_true(self.afterlife))
     {
