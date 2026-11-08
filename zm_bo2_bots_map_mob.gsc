@@ -678,6 +678,9 @@ bot_mob_afterlife_needs_entry()
 // Activate the bot's actual per-player stock Afterlife unitrigger.
 // Mob's callback consumes the life and starts Afterlife; the bot never edits
 // those states or relies on scripted look-at/use-button input.
+// Activate the bot's actual per-player stock Afterlife unitrigger.
+// Mob's callback consumes the life and starts Afterlife; the bot never edits
+// those states or relies on scripted look-at/use-button input.
 bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
 {
     if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
@@ -734,34 +737,37 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
 
     self.bot.is_objective_using = 1;
     player_num = self getentitynumber();
-    use_trigger = undefined;
 
-    // Prefer the per-player trigger already built by the stock manager.
+    if(!isdefined(level._unitriggers) || !isdefined(level._unitriggers.trigger_pool))
+    {
+        self.bot.is_objective_using = undefined;
+        return false;
+    }
+
+    use_trigger = undefined;
     if(isdefined(stub.playertrigger) && isdefined(stub.playertrigger[player_num]))
         use_trigger = stub [[ unitrigger_trigger_func ]](self);
 
-    // The stock manager maintains one current trigger per player. A nearby
-    // perk/debris trigger can occupy that slot, so replace it with the actual
-    // Afterlife stub using the stock cleanup/build/visibility routines.
+    current_trigger = level._unitriggers.trigger_pool[player_num];
+    if(isdefined(current_trigger) && current_trigger != use_trigger)
+        current_trigger [[ unitrigger_cleanup_func ]](current_trigger, self);
+
+    // The stock manager keeps one active trigger per player. Rebuild its slot
+    // with this exact Afterlife stub if a nearby perk/debris trigger occupied it.
     if(!isdefined(use_trigger))
     {
-        if(!isdefined(level._unitriggers) || !isdefined(level._unitriggers.trigger_pool))
-        {
-            self.bot.is_objective_using = undefined;
-            return false;
-        }
-
-        current_trigger = level._unitriggers.trigger_pool[player_num];
-        if(isdefined(current_trigger))
-            current_trigger [[ unitrigger_cleanup_func ]](current_trigger, self);
-
         use_trigger = stub [[ unitrigger_build_func ]](self);
         if(!isdefined(use_trigger))
         {
             self.bot.is_objective_using = undefined;
             return false;
         }
+    }
 
+    // Run the same visibility gate the stock manager uses; this also starts
+    // the original afterlife_trigger_think callback on the trigger entity.
+    if(!isdefined(use_trigger.thread_running) || !use_trigger.thread_running)
+    {
         is_visible = use_trigger [[ unitrigger_visibility_func ]](use_trigger, stub, self, 0);
         if(!is_visible)
         {
@@ -769,23 +775,19 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
             self.bot.is_objective_using = undefined;
             return false;
         }
-
-        level._unitriggers.trigger_pool[player_num] = use_trigger;
     }
-    else if(!isdefined(use_trigger.thread_running) || !use_trigger.thread_running)
+
+    level._unitriggers.trigger_pool[player_num] = use_trigger;
+
+    // The stock callback waits for round logic before listening for use.
+    // Do not send the notification until that wait is over and its thread is ready.
+    if(!flag("start_zombie_round_logic"))
     {
-        // Ensure the stock callback is listening before we notify it.
-        is_visible = use_trigger [[ unitrigger_visibility_func ]](use_trigger, stub, self, 0);
-        if(!is_visible)
-        {
-            self.bot.is_objective_using = undefined;
-            return false;
-        }
+        self.bot.is_objective_using = undefined;
+        return false;
     }
 
-    // This is the exact trigger entity built from the stock
-    // ZM_PRISON_AFTERLIFE_KILL stub; its waiting stock callback performs the
-    // life consumption and afterlife_laststand transition.
+    wait 0.1;
     if(!is_true(self.afterlife) && isdefined(use_trigger.thread_running) &&
        use_trigger.thread_running)
     {
