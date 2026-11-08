@@ -1,3 +1,120 @@
+bot_origins_install_capture_zone_hook()
+{
+    if(isdefined(level.bot_origins_capture_zone_hooked) &&
+       level.bot_origins_capture_zone_hooked)
+        return true;
+
+    capture_players_func = getfunction(
+        "maps/mp/zm_tomb_capture_zones", "get_players_in_capture_zone");
+
+    if(!isdefined(capture_players_func))
+        return false;
+
+    // Keep the stock filter for human players, but count living Origins bots.
+    replacefunc(capture_players_func, ::bot_origins_get_players_in_capture_zone);
+    level.bot_origins_capture_zone_hooked = 1;
+    return true;
+}
+
+bot_origins_get_players_in_capture_zone()
+{
+    players_in_zone = [];
+    players = get_players();
+
+    foreach(player in players)
+    {
+        if(!isdefined(player) || !isdefined(player.origin))
+            continue;
+
+        valid_player = is_player_valid(player);
+
+        if(!valid_player && isdefined(player.pers) && isdefined(player.pers["isbot"]))
+        {
+            valid_player = isalive(player) &&
+                           isdefined(player.sessionstate) && player.sessionstate == "playing" &&
+                           !player maps\mp\zombies\_zm_laststand::player_is_in_laststand() &&
+                           !player is_reviving_any();
+        }
+
+        if(valid_player &&
+           distance2dsquared(player.origin, self.origin) < 48400 &&
+           player.origin[2] > self.origin[2] - 20)
+            players_in_zone[players_in_zone.size] = player;
+    }
+
+    return players_in_zone;
+}
+
+bot_origins_hold_generator_zone(zone)
+{
+    if(!isdefined(zone) || !isdefined(zone.origin))
+        return false;
+
+    goal_name = "bot_origins_generator_anchor";
+    goal_mode = "";
+    hold_deadline = gettime() + 180000;
+
+    self.bot.is_holding_generator = 1;
+    self.bot.is_objective_using = 1;
+
+    // The stock capture radius is 220 units in 2D and excludes players whose
+    // Z is more than 20 units below the zone origin. Stay inside 180 units.
+    while(isalive(self) && gettime() < hold_deadline &&
+          !zone ent_flag("player_controlled") &&
+          (flag("zone_capture_in_progress") || zone ent_flag("zone_contested")))
+    {
+        distance_sq = distance2dsquared(self.origin, zone.origin);
+        below_floor = self.origin[2] <= zone.origin[2] - 20;
+
+        if(distance_sq > 180 * 180 || below_floor)
+        {
+            if(goal_mode != "move")
+            {
+                self addgoal(zone.origin, 145, 1, goal_name);
+                goal_mode = "move";
+            }
+        }
+        else if(goal_mode != "hold")
+        {
+            self addgoal(zone.origin, 180, 1, goal_name);
+            goal_mode = "hold";
+        }
+
+        wait 0.2;
+    }
+
+    self cancelgoal(goal_name);
+    self.bot.is_holding_generator = undefined;
+    self.bot.is_objective_using = undefined;
+
+    if(zone ent_flag("player_controlled"))
+    {
+        if(isdefined(level.bot_origins_generator_target) &&
+           level.bot_origins_generator_target == zone)
+            level.bot_origins_generator_target = undefined;
+        if(isdefined(level.bot_origins_generator_owner) &&
+           level.bot_origins_generator_owner == self)
+            level.bot_origins_generator_owner = undefined;
+        level.bot_origins_generator_owner_until = 0;
+        level.bot_origins_generator_start_wait_until = 0;
+        return true;
+    }
+
+    if(!flag("zone_capture_in_progress") && !zone ent_flag("zone_contested"))
+    {
+        if(isdefined(level.bot_origins_generator_target) &&
+           level.bot_origins_generator_target == zone)
+            level.bot_origins_generator_target = undefined;
+        if(isdefined(level.bot_origins_generator_owner) &&
+           level.bot_origins_generator_owner == self)
+            level.bot_origins_generator_owner = undefined;
+        level.bot_origins_generator_owner_until = 0;
+        level.bot_origins_generator_start_wait_until = gettime() + 2500;
+    }
+
+    return false;
+}
+
 #include common_scripts\utility;
 #include maps\mp\_utility;
 #include maps\mp\zombies\_zm_utility;
@@ -257,14 +374,7 @@ bot_quest_origins_generators()
         }
 
         if(isdefined(active_zone) && isdefined(active_zone.origin))
-        {
-            if(distancesquared(self.origin, active_zone.origin) > 220 * 220)
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
-                    active_zone.origin, "bot_origins_generator_support", 175, 9000);
-            else
-                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(
-                    active_zone.origin, "bot_origins_generator_hold", 190, 2.0);
-        }
+            self bot_origins_hold_generator_zone(active_zone);
 
         return true;
     }
@@ -389,8 +499,10 @@ bot_quest_origins_generators()
     }
 
     level.bot_origins_generator_start_wait_until = gettime() + 5000;
-    level.bot_origins_generator_owner_until = gettime() + 15000;
-    return true;
+    level.bot_origins_generator_owner_until = gettime() + 180000;
+
+    // Keep the activating bot in the stock capture volume until ownership flips.
+    return self bot_origins_hold_generator_zone(best_zone);
 }
 
 bot_quest_origins_dig_ice_staff_parts()
