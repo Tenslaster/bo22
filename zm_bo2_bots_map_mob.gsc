@@ -762,9 +762,9 @@ bot_mob_afterlife_should_return()
         return false;
 
     // An unfinished, reachable Afterlife objective always takes priority.
-    // Do not use a fixed mana reserve here: the previous reserve made bots
-    // abandon the electrical tasks before they could finish them. The stock
-    // mana watcher remains the final safety limit if a task cannot be finished.
+    // Do not use a fixed mana reserve here: it made bots abandon objectives
+    // before completing them. Mob's stock mana watcher is a hard bleedout,
+    // not a safe return, so entry is restricted to reachable, actionable work.
     if(self bot_mob_afterlife_needs_entry())
         return false;
 
