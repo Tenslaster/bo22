@@ -2191,4 +2191,3 @@ bot_origins_rotate_punch_upgrade_tablet()
         self waittill("rotatedone");
     }
 }
-
