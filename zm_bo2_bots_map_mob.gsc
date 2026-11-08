@@ -15,6 +15,12 @@ bot_quest_mob_plane()
     if(!self bot_mob_is_afterlife() && self bot_mob_afterlife_entry_think())
         return;
 
+    if(self bot_mob_is_afterlife() && self bot_mob_afterlife_should_return())
+    {
+        self bot_self_revive_afterlife();
+        return;
+    }
+
     if(self bot_quest_mob_sidequests())
         return;
 
@@ -498,22 +504,36 @@ bot_quest_mob_sidequests()
 // publishes. The stock _zm_afterlife handler owns the damage callback.
 bot_mob_afterlife_find_interact(event_name)
 {
+    if(!isdefined(event_name))
+        return undefined;
+
     interactions = getentarray("afterlife_interact", "targetname");
+    best_target = undefined;
+    best_distance = 999999999;
+
     foreach(interaction in interactions)
     {
-        if(isdefined(interaction) && isdefined(interaction.origin) &&
-           isdefined(interaction.script_string) && interaction.script_string == event_name)
-            return interaction;
+        if(!isdefined(interaction) || !isdefined(interaction.origin) ||
+           !isdefined(interaction.script_string) || interaction.script_string != event_name)
+            continue;
+
+        distance_sq = distancesquared(self.origin, interaction.origin);
+        if(distance_sq < best_distance &&
+           findpath(self.origin, interaction.origin, undefined, 0, 1))
+        {
+            best_target = interaction;
+            best_distance = distance_sq;
+        }
     }
-    return undefined;
+
+    return best_target;
 }
 
 // Send a single Lightning Hands pulse to a stock damage-driven panel. The
 // entity lease prevents the whole squad from repeatedly firing the same panel.
 bot_mob_afterlife_zap_target(target, goal_name)
 {
-    if(!isdefined(target) || !isdefined(target.origin) ||
-       !self hasweapon("lightning_hands_zm"))
+    if(!self bot_mob_is_afterlife() || !isdefined(target) || !isdefined(target.origin))
         return false;
 
     now = gettime();
@@ -530,17 +550,51 @@ bot_mob_afterlife_zap_target(target, goal_name)
 
     target.bot_mob_afterlife_zap_owner = self;
     target.bot_mob_afterlife_zap_until = now + 10000;
-    target.bot_mob_afterlife_zap_next = now + 1600;
 
-    if(!self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
-        target.origin, "lightning_hands_zm", goal_name, 180, 1, 0.12))
+    // All stock Mob shockboxes accept damage from a player holding
+    // lightning_hands_zm within afterlife_interact_dist (256 units).
+    if(distancesquared(self.origin, target.origin) > 220 * 220)
+    {
+        if(!self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+            target.origin, goal_name, 180, 9000))
+        {
+            target.bot_mob_afterlife_zap_owner = undefined;
+            target.bot_mob_afterlife_zap_until = undefined;
+            return false;
+        }
+    }
+
+    if(!isdefined(target) || !isdefined(target.origin) ||
+       distancesquared(self.origin, target.origin) >= 256 * 256)
     {
         target.bot_mob_afterlife_zap_owner = undefined;
-        target.bot_mob_afterlife_zap_until = 0;
-        target.bot_mob_afterlife_zap_next = 0;
+        target.bot_mob_afterlife_zap_until = undefined;
         return false;
     }
 
+    if(!self bot_mob_afterlife_ensure_lightning_hands())
+    {
+        target.bot_mob_afterlife_zap_owner = undefined;
+        target.bot_mob_afterlife_zap_until = undefined;
+        return false;
+    }
+
+    // Trigger the real stock damage callback. The stock script still validates
+    // that attacker is this player, the held weapon is Lightning Hands, and
+    // the player is within the map's interaction range before progressing.
+    self.bot.is_objective_using = 1;
+    self lookat(target.origin + vectorscale((0, 0, 1), 24.0));
+    wait 0.1;
+    if(isdefined(target) && isdefined(target.origin) &&
+       self getcurrentweapon() == "lightning_hands_zm" &&
+       distancesquared(self.origin, target.origin) < 256 * 256)
+        target notify("damage", 1, self);
+
+    wait 0.15;
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
+
+    target.bot_mob_afterlife_zap_next = gettime() + 1200;
     return true;
 }
 
@@ -548,9 +602,10 @@ bot_mob_afterlife_zap_target(target, goal_name)
 // lowering the Master Key, the three generator panels, docks, then laundry.
 bot_mob_afterlife_panel_think()
 {
-    if(!self hasweapon("lightning_hands_zm"))
+    if(!self bot_mob_afterlife_ensure_lightning_hands())
         return false;
 
+    // The intro shockbox sends intro_powerup_activate to open the powered door.
     power_door = getent("powerup_door", "targetname");
     if(isdefined(power_door) &&
        (!isdefined(power_door.opened) || !power_door.opened))
@@ -560,6 +615,7 @@ bot_mob_afterlife_panel_think()
             return true;
     }
 
+    // The live pulley side is selected by the stock random master-key setup.
     if(!is_true(level getclientfield("master_key_is_lowered")) &&
        isdefined(level.is_master_key_west))
     {
@@ -568,10 +624,13 @@ bot_mob_afterlife_panel_think()
         else
             pulley = getent("master_key_pulley_east", "targetname");
 
-        if(isdefined(pulley) && self bot_mob_afterlife_zap_target(pulley, "bot_mob_master_key_pulley"))
+        if(isdefined(pulley) && isdefined(pulley.model) &&
+           pulley.model != "p6_zm_al_power_station_panels_03" &&
+           self bot_mob_afterlife_zap_target(pulley, "bot_mob_master_key_pulley"))
             return true;
     }
 
+    // Each of the three panels accepts the same native Afterlife damage event.
     if(!flag("generator_challenge_completed") &&
        isdefined(level.n_generator_panels_active) && level.n_generator_panels_active < 3)
     {
@@ -583,23 +642,27 @@ bot_mob_afterlife_panel_think()
             if(isdefined(panel.model) && panel.model == "p6_zm_al_power_station_panels_03")
                 continue;
 
-            if(self bot_mob_afterlife_zap_target(panel, "bot_mob_generator_panel"))
+            if(self bot_mob_afterlife_zap_target(panel, "bot_mob_generator_panel_" + panel_index))
                 return true;
         }
     }
 
+    // Docks use this exact stock level event in setup_gate_puzzle().
     if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open"))
     {
         docks_panel = getent("docks_panel", "targetname");
-        if(isdefined(docks_panel) && self bot_mob_afterlife_zap_target(docks_panel, "bot_mob_docks_gate"))
+        if(isdefined(docks_panel) && self bot_mob_afterlife_zap_target(
+            docks_panel, "bot_mob_docks_gate"))
             return true;
     }
 
-    // The dryer remains disabled until the stock Afterlife switch event fires.
+    // Laundry power is a separate shockbox event; dryer_stage becomes 1
+    // only after the stock laundry_power_switch_afterlife event is received.
     if(!is_true(level getclientfield("dryer_stage")))
     {
         dryer_switch = self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife");
-        if(isdefined(dryer_switch) && self bot_mob_afterlife_zap_target(dryer_switch, "bot_mob_laundry_power"))
+        if(isdefined(dryer_switch) && self bot_mob_afterlife_zap_target(
+            dryer_switch, "bot_mob_laundry_power"))
             return true;
     }
 
@@ -625,6 +688,29 @@ bot_mob_allow_afterlife_bot_triggers()
 // Check whether a real Mob objective still needs the ghost form. This stops
 // bots from spending their Afterlife life after all electrical/ghost quests
 // have already been completed.
+bot_mob_afterlife_should_return()
+{
+    if(!self bot_mob_is_afterlife() || !isdefined(self.e_afterlife_corpse))
+        return false;
+
+    // Leave enough mana for navigation back to the corpse. Stock mana drain
+    // scales with afterlifedeaths, so scale the reserve with that same counter.
+    death_count = 1;
+    if(isdefined(self.afterlifedeaths) && self.afterlifedeaths > 0)
+        death_count = self.afterlifedeaths;
+
+    return_mana = death_count * 90;
+    if(return_mana > 190)
+        return_mana = 190;
+
+    if(isdefined(self.manacur) && self.manacur <= return_mana)
+        return true;
+
+    // Return only when the Mob Afterlife objectives and ghost-side quest steps
+    // that this bot supports are no longer waiting for its help.
+    return !self bot_mob_afterlife_needs_entry();
+}
+
 bot_mob_afterlife_needs_entry()
 {
     power_door = getent("powerup_door", "targetname");
@@ -649,6 +735,10 @@ bot_mob_afterlife_needs_entry()
 
     if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open") &&
        isdefined(getent("docks_panel", "targetname")))
+        return true;
+
+    if(!is_true(level getclientfield("dryer_stage")) &&
+       isdefined(self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife")))
         return true;
 
     if(flag("soul_catchers_charged") && !flag("spoon_obtained"))
