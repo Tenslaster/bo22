@@ -727,63 +727,65 @@ bot_mob_allow_afterlife_bot_triggers()
 // Check whether a real Mob objective still needs the ghost form. This stops
 // bots from spending their Afterlife life after all electrical/ghost quests
 // have already been completed.
+bot_mob_afterlife_can_work_origin(origin)
+{
+    if(!isdefined(origin))
+        return false;
+
+    return findpath(self.origin, origin, undefined, 0, 1);
+}
+
+bot_mob_afterlife_can_work_target(target)
+{
+    if(!isdefined(target) || !isdefined(target.origin))
+        return false;
+
+    // Do not spend another Afterlife life for an objective already being
+    // handled by a different living bot.
+    if(isdefined(target.bot_mob_afterlife_zap_owner) &&
+       target.bot_mob_afterlife_zap_owner != self &&
+       isdefined(target.bot_mob_afterlife_zap_until) &&
+       gettime() < target.bot_mob_afterlife_zap_until &&
+       isalive(target.bot_mob_afterlife_zap_owner))
+        return false;
+
+    return self bot_mob_afterlife_can_work_origin(target.origin);
+}
+
 bot_mob_afterlife_should_return()
 {
     if(!self bot_mob_is_afterlife() || !isdefined(self.e_afterlife_corpse))
         return false;
 
-    // Do not interrupt a live panel interaction from the bot's main thread.
+    // Never revive in the middle of a real objective interaction.
     if(is_true(self.bot.is_objective_using))
         return false;
 
-    // Stock Mob drains roughly 3 mana/sec per Afterlife death. Estimate the
-    // trip back from the corpse and keep a proportional return reserve. This
-    // is deliberately far below the old 150-mana threshold, which made bots
-    // retreat almost immediately after entering with 200 mana.
-    death_count = 1;
-    if(isdefined(self.afterlifedeaths) && self.afterlifedeaths > 0)
-        death_count = self.afterlifedeaths;
-
-    corpse_distance = distance(self.origin, self.e_afterlife_corpse.origin);
-    return_mana = death_count * (30 + int(corpse_distance / 40));
-    if(return_mana > 90)
-        return_mana = 90;
-
-    if(isdefined(self.manacur) && self.manacur <= return_mana)
-        return true;
-
-    // Never infer completion from missing entities or uninitialized client
-    // fields. All core electrical objectives must positively report complete.
-    power_door = getent("powerup_door", "targetname");
-    if(!isdefined(power_door) || !isdefined(power_door.opened) || !power_door.opened)
+    // An unfinished, reachable Afterlife objective always takes priority.
+    // Do not use a fixed mana reserve here: the previous reserve made bots
+    // abandon the electrical tasks before they could finish them. The stock
+    // mana watcher remains the final safety limit if a task cannot be finished.
+    if(self bot_mob_afterlife_needs_entry())
         return false;
 
-    if(!isdefined(level.is_master_key_west) ||
-       !is_true(level getclientfield("master_key_is_lowered")))
-        return false;
-
-    if(!flag("generator_challenge_completed"))
-        return false;
-
-    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open"))
-        return false;
-
-    dryer_stage = level getclientfield("dryer_stage");
-    if(!isdefined(dryer_stage) || dryer_stage < 1)
-        return false;
-
-    // Also finish the supported soul/skull, spoon, nixie and audio objectives
-    // before returning; missing state is treated as unfinished, not complete.
-    return !self bot_mob_afterlife_needs_entry();
+    // Return only when there is no actionable Afterlife work left for this bot.
+    return true;
 }
 
 bot_mob_afterlife_needs_entry()
 {
+    // Core electrical route: only enter if the live interaction exists and a
+    // path to it is available. An unopened door flag alone is not enough.
     power_door = getent("powerup_door", "targetname");
     if(isdefined(power_door) && (!isdefined(power_door.opened) || !power_door.opened))
-        return true;
+    {
+        target = self bot_mob_afterlife_find_interact("intro_powerup_activate");
+        if(self bot_mob_afterlife_can_work_target(target))
+            return true;
+    }
 
-    if(isdefined(level.is_master_key_west))
+    if(isdefined(level.is_master_key_west) &&
+       !is_true(level getclientfield("master_key_is_lowered")))
     {
         if(is_true(level.is_master_key_west))
             pulley = getent("master_key_pulley_west", "targetname");
@@ -791,38 +793,157 @@ bot_mob_afterlife_needs_entry()
             pulley = getent("master_key_pulley_east", "targetname");
 
         if(isdefined(pulley) && isdefined(pulley.model) &&
-           pulley.model != "p6_zm_al_power_station_panels_03")
+           pulley.model != "p6_zm_al_power_station_panels_03" &&
+           self bot_mob_afterlife_can_work_target(pulley))
             return true;
     }
 
-    if(!flag("generator_challenge_completed") &&
-       isdefined(level.n_generator_panels_active) && level.n_generator_panels_active < 3)
-        return true;
+    // Check the actual remaining generator panels, not just a counter that may
+    // be initialized before the panel entities are ready.
+    if(!flag("generator_challenge_completed"))
+    {
+        for(panel_index = 1; panel_index <= 3; panel_index++)
+        {
+            panel = getent("generator_panel_" + panel_index, "targetname");
+            if(!isdefined(panel) || !isdefined(panel.origin))
+                continue;
+            if(isdefined(panel.model) && panel.model == "p6_zm_al_power_station_panels_03")
+                continue;
 
-    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open") &&
-       isdefined(getent("docks_panel", "targetname")))
-        return true;
+            if(self bot_mob_afterlife_can_work_target(panel))
+                return true;
+        }
+    }
+
+    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open"))
+    {
+        docks_panel = getent("docks_panel", "targetname");
+        if(self bot_mob_afterlife_can_work_target(docks_panel))
+            return true;
+    }
 
     dryer_stage = level getclientfield("dryer_stage");
-    if(!is_true(dryer_stage) &&
-       self bot_mob_afterlife_has_interact("laundry_power_switch_afterlife"))
-        return true;
+    if(!isdefined(dryer_stage) || dryer_stage < 1)
+    {
+        laundry_switch = self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife");
+        if(self bot_mob_afterlife_can_work_target(laundry_switch))
+            return true;
+    }
 
-    if(flag("soul_catchers_charged") && !flag("spoon_obtained"))
-        return true;
+    // Spoon and Warden skull stages require the real Hell's Retriever. Do not
+    // enter early when the bot still needs to collect that weapon in the living world.
+    has_retriever = self hasweapon("bouncing_tomahawk_zm") ||
+                    self hasweapon("upgraded_tomahawk_zm");
 
-    if(!flag("warden_blundergat_obtained") &&
+    if(flag("soul_catchers_charged") && !flag("spoon_obtained") && has_retriever)
+    {
+        spoon = getent("zap_spoon", "targetname");
+        if(self bot_mob_afterlife_can_work_target(spoon))
+            return true;
+
+        spoon_pickup = getent("pickup_spoon", "targetname");
+        if(self bot_mob_afterlife_can_work_target(spoon_pickup))
+            return true;
+    }
+
+    if(!flag("warden_blundergat_obtained") && has_retriever &&
        isdefined(level.sq_bg_macguffins) && level.sq_bg_macguffins.size > 0)
-        return true;
+    {
+        foreach(item in level.sq_bg_macguffins)
+        {
+            if(!isdefined(item) || !isdefined(item.origin))
+                continue;
 
+            if(isdefined(item.bot_mob_macguffin_owner) &&
+               item.bot_mob_macguffin_owner != self &&
+               isdefined(item.bot_mob_macguffin_owner_until) &&
+               gettime() < item.bot_mob_macguffin_owner_until &&
+               isalive(item.bot_mob_macguffin_owner))
+                continue;
+
+            if(self bot_mob_afterlife_can_work_target(item))
+                return true;
+        }
+    }
+
+    // Nixie work is only actionable when a valid code and a reachable tube
+    // that still needs to rotate are both present.
     if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
        flag("warden_blundergat_obtained") &&
-       isdefined(level.a_important_codes) && level.a_important_codes.size > 0 &&
+       isdefined(level.a_important_codes) && isdefined(level.a_nixie_tube_code) &&
        !isdefined(level.m_headphones))
-        return true;
+    {
+        nixie_owner_busy = false;
+        if(isdefined(level.bot_mob_nixie_owner) &&
+           level.bot_mob_nixie_owner != self &&
+           isdefined(level.bot_mob_nixie_owner_until) &&
+           gettime() < level.bot_mob_nixie_owner_until &&
+           isalive(level.bot_mob_nixie_owner))
+            nixie_owner_busy = true;
 
-    if(isdefined(level.m_headphones) && isdefined(level.m_headphones.origin))
-        return true;
+        if(!nixie_owner_busy)
+        {
+            active_code = undefined;
+            final_codes = array(386, 481, 101, 872);
+            foreach(code in final_codes)
+            {
+                if(isinarray(level.a_important_codes, code))
+                {
+                    active_code = code;
+                    break;
+                }
+            }
+
+            if(isdefined(active_code))
+            {
+                for(tube_index = 1; tube_index <= 3; tube_index++)
+                {
+                    tube = getent("nixie_tube_" + tube_index, "targetname");
+                    if(!isdefined(tube) || !isdefined(tube.origin) ||
+                       !isdefined(level.a_nixie_tube_code[tube_index]))
+                        continue;
+
+                    if(tube_index == 1)
+                        desired_digit = int((active_code - active_code % 100) / 100);
+                    else if(tube_index == 2)
+                    {
+                        digit_remainder = active_code % 100;
+                        digit_remainder = digit_remainder - active_code % 10;
+                        desired_digit = int(digit_remainder / 10);
+                    }
+                    else
+                        desired_digit = active_code % 10;
+
+                    if(level.a_nixie_tube_code[tube_index] != desired_digit &&
+                       self bot_mob_afterlife_can_work_target(tube))
+                        return true;
+                }
+            }
+        }
+    }
+
+    // The audio-log controller moves to the live headset's touch volume.
+    if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
+       flag("warden_blundergat_obtained") &&
+       isdefined(level.m_headphones) && isdefined(level.m_headphones.origin))
+    {
+        audio_origin = level.m_headphones.origin - vectorscale((0, 0, 1), 80.0);
+        if(self bot_mob_afterlife_can_work_origin(audio_origin))
+            return true;
+    }
+
+    // Keep the ghost until the final-flight trigger has actually been reached.
+    if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
+       flag("warden_blundergat_obtained") &&
+       is_true(level.bot_mob_final_nixie_started) &&
+       is_true(level.bot_mob_audio_started) &&
+       !isdefined(level.m_headphones) &&
+       (!isdefined(level.final_flight_activated) || !level.final_flight_activated))
+    {
+        final_trigger = getent("plane_fly_afterlife_trigger", "script_noteworthy");
+        if(self bot_mob_afterlife_can_work_target(final_trigger))
+            return true;
+    }
 
     return false;
 }
