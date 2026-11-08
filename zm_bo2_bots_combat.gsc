@@ -4,11 +4,40 @@
 
 #include scripts\zm\zm_bo2_bots;
 
+/*
+	SMART COMBAT UPGRADE
+
+	What changed compared to the stock file:
+	  - Situational awareness: one cheap scan per ~100ms gives every combat decision the same
+	    picture (how many zombies are touching me, how many are near, is a boss close, how hurt am I).
+	  - Flee logic is danger/health based instead of "any zombie within 75 units". Bots stand and
+	    kill lone zombies, but bail out early when swarmed, hurt, out of ammo or a boss is close.
+	    Flee nodes now also prefer regrouping with teammates and have a fallback when no hidden node exists.
+	  - Target selection: only the nearest few zombies get a (costly) line-of-sight trace, weapon based
+	    engagement range, finishing off weak zombies, zombies chasing me, splash-weapon cluster targeting,
+	    stronger target stickiness for zombies that are already in my face.
+	  - Aiming: headshots on normal zombies (not with shotguns / splash weapons), adaptive prediction.
+	  - Weapon handling: emergency swap on empty magazine / empty weapon instead of standing there,
+	    no self-damage with explosive weapons (they swap away when zombies are close), no more
+	    "reload until full" while zombies are chewing on the bot, no ADS when crowded.
+	  - Grenades: finds the densest cluster (250 unit radius) instead of any 5 zombies within 600,
+	    keeps a safe distance, needs line of sight, threshold drops in high rounds / when in danger.
+	  - Melee: never starts a knife fight when swarmed (unless insta-kill).
+	  - Dead target no longer freezes the bot for 0.35s, it retargets right away.
+
+	All original function names are kept so the main script and map scripts keep working.
+*/
+
 bot_combat_think(damage, attacker, direction)
 {
-	// Map quest interactions own aim and attack input while this flag is set.
+	// Map objectives control aim and attack input while this lock is active.
+	// Do not let normal combat AI take over during robot entry or other quests.
 	if(is_true(self.bot.is_objective_using))
+	{
+		self allowattack(0);
+		self pressads(0);
 		return;
+	}
 
 	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade))
 	{
@@ -32,17 +61,23 @@ bot_combat_think(damage, attacker, direction)
 	if(follow_mode && (self getgoal("flee") || self hasgoal("flee")))
 		self cancelgoal("flee");
 	
-	if(!follow_mode && (isdefined(self.bot.threat.entity) && distancesquared(self.origin, self.bot.threat.position) <= 5625 || isdefined(damage)) && !self hasgoal("flee") && !is_true(self.bot.is_buying) && !self hasgoal("boxbuy") && !is_true(self.bot.is_using_box) && !self hasgoal("revive") && !is_true(self.bot.is_reviving) && !self hasgoal("selfrevive") && !is_true(self.bot.is_selfreviving))
+	self bot_update_situation();
+	
+	if(!follow_mode && !self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_flee(damage))
 	{
-        if(!isdefined(self.bot.next_flee_scan) || gettime() > self.bot.next_flee_scan)
-        {
-            if(get_players().size > 4)
-                self.bot.next_flee_scan = gettime() + 3000;
-            else
-                self.bot.next_flee_scan = gettime() + 1500;
-
-            self bot_flee_goal();
-        }
+		now = gettime();
+		
+		if(!isdefined(self.bot.next_flee_scan) || now > self.bot.next_flee_scan)
+		{
+			if(self.bot.danger >= 8)
+				self.bot.next_flee_scan = now + 600;
+			else if(get_players().size > 4)
+				self.bot.next_flee_scan = now + 3000;
+			else
+				self.bot.next_flee_scan = now + 1500;
+			
+			self bot_flee_goal();
+		}
 	}
 	
 	if(self getcurrentweapon() == "none")
@@ -61,7 +96,7 @@ bot_combat_think(damage, attacker, direction)
 	if(!isdefined(self.bot.threat.entity))
 		return;
 	
-	if(threat_dead())
+	if(self threat_dead())
 	{
 		self bot_combat_dead();
 		
@@ -70,6 +105,150 @@ bot_combat_think(damage, attacker, direction)
 	
 	self bot_combat_main();
 }
+
+// ---------------------------------------------------------------------------------------------
+// Situation / danger model
+// ---------------------------------------------------------------------------------------------
+
+bot_health_fraction()
+{
+	maxhp = self.maxhealth;
+	
+	if(!isdefined(maxhp) || maxhp <= 0)
+		maxhp = 100;
+	
+	frac = self.health / maxhp;
+	
+	return clamp(frac, 0, 1);
+}
+
+bot_update_situation()
+{
+	now = gettime();
+	
+	if(isdefined(self.bot.sit_time) && (now - self.bot.sit_time) < 100)
+		return;
+	
+	self.bot.sit_time = now;
+	self.bot.close_count = 0;
+	self.bot.near_count = 0;
+	self.bot.nearest_dist = 99999;
+	self.bot.danger = 0;
+	self.bot.boss_near = false;
+	
+	zombies = get_cached_zombies();
+	
+	if(!isdefined(zombies))
+		return;
+	
+	danger = 0;
+	
+	foreach(zombie in zombies)
+	{
+		if(!isdefined(zombie) || !isalive(zombie))
+			continue;
+		
+		if(is_true(zombie.in_the_ground))
+			continue;
+		
+		d = distancesquared(self.origin, zombie.origin);
+		
+		if(d > 202500)
+			continue;
+		
+		dist = sqrt(d);
+		
+		if(dist < self.bot.nearest_dist)
+			self.bot.nearest_dist = dist;
+		
+		if(is_true(zombie.is_brutus) || is_true(zombie.is_mechz))
+		{
+			if(dist < 450)
+			{
+				self.bot.boss_near = true;
+				
+				danger += 5;
+			}
+		}
+		
+		if(d > 90000)
+			continue;
+		
+		self.bot.near_count++;
+		
+		if(d < 4900)
+			danger += 3;
+		else if(d < 16900)
+			danger += 2;
+		else if(d < 40000)
+			danger += 1;
+		else
+			danger += 0.4;
+		
+		if(d < 16900)
+			self.bot.close_count++;
+	}
+	
+	self.bot.danger = danger;
+}
+
+bot_weapon_is_weak()
+{
+	weapon = self getcurrentweapon();
+	
+	if(weapon == "none")
+		return true;
+	
+	clip = self getweaponammoclip(weapon);
+	stock = self getweaponammostock(weapon);
+	
+	if(clip + stock <= 0)
+		return true;
+	
+	if(clip <= 0)
+		return true;
+	
+	return false;
+}
+
+bot_should_flee(damage)
+{
+	hp = self bot_health_fraction();
+	
+	// Hurt bots bail out earlier, healthy bots stand their ground against one or two zombies.
+	threshold = 5.0 - ((1.0 - hp) * 3.0);
+	
+	if(self bot_weapon_is_weak())
+		threshold -= 1.0;
+	
+	if(threshold < 2.0)
+		threshold = 2.0;
+	
+	danger = self.bot.danger;
+	
+	if(isdefined(damage))
+		danger += 1.0;
+	
+	return danger >= threshold;
+}
+
+bot_flee_blocked()
+{
+	if(is_true(self.bot.is_buying) || self hasgoal("boxbuy") || is_true(self.bot.is_using_box))
+		return true;
+	
+	if(self hasgoal("revive") || is_true(self.bot.is_reviving))
+		return true;
+	
+	if(self hasgoal("selfrevive") || is_true(self.bot.is_selfreviving))
+		return true;
+	
+	return false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fleeing
+// ---------------------------------------------------------------------------------------------
 
 bot_get_flee_goal(max_dist)
 {
@@ -94,6 +273,36 @@ bot_get_flee_goal(max_dist)
     }
 
     return candidate;
+}
+
+bot_get_team_center()
+{
+	players = get_players();
+	
+	sum = (0, 0, 0);
+	
+	count = 0;
+	
+	foreach(player in players)
+	{
+		if(!isdefined(player) || player == self || !isalive(player))
+			continue;
+		
+		if(player.sessionstate != "playing")
+			continue;
+		
+		if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			continue;
+		
+		sum += player.origin;
+		
+		count++;
+	}
+	
+	if(count == 0)
+		return undefined;
+	
+	return sum * (1.0 / count);
 }
 
 bot_flee_goal()
@@ -138,37 +347,49 @@ bot_flee_goal()
         threat_dir = vectornormalize(to_threat);
     }
 
+    team_pos = self bot_get_team_center();
+
     cand_nodes = [];
 	
     cand_scores = [];
 
-    checked = 0;
-
-    foreach(node in nodes)
+    // Pass 0 only accepts nodes that break line of sight. If the bot is in the open and nothing
+    // like that exists, pass 1 accepts visible nodes as long as they are far away from every zombie.
+    for(pass = 0; pass < 2 && cand_nodes.size == 0; pass++)
     {
-        if(checked >= 40)
-            break;
+        checked = 0;
 
-        checked++;
+        foreach(node in nodes)
+        {
+            if(checked >= 48)
+                break;
 
-        if(nodesvisible(nearest, node))
-            continue;
+            checked++;
 
-        score = self bot_score_flee_node(node, zombies, threat_dir);
+            visible = nodesvisible(nearest, node);
 
-        if(!isdefined(score))
-            continue;
+            if(pass == 0 && visible)
+                continue;
 
-        cand_nodes[cand_nodes.size] = node;
-		
-        cand_scores[cand_scores.size] = score;
+            score = self bot_score_flee_node(node, zombies, threat_dir, team_pos);
+
+            if(!isdefined(score))
+                continue;
+
+            if(visible)
+                score += 120;
+
+            cand_nodes[cand_nodes.size] = node;
+			
+            cand_scores[cand_scores.size] = score;
+        }
     }
 
     max_score = 400;
 
     path_checks = 0;
 
-    while(path_checks < 4 && cand_nodes.size > 0)
+    while(path_checks < 5 && cand_nodes.size > 0)
     {
         best = 0;
 
@@ -198,7 +419,7 @@ bot_flee_goal()
     }
 }
 
-bot_score_flee_node(node, zombies, threat_dir)
+bot_score_flee_node(node, zombies, threat_dir, team_pos)
 {
     node_dist = distance2d(self.origin, node.origin);
 
@@ -213,6 +434,32 @@ bot_score_flee_node(node, zombies, threat_dir)
 
     if(isdefined(threat_dir))
         score += vectordot(dir, threat_dir) * 200;
+
+    // Run toward teammates: safer, and they help kill what is chasing us.
+    if(isdefined(team_pos))
+    {
+        cur = distance2d(self.origin, team_pos);
+        new = distance2d(node.origin, team_pos);
+
+        if(new < cur)
+        {
+            bonus = (cur - new) * 0.3;
+
+            if(bonus > 120)
+                bonus = 120;
+
+            score -= bonus;
+        }
+        else
+        {
+            malus = (new - cur) * 0.2;
+
+            if(malus > 80)
+                malus = 80;
+
+            score += malus;
+        }
+    }
 
     foreach(zombie in zombies)
     {
@@ -294,8 +541,14 @@ bot_flee_goal_unsafe()
     return false;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Main combat
+// ---------------------------------------------------------------------------------------------
+
 bot_combat_main()
 {
+	self bot_update_situation();
+	
 	if(self bot_should_melee())
 	{
 		if(!is_true(self.bot.is_meleeing))
@@ -314,13 +567,20 @@ bot_combat_main()
 	
 	weapon = self getcurrentweapon();
 	
+	// Never stand around with an empty / dangerous weapon when a better one is in the holster.
+	if(self bot_combat_try_weapon_swap(weapon))
+		return;
+	
+	if(self isswitchingweapons())
+		return;
+	
 	if(self isreloading())
 	{
 		clip = self getweaponammoclip(weapon);
 		
 		max = weaponclipsize(weapon);
 
-		if(clip < max)
+		if(clip < max && self bot_reload_is_safe())
 		{
 			self.bot.reload_until_full = true;
 		}
@@ -337,7 +597,7 @@ bot_combat_main()
 	
 	time = gettime();
 	
-	if(!self bot_should_hip_fire() && self.bot.threat.dot > 0.96)
+	if(!self bot_should_hip_fire() && self.bot.threat.dot > 0.96 && self.bot.near_count <= 1 && self.bot.nearest_dist > 250 && !self hasgoal("flee"))
 	{
 		ads = 1;
 	}
@@ -351,8 +611,6 @@ bot_combat_main()
 		self pressads(0);
 	}
 	
-	frames = 4;
-	
 	if(time >= self.bot.threat.time_aim_correct)
 	{
 		self.bot.threat.time_aim_correct += self.bot.threat.time_aim_interval;
@@ -360,10 +618,20 @@ bot_combat_main()
 		frac = (time - self.bot.threat.time_first_sight) / 50;
 		frac = clamp(frac, 0, 1);
 		
-		if(!threat_is_player())
+		if(!self threat_is_player())
 		{
 			frac = 1;
 		}
+		
+		// Short prediction up close, longer prediction at range.
+		tdist = distance(self.origin, self.bot.threat.entity.origin);
+		
+		frames = 4;
+		
+		if(tdist < 250)
+			frames = 2;
+		else if(tdist > 700)
+			frames = 6;
 		
 		self.bot.threat.aim_target = self bot_update_aim(frames);
 		self.bot.threat.position = self.bot.threat.entity.origin;
@@ -376,7 +644,8 @@ bot_combat_main()
 		
 		max = weaponclipsize(weapon);
 
-		if(clip >= max || !self isreloading())
+		// Zombies in my face: stop babysitting the reload, shoot whatever is loaded.
+		if(clip >= max || !self isreloading() || (!self bot_reload_is_safe() && clip > 0))
 		{
 			self.bot.reload_until_full = undefined;
 		}
@@ -395,7 +664,7 @@ bot_combat_main()
 		aim_point = self.bot.threat.entity.origin;
 	}
 	
-	if(self bot_on_target(aim_point, self bot_get_fire_radius(aim_point)))
+	if(self bot_on_target(aim_point, self bot_get_fire_radius(aim_point)) && self bot_can_fire_safely(weapon))
 	{
 		self allowattack(1);
 	}
@@ -410,6 +679,147 @@ bot_combat_main()
 		
 		return;
 	}
+}
+
+bot_reload_is_safe()
+{
+	if(self.bot.close_count > 0)
+		return false;
+	
+	if(self.bot.nearest_dist < 250)
+		return false;
+	
+	return true;
+}
+
+bot_can_fire_safely(weapon)
+{
+	enemy = self.bot.threat.entity;
+	
+	if(!isdefined(enemy))
+		return false;
+	
+	dist = distance(self.origin, enemy.origin);
+	
+	// Splash weapons (Ray Gun, M32, ...) hurt the bot when used point blank.
+	if(self bot_is_splash_weapon(weapon) && dist < 130)
+		return false;
+	
+	// No line of sight = don't burn ammo into a wall, unless the zombie is basically touching us.
+	if(isdefined(self.bot.threat.visible) && !self.bot.threat.visible && dist > 120)
+		return false;
+	
+	return true;
+}
+
+bot_is_splash_weapon(weapon)
+{
+	if(!isdefined(weapon) || weapon == "none")
+		return false;
+	
+	if(issubstr(weapon, "ray_gun") || issubstr(weapon, "raygun"))
+		return true;
+	
+	if(issubstr(weapon, "m32") || issubstr(weapon, "china_lake") || issubstr(weapon, "rpg"))
+		return true;
+	
+	if(issubstr(weapon, "crossbow_explosive"))
+		return true;
+	
+	return false;
+}
+
+bot_get_swap_weapon(current, need_clip, avoid_splash, dist)
+{
+	primaries = self getweaponslistprimaries();
+	
+	if(!isdefined(primaries) || primaries.size < 2)
+		return undefined;
+	
+	best = undefined;
+	best_score = -999999;
+	
+	foreach(weapon in primaries)
+	{
+		if(weapon == current || weapon == "none")
+			continue;
+		
+		clip = self getweaponammoclip(weapon);
+		stock = self getweaponammostock(weapon);
+		
+		if(clip + stock <= 0)
+			continue;
+		
+		if(need_clip && clip <= 0)
+			continue;
+		
+		if(avoid_splash && self bot_is_splash_weapon(weapon))
+			continue;
+		
+		score = self bot_weapon_tactical_score(weapon, dist);
+		
+		if(score > best_score)
+		{
+			best_score = score;
+			best = weapon;
+		}
+	}
+	
+	return best;
+}
+
+bot_combat_try_weapon_swap(weapon)
+{
+	now = gettime();
+	
+	if(isdefined(self.bot.next_combat_swap) && now < self.bot.next_combat_swap)
+		return false;
+	
+	if(self isthrowinggrenade() || self isswitchingweapons())
+		return false;
+	
+	enemy = self.bot.threat.entity;
+	
+	if(!isdefined(enemy))
+		return false;
+	
+	dist = distance(self.origin, enemy.origin);
+	
+	clip = self getweaponammoclip(weapon);
+	stock = self getweaponammostock(weapon);
+	max = weaponclipsize(weapon);
+	
+	new_weapon = undefined;
+	
+	// 1) Weapon is completely empty: use anything that still shoots.
+	if(clip + stock <= 0)
+	{
+		new_weapon = self bot_get_swap_weapon(weapon, true, false, dist);
+	}
+	// 2) Explosive weapon with zombies on top of us: switch to something that doesn't hurt us.
+	else if(self bot_is_splash_weapon(weapon) && dist < 130)
+	{
+		new_weapon = self bot_get_swap_weapon(weapon, true, true, dist);
+	}
+	// 3) Empty / nearly empty magazine while zombies are close: a loaded gun beats a reload animation.
+	else if((clip <= 0 || (self isreloading() && max > 0 && clip < (max * 0.25))) && (dist < 260 || self.bot.close_count > 0))
+	{
+		new_weapon = self bot_get_swap_weapon(weapon, true, self.bot.close_count > 0, dist);
+	}
+	
+	if(!isdefined(new_weapon) || new_weapon == weapon)
+		return false;
+	
+	self allowattack(0);
+	self pressads(0);
+	
+	self switchtoweapon(new_weapon);
+	
+	self.bot.next_combat_swap = now + 1200;
+	self.bot.next_weapon_switch = now + randomintrange(15000, 30000);
+	self.bot.reload_until_full = undefined;
+	
+	return true;
 }
 
 bot_has_ballistic_knife()
@@ -456,6 +866,12 @@ bot_should_melee()
 	if(is_true(threat.is_brutus) || is_true(threat.is_mechz))
 		return false;
 	
+	// A knife swing leaves the bot standing still; don't do it while several zombies are hitting us.
+	self bot_update_situation();
+	
+	if(!insta_kill_on && self.bot.close_count >= 3)
+		return false;
+	
     melee_range = getdvarfloatdefault("bot_meleedist", 70);
 	
     if(distance(self.origin, threat.origin) > melee_range)
@@ -489,6 +905,123 @@ bot_combat_melee()
     self.bot.is_meleeing = undefined;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Grenades
+// ---------------------------------------------------------------------------------------------
+
+bot_get_grenade_required_cluster()
+{
+	round_number = 1;
+	
+	if(isdefined(level.round_number))
+		round_number = level.round_number;
+	
+	required = 5;
+	
+	if(round_number >= 10)
+		required = 4;
+	
+	if(round_number >= 25)
+		required = 3;
+	
+	// In trouble: a grenade on a smaller group is still worth it.
+	if(self bot_health_fraction() < 0.5 && required > 3)
+		required--;
+	
+	return required;
+}
+
+// Finds the densest group of zombies (250 unit blast radius) and returns the point to throw at.
+bot_find_grenade_cluster()
+{
+	zombies = get_cached_zombies();
+	
+	if(!isdefined(zombies) || zombies.size == 0)
+		return undefined;
+	
+	valid = [];
+	
+	foreach(zombie in zombies)
+	{
+		if(!isdefined(zombie) || !isalive(zombie))
+			continue;
+		
+		if(self threat_should_ignore(zombie))
+			continue;
+		
+		if(is_true(zombie.in_the_ground))
+			continue;
+		
+		if(distancesquared(self.origin, zombie.origin) > 1000000)
+			continue;
+		
+		valid[valid.size] = zombie;
+	}
+	
+	required = self bot_get_grenade_required_cluster();
+	
+	if(valid.size < required)
+		return undefined;
+	
+	radius_sq = 250 * 250;
+	
+	best_count = 0;
+	best_index = -1;
+	
+	for(i = 0; i < valid.size; i++)
+	{
+		count = 0;
+		
+		for(j = 0; j < valid.size; j++)
+		{
+			if(distancesquared(valid[i].origin, valid[j].origin) <= radius_sq)
+				count++;
+		}
+		
+		if(count > best_count)
+		{
+			best_count = count;
+			best_index = i;
+		}
+	}
+	
+	if(best_index < 0 || best_count < required)
+		return undefined;
+	
+	center = valid[best_index].origin;
+	
+	sum = (0, 0, 0);
+	
+	members = 0;
+	
+	for(j = 0; j < valid.size; j++)
+	{
+		if(distancesquared(center, valid[j].origin) <= radius_sq)
+		{
+			sum += valid[j].origin;
+			
+			members++;
+		}
+	}
+	
+	if(members == 0)
+		return undefined;
+	
+	target = sum * (1.0 / members);
+	
+	// Safe distance: never blow ourselves up.
+	if(distancesquared(self.origin, target) < 90000)
+		return undefined;
+	
+	// Needs a clear lob, otherwise the grenade bounces back at us.
+	if(!sighttracepassed(self geteyeapprox(), target + (0, 0, 40), 0, self))
+		return undefined;
+	
+	self.bot.grenade_cluster_count = best_count;
+	
+	return target;
+}
+
 bot_should_throw_grenade()
 {
     if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
@@ -518,32 +1051,20 @@ bot_should_throw_grenade()
     if(isdefined(self.bot.next_grenade_throw) && gettime() < self.bot.next_grenade_throw)
         return false;
 
-    throw_dist_sq = distancesquared(self.origin, threat.origin);
-
-    if(throw_dist_sq < 40000 || throw_dist_sq > 1000000)
-        return false;
-
-    required_cluster = 5;
+	// Don't stop shooting to throw a grenade when zombies are already on us.
+	self bot_update_situation();
 	
-    cluster_radius_sq = 600 * 600;
+	if(self.bot.close_count >= 2)
+		return false;
+
+	target = self bot_find_grenade_cluster();
 	
-    cluster_count = 0;
-
-    zombies = get_cached_zombies();
-
-    foreach(zombie in zombies)
-    {
-        if(!isalive(zombie))
-            continue;
-
-        if(threat_should_ignore(zombie))
-            continue;
-
-        if(distancesquared(threat.origin, zombie.origin) <= cluster_radius_sq)
-            cluster_count++;
-    }
-
-    return cluster_count >= required_cluster;
+	if(!isdefined(target))
+		return false;
+	
+	self.bot.grenade_target = target;
+	
+    return true;
 }
 
 bot_combat_throw_grenade()
@@ -556,9 +1077,12 @@ bot_combat_throw_grenade()
 
     self.bot.is_throwing_grenade = true;
 
-    round_number = isdefined(level.round_number) ? level.round_number : 1;
+    round_number = 1;
 	
-    self.bot.next_grenade_throw = gettime() + randomintrange(5000, 30000) + (round_number * 500);
+	if(isdefined(level.round_number))
+		round_number = level.round_number;
+	
+    self.bot.next_grenade_throw = gettime() + randomintrange(4000, 15000) + (round_number * 100);
 
     target = self.bot.threat.entity;
 	
@@ -571,9 +1095,12 @@ bot_combat_throw_grenade()
 
     if(isdefined(weapon) && isdefined(target) && isalive(target))
     {
-        grenade_target = self bot_get_grenade_cluster_center(target);
+        grenade_target = self.bot.grenade_target;
+		
+		if(!isdefined(grenade_target))
+			grenade_target = self bot_get_grenade_cluster_center(target);
 
-        // Never use a cluster centroid that is dangerously close to the bot.
+        // Never use a point that is dangerously close to the bot.
         if(distancesquared(self.origin, grenade_target) < 62500)
             grenade_target = target.origin;
 
@@ -585,6 +1112,8 @@ bot_combat_throw_grenade()
                 wait 0.05;
         }
     }
+	
+	self.bot.grenade_target = undefined;
 
     self.bot.is_throwing_grenade = undefined;
 }
@@ -603,11 +1132,11 @@ bot_get_grenade_cluster_center(threat)
     sum_y = 0;
     sum_z = 0;
     count = 0;
-    cluster_radius_sq = 600 * 600;
+    cluster_radius_sq = 250 * 250;
 
     foreach(zombie in zombies)
     {
-        if(!isdefined(zombie) || !isalive(zombie) || threat_should_ignore(zombie))
+        if(!isdefined(zombie) || !isalive(zombie) || self threat_should_ignore(zombie))
             continue;
 
         if(distancesquared(threat.origin, zombie.origin) > cluster_radius_sq)
@@ -624,6 +1153,10 @@ bot_get_grenade_cluster_center(threat)
 
     return (sum_x / count, sum_y / count, sum_z / count);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Weapon helpers / aiming
+// ---------------------------------------------------------------------------------------------
 
 bot_should_hip_fire()
 {
@@ -685,6 +1218,29 @@ bot_should_hip_fire()
 	return distsq < (distcheck * distcheck);
 }
 
+// Max distance at which a weapon type is worth firing at a zombie.
+bot_engagement_range(weapon)
+{
+	if(!isdefined(weapon) || weapon == "none")
+		return 1500;
+	
+	if(self bot_is_splash_weapon(weapon))
+		return 1200;
+	
+	class = weaponclass(weapon);
+	
+	if(class == "spread")
+		return 650;
+	
+	if(class == "pistol")
+		return 1000;
+	
+	if(class == "smg")
+		return 1200;
+	
+	return 2200;
+}
+
 bot_lookat_entity(entity)
 {
 	if(isplayer(entity) && entity getstance() != "prone")
@@ -722,6 +1278,27 @@ bot_combat_lookat(origin, frac)
     self lookat(origin);
 }
 
+// Only normal zombies are known to have a j_head tag; everything else (dogs, bosses, ...) gets a body shot.
+bot_can_headshot(ent)
+{
+	if(!isdefined(ent) || isplayer(ent))
+		return false;
+	
+	if(!isdefined(ent.animname) || ent.animname != "zombie")
+		return false;
+	
+	weapon = self getcurrentweapon();
+	
+	if(weapon == "none")
+		return false;
+	
+	// Pellets spread and explosions don't care about heads.
+	if(weaponclass(weapon) == "spread" || self bot_is_splash_weapon(weapon))
+		return false;
+	
+	return true;
+}
+
 bot_update_aim(frames)
 {
 	ent = self.bot.threat.entity;
@@ -733,8 +1310,26 @@ bot_update_aim(frames)
 
 	prediction = self predictposition(ent, frames);
 	
-	if(!threat_is_player())
+	if(!self threat_is_player())
 	{
+		if(self bot_can_headshot(ent))
+		{
+			head = ent gettagorigin("j_head");
+			
+			if(isdefined(head))
+			{
+				head_height = head[2] - ent.origin[2];
+				
+				if(head_height < 15)
+					head_height = 15;
+				
+				if(head_height > 80)
+					head_height = 80;
+				
+				return prediction + (0, 0, head_height);
+			}
+		}
+		
 		centroid = ent getcentroid();
 		
 		height = centroid[2] - prediction[2];
@@ -757,8 +1352,12 @@ bot_get_fire_radius(aim_point)
 	dist = distance(self getplayercamerapos(), aim_point);
 
 	radius = dist * 0.05;
+	
+	// Up close a hit anywhere on the body is fine.
+	if(dist < 150)
+		radius += 10;
 
-	return clamp(radius, 18, 40);
+	return clamp(radius, 18, 44);
 }
 
 bot_on_target(aim_target, radius)
@@ -797,6 +1396,9 @@ bot_dot_product(origin)
 
 bot_can_do_combat()
 {
+	if(is_true(self.bot.is_objective_using))
+		return 0;
+
 	if(self ismantling() || self isonladder())
 	{
 		return 0;
@@ -832,6 +1434,18 @@ bot_has_enemy()
 	return 0;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Target selection
+// ---------------------------------------------------------------------------------------------
+
+bot_is_special_zombie(zombie)
+{
+	if(is_true(zombie.isscreecher) || is_true(zombie.is_brutus) || is_true(zombie.is_mechz) || is_true(zombie.is_avogadro))
+		return true;
+	
+	return false;
+}
+
 bot_best_enemy()
 {
     enemies = get_cached_zombies();
@@ -843,24 +1457,106 @@ bot_best_enemy()
     }
 
     wallshoot_range = getdvarfloatdefault("bot_wallshoot_dist", 200);
-    switch_objective = 250;
+    switch_margin = 250;
     revive_point = undefined;
 
     if(maps\mp\zombies\_zm_laststand::player_any_player_in_laststand())
         revive_point = self get_active_revive_point();
 
+    weapon = self getcurrentweapon();
+    splash = self bot_is_splash_weapon(weapon);
+    max_range = self bot_engagement_range(weapon);
+
     current = self.bot.threat.entity;
-    current_score = undefined;
-    best = undefined;
-    best_score = -999999999;
     now = gettime();
+    eye = self geteyeapprox();
+
+    // ---- Step 1: keep only the nearest few candidates so we only pay for a few visibility traces.
+    // Bosses are sorted as if they were closer so they never fall out of the candidate list.
+    max_cand = 8;
+    cand = [];
+    cand_key = [];
 
     foreach(zombie in enemies)
     {
         if(!isdefined(zombie) || !isalive(zombie))
             continue;
 
-        if(threat_should_ignore(zombie))
+        if(self threat_should_ignore(zombie))
+            continue;
+
+        if(is_true(zombie.in_the_ground))
+            continue;
+
+        dist = distance(self.origin, zombie.origin);
+
+        if(dist > max_range)
+            continue;
+
+        key = dist;
+
+        if(is_true(zombie.is_brutus) || is_true(zombie.is_mechz))
+            key -= 400;
+
+        pos = cand.size;
+
+        for(i = 0; i < cand.size; i++)
+        {
+            if(key < cand_key[i])
+            {
+                pos = i;
+                break;
+            }
+        }
+
+        if(pos >= max_cand)
+            continue;
+
+        last = cand.size;
+
+        if(last >= max_cand)
+            last = max_cand - 1;
+
+        for(j = last; j > pos; j--)
+        {
+            cand[j] = cand[j - 1];
+            cand_key[j] = cand_key[j - 1];
+        }
+
+        cand[pos] = zombie;
+        cand_key[pos] = key;
+    }
+
+    // Keep the current target in the list so hysteresis can work even if it's now slightly out of the top few.
+    current_in_list = false;
+
+    if(isdefined(current) && isalive(current))
+    {
+        for(i = 0; i < cand.size; i++)
+        {
+            if(cand[i] == current)
+            {
+                current_in_list = true;
+                break;
+            }
+        }
+    }
+
+    if(!current_in_list && isdefined(current) && isalive(current) && !self threat_should_ignore(current) && distance(self.origin, current.origin) <= max_range)
+        cand[cand.size] = current;
+
+    // ---- Step 2: score them.
+    current_score = undefined;
+    current_visible = true;
+    best = undefined;
+    best_score = -999999999;
+    best_visible = true;
+
+    for(i = 0; i < cand.size; i++)
+    {
+        zombie = cand[i];
+
+        if(!isdefined(zombie) || !isalive(zombie))
             continue;
 
         dist = distance(self.origin, zombie.origin);
@@ -869,7 +1565,7 @@ bot_best_enemy()
         // Very close threats are actionable without spending a trace on each one.
         if(dist > 100)
             // MP bot sight helper is unavailable in the Zombies script VM.
-            visible = sighttracepassed(self geteyeapprox(), zombie.origin + (0, 0, 32), 0, self);
+            visible = sighttracepassed(eye, zombie.origin + (0, 0, 32), 0, self);
 
         // Allow a very small wall-shoot buffer, but strongly prefer actual line of sight.
         if(!visible && dist > wallshoot_range)
@@ -892,6 +1588,18 @@ bot_best_enemy()
            isdefined(self.bot.attacker_time) && now - self.bot.attacker_time < 2000)
             score += 550;
 
+        // Zombies that are actively chasing this bot go first.
+        if(isdefined(zombie.favoriteenemy) && zombie.favoriteenemy == self)
+            score += 150;
+
+        // Weak zombies die fast: removing them reduces incoming damage cheaply.
+        if(isdefined(zombie.health) && zombie.health <= 150)
+            score += 120;
+
+        // Legless crawlers are slow, only worry about them when they are close.
+        if(isdefined(zombie.has_legs) && !zombie.has_legs && dist > 200)
+            score -= 150;
+
         // Special threats are more dangerous than ordinary zombies.
         if(is_true(zombie.isscreecher))
             score += 450;
@@ -901,6 +1609,20 @@ bot_best_enemy()
 
         if(is_true(zombie.is_avogadro))
             score += 300;
+
+        // Explosive weapons: prefer the zombie in the middle of a crowd.
+        if(splash)
+        {
+            neighbours = 0;
+
+            for(j = 0; j < cand.size; j++)
+            {
+                if(i != j && isdefined(cand[j]) && distancesquared(zombie.origin, cand[j].origin) < 22500)
+                    neighbours++;
+            }
+
+            score += neighbours * 60;
+        }
 
         if(isdefined(revive_point))
         {
@@ -913,12 +1635,16 @@ bot_best_enemy()
         }
 
         if(isdefined(current) && zombie == current)
+        {
             current_score = score;
+            current_visible = visible;
+        }
 
         if(score > best_score)
         {
             best_score = score;
             best = zombie;
+            best_visible = visible;
         }
     }
 
@@ -928,17 +1654,25 @@ bot_best_enemy()
         return 0;
     }
 
+    // Stick with a zombie that is already in our face and being shot.
+    if(isdefined(current) && isalive(current) && distance(self.origin, current.origin) < 120)
+        switch_margin = 400;
+
     // Hysteresis prevents the bot from endlessly swapping between equally close targets.
-    if(isdefined(current_score) && best != current && (best_score - current_score) < switch_objective)
+    if(isdefined(current_score) && best != current && (best_score - current_score) < switch_margin)
+    {
         best = current;
+        best_visible = current_visible;
+    }
 
     if(!isdefined(current) || best != current)
         self.bot.threat.time_first_sight = now;
 
     self.bot.threat.entity = best;
     self.bot.threat.time_recent_sight = now;
-    self.bot.threat.dot = bot_dot_product(best.origin);
+    self.bot.threat.dot = self bot_dot_product(best.origin);
     self.bot.threat.position = best.origin;
+    self.bot.threat.visible = best_visible;
 
     return 1;
 }
@@ -974,11 +1708,8 @@ threat_should_ignore(entity)
 
 bot_combat_dead(damage)
 {
-	wait 0.1;
-	
+	// Retarget immediately instead of freezing for a third of a second.
 	self allowattack(0);
-	
-	wait_endon(0.25, "damage");
 	
 	self bot_clear_enemy();
 }
@@ -988,6 +1719,7 @@ bot_clear_enemy()
 	self clearlookat();
 	
 	self.bot.threat.entity = undefined;
+	self.bot.threat.visible = undefined;
 }
 
 threat_dead()
