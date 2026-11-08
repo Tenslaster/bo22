@@ -58,8 +58,9 @@ bot_origins_hold_generator_zone(zone)
     goal_mode = "";
     hold_deadline = gettime() + 180000;
 
+    // Keep the movement/quest lock separate from the combat-action lock.
+    // The bot must continue shooting while it defends the generator.
     self.bot.is_holding_generator = 1;
-    self.bot.is_objective_using = 1;
 
     // The stock capture radius is 220 units in 2D and excludes players whose
     // Z is more than 20 units below the zone origin. Stay inside 180 units.
@@ -89,7 +90,6 @@ bot_origins_hold_generator_zone(zone)
 
     self cancelgoal(goal_name);
     self.bot.is_holding_generator = undefined;
-    self.bot.is_objective_using = undefined;
 
     if(zone ent_flag("player_controlled"))
     {
@@ -1610,8 +1610,13 @@ bot_quest_origins()
     if(getdvar("mapname") != "zm_tomb")
         return;
 
-    // Opening priorities: shovel first, then generator control and the
-    // gramophone door once its stock vinyl pickup event has fired.
+    // An active generator capture is the squad's highest-priority objective.
+    // Reinforce it before individual shovel, dig, or staff errands can pull
+    // otherwise-idle bots away from the capture volume.
+    if(flag("zone_capture_in_progress") && self bot_quest_origins_generators())
+        return;
+
+    // Opening priorities when no generator capture is active.
     if(self bot_quest_origins_shovel())
         return;
     if(self bot_quest_origins_generators())
