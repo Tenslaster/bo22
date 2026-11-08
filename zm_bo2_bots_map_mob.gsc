@@ -670,10 +670,8 @@ bot_mob_afterlife_needs_entry()
     return false;
 }
 
-// Use a real ZM_PRISON_AFTERLIFE_KILL unitrigger, not a fabricated event.
-// A successful activation runs stock afterlife_trigger_think(), consumes
-// one life, and lets the stock Afterlife laststand/mana behavior take over.
-// Activate the bot's actual per-player stock Afterlife unitrigger.
+// Use the real ZM_PRISON_AFTERLIFE_KILL unitrigger. Its stock callback
+// consumes the life and starts Afterlife; the bot never edits those states.
 // Mob's trigger is created by _zm_unitrigger and its callback owns the real
 // life consumption / afterlife_laststand transition. Sending its native
 // "trigger" notification avoids the unreliable bot look-at + use-button path.
@@ -816,7 +814,6 @@ bot_mob_afterlife_entry_think()
     best_trigger.bot_mob_entry_owner = self;
     best_trigger.bot_mob_entry_until = gettime() + 15000;
 
-    self.bot_mob_afterlife_retry_until = gettime() + 3000;
     if(self bot_mob_activate_afterlife_trigger(best_trigger, "bot_mob_afterlife_kill"))
     {
         self.bot_mob_afterlife_retry_until = undefined;
@@ -827,6 +824,7 @@ bot_mob_afterlife_entry_think()
 
     // The stock trigger did not consume the bot's life; release the claim so
     // another bot can try a different entrance while this bot waits briefly.
+    self.bot_mob_afterlife_retry_until = gettime() + 3000;
     best_trigger.bot_mob_entry_owner = undefined;
     best_trigger.bot_mob_entry_until = undefined;
     return false;
