@@ -673,6 +673,94 @@ bot_mob_afterlife_needs_entry()
 // Use a real ZM_PRISON_AFTERLIFE_KILL unitrigger, not a fabricated event.
 // A successful activation runs stock afterlife_trigger_think(), consumes
 // one life, and lets the stock Afterlife laststand/mana behavior take over.
+// Activate the bot's actual per-player stock Afterlife unitrigger.
+// Mob's trigger is created by _zm_unitrigger and its callback owns the real
+// life consumption / afterlife_laststand transition. Sending its native
+// "trigger" notification avoids the unreliable bot look-at + use-button path.
+bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
+{
+    if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
+       !isdefined(trigger_struct.unitrigger_stub))
+        return false;
+
+    if(!isdefined(goal_name))
+        goal_name = "bot_mob_afterlife_kill";
+
+    stub = trigger_struct.unitrigger_stub;
+    unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+    if(!isdefined(unitrigger_trigger_func))
+        return false;
+
+    if(!findpath(self.origin, trigger_struct.origin, undefined, 0, 1))
+        return false;
+
+    // Stop inside the stock 36-unit use radius and the unitrigger manager's
+    // 42-unit vertical scan band (which measures from player origin + 35).
+    self addgoal(trigger_struct.origin, 20, 2, goal_name);
+    deadline = gettime() + 10000;
+    arrived = false;
+
+    while(gettime() < deadline)
+    {
+        if(is_true(self.afterlife))
+        {
+            self cancelgoal(goal_name);
+            return true;
+        }
+
+        if(!self bot_objective_can_run() ||
+           !isdefined(trigger_struct) || !isdefined(trigger_struct.origin))
+            break;
+
+        if(distancesquared(self.origin, trigger_struct.origin) <= 20 * 20)
+        {
+            arrived = true;
+            break;
+        }
+
+        wait 0.1;
+    }
+
+    self cancelgoal(goal_name);
+    if(!arrived || is_true(self.afterlife))
+        return is_true(self.afterlife);
+
+    self.bot.is_objective_using = 1;
+    use_trigger = undefined;
+
+    // The stock unitrigger manager creates one trigger per player. Wait for
+    // this bot's trigger and its stock afterlife_trigger_think thread.
+    for(i = 0; i < 30; i++)
+    {
+        if(is_true(self.afterlife))
+            break;
+
+        if(isdefined(stub.playertrigger) &&
+           isdefined(stub.playertrigger[self getentitynumber()]))
+        {
+            use_trigger = stub [[ unitrigger_trigger_func ]](self);
+            if(isdefined(use_trigger) && isdefined(use_trigger.thread_running) &&
+               use_trigger.thread_running)
+                break;
+        }
+
+        wait 0.1;
+    }
+
+    // This is the exact trigger entity built from the stock
+    // ZM_PRISON_AFTERLIFE_KILL stub; its waiting stock callback is what
+    // performs the transition. Do not set self.afterlife or lives here.
+    if(!is_true(self.afterlife) && isdefined(use_trigger) &&
+       isdefined(use_trigger.thread_running) && use_trigger.thread_running)
+    {
+        use_trigger notify("trigger", self);
+        wait 0.25;
+    }
+
+    self.bot.is_objective_using = undefined;
+    return is_true(self.afterlife);
+}
+
 bot_mob_afterlife_entry_think()
 {
     if(!isdefined(self.lives) || self.lives <= 0 ||
