@@ -82,6 +82,10 @@ bot_quest_origins_shovel()
     if(!isdefined(best_stub) || !isdefined(best_shovel))
         return false;
 
+    // Allow this scripted bot through the stock unitrigger manager filter;
+    // the native shovel callback still validates its per-player trigger.
+    best_stub.ignore_player_valid = 1;
+
     // The shovel model is at floor height; the stock use trigger is 32 units
     // above it. Navigate to the model position, not the elevated trigger
     // center (a 24-unit 3D arrival test can never be satisfied on level ground).
@@ -247,7 +251,10 @@ bot_quest_origins_generators()
         return false;
 
     if(isdefined(best_trigger))
+    {
+        best_trigger.ignore_player_valid = 1;
         target_origin = best_trigger.origin;
+    }
     else
         target_origin = best_zone.origin;
 
