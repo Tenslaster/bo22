@@ -838,11 +838,36 @@ BuildMenuStructure()
     // --- ORIGINS (only present on zm_tomb) ---
     if(level.script == "zm_tomb")
     {
+        self addMenuOpt("origins", "Give Myself Shovel", ::MM_OriginsGiveShovel);
+        self addMenuOpt("origins", "Give Myself Golden Shovel", ::MM_OriginsGiveGoldenShovel);
+        self addMenuOpt("origins", "Give Myself Golden Helmet", ::MM_OriginsGiveGoldenHelmet);
+        self addToggleOpt("origins", "Dig Site ESP", ::MM_OriginsToggleDigESP, "origdigesp");
+        self addMenuOpt("origins", "Staff Progress Tracker", ::MM_OriginsStaffProgress);
+        self addMenuOpt("origins", "Maxis Drone: Recall / Recover", ::MM_OriginsRecoverDrone);
+        self addSubMenu("origins", "One Inch Punch", "originspunch");
+        self addToggleOpt("origins", "Robot Foot Warning", ::MM_OriginsToggleRobotWarning, "origrobotwarn");
+        self addMenuOpt("origins", "Tank Status", ::MM_OriginsTankStatus);
+        self addMenuOpt("origins", "Call Tank (500 Points)", ::MM_OriginsCallTank);
+        self addSubMenu("origins", "Crazy Place / Map Teleports", "originsteleport");
         self addMenuOpt("origins", "Collect All Shared Parts", ::MM_OriginsCollectAllSharedParts);
         self addToggleOpt("origins", "Auto-Collect Shared Parts", ::MM_OriginsToggleAutoCollect, "origcollect");
         self addMenuOpt("origins", "Force All Four Staff Upgrades", ::MM_OriginsUpgradeAllStaffs);
         self addMenuOpt("origins", "Turn On All Generators (Pack-a-Punch)", ::MM_OriginsTurnOnAllGenerators);
         self addToggleOpt("origins", "Ignore Mud Slowdown", ::MM_OriginsToggleNoMudSlow, "nomud");
+
+        self addMenuOpt("originspunch", "Basic One Inch Punch", ::MM_OriginsGivePunch, "normal");
+        self addMenuOpt("originspunch", "Upgraded One Inch Punch", ::MM_OriginsGivePunch, "upgraded");
+        self addMenuOpt("originspunch", "Wind Elemental Punch", ::MM_OriginsGivePunch, "air");
+        self addMenuOpt("originspunch", "Fire Elemental Punch", ::MM_OriginsGivePunch, "fire");
+        self addMenuOpt("originspunch", "Ice Elemental Punch", ::MM_OriginsGivePunch, "ice");
+        self addMenuOpt("originspunch", "Lightning Elemental Punch", ::MM_OriginsGivePunch, "lightning");
+
+        self addMenuOpt("originsteleport", "Teleport to Crazy Place", ::MM_OriginsTeleportCrazyPlace);
+        self addMenuOpt("originsteleport", "Return via Fire Portal", ::MM_OriginsTeleportMainMap, 1);
+        self addMenuOpt("originsteleport", "Return via Wind Portal", ::MM_OriginsTeleportMainMap, 2);
+        self addMenuOpt("originsteleport", "Return via Lightning Portal", ::MM_OriginsTeleportMainMap, 3);
+        self addMenuOpt("originsteleport", "Return via Ice Portal", ::MM_OriginsTeleportMainMap, 4);
+
         if(self isHost())
             self addMenuOpt("origins", "Complete Little Lost Girl (ends match)", ::MM_OriginsConfirmCompleteSecret);
         self.menuParents["origins"] = "main";
@@ -2657,6 +2682,565 @@ ESPLoop()
 //  Uses the real Origins staff, craftable and Easter-egg flags from the
 //  Plutonium T6 stock scripts. Included by zm_modmenu.gsc.
 // ============================================================================
+
+MM_OriginsGiveShovel()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1The shovel is only available on Origins.");
+        return;
+    }
+
+    if(!isDefined(self.dig_vars))
+    {
+        self iprintln("^1Origins digging system is not initialized yet. Try again after spawning.");
+        return;
+    }
+
+    // Match the stock Origins shovel inventory and per-player HUD clientfield.
+    self.dig_vars["has_shovel"] = 1;
+    player_number = self getentitynumber() + 1;
+    level setclientfield("shovel_player" + player_number, 1);
+    self iprintlnbold("^2Origins shovel given.");
+}
+
+MM_OriginsGiveGoldenShovel()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1The Golden Shovel is only available on Origins.");
+        return;
+    }
+
+    if(!isDefined(self.dig_vars))
+    {
+        self iprintln("^1Origins digging system is not initialized yet. Try again after spawning.");
+        return;
+    }
+
+    self.dig_vars["has_shovel"] = 1;
+    self.dig_vars["has_upgraded_shovel"] = 1;
+    player_number = self getentitynumber() + 1;
+    level setclientfield("shovel_player" + player_number, 2);
+
+    // The upgraded shovel also unlocks the stock personal Zombie Blood dig
+    // spots. Start that stock thread only once for this player.
+    if(!isDefined(self.mmGoldenDigSpotStarted))
+    {
+        bloodDigFunc = getfunction("maps/mp/zm_tomb_dig", "ee_zombie_blood_dig");
+        if(isDefined(bloodDigFunc))
+        {
+            self.mmGoldenDigSpotStarted = true;
+            self thread [[ bloodDigFunc ]]();
+        }
+    }
+
+    self playsoundtoplayer("zmb_squest_golden_anything", self);
+    self iprintlnbold("^2Golden Shovel given.");
+}
+
+MM_OriginsGiveGoldenHelmet()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1The Golden Helmet is only available on Origins.");
+        return;
+    }
+
+    if(!isDefined(self.dig_vars))
+    {
+        self iprintln("^1Origins digging system is not initialized yet. Try again after spawning.");
+        return;
+    }
+
+    // Set only this player's stock helmet state and HUD clientfield.
+    self.dig_vars["has_helmet"] = 1;
+    player_number = self getentitynumber() + 1;
+    level setclientfield("helmet_player" + player_number, 1);
+    self iprintlnbold("^2Golden Helmet given.");
+}
+
+// The Origins digging system exposes the live mound models through
+// level.a_dig_spots[].m_dig. This ESP tracks active mounds only; buried spots
+// that have not spawned a visible mound are intentionally not marked.
+MM_OriginsToggleDigESP()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Dig Site ESP is only available on Origins.");
+        return;
+    }
+
+    self scripts\zm\zm_modmenu::MM_Toggle("origdigesp", "Origins Dig Site ESP", ::MM_OriginsDigESPLoop);
+}
+
+MM_OriginsDigESPLoop()
+{
+    self endon("disconnect");
+
+    if(isDefined(self.mmOriginsDigESPActive) && self.mmOriginsDigESPActive)
+        return;
+
+    self.mmOriginsDigESPActive = true;
+    maxDots = 24;
+    huds = [];
+    for(i = 0; i < maxDots; i++)
+        huds[i] = self MM_CreatePartESPDot();
+
+    while(self scripts\zm\zm_modmenu::MM_IsOn("origdigesp"))
+    {
+        if(level.script != "zm_tomb" || !isDefined(level.a_dig_spots))
+        {
+            for(i = 0; i < maxDots; i++)
+                huds[i].alpha = 0;
+            wait 0.25;
+            continue;
+        }
+
+        spots = [];
+        foreach(spot in level.a_dig_spots)
+        {
+            if(!isDefined(spot) || (isDefined(spot.dug) && spot.dug))
+                continue;
+            if(!isDefined(spot.m_dig) || !isDefined(spot.m_dig.origin))
+                continue;
+            spots[spots.size] = spot.m_dig;
+        }
+
+        used = [];
+        for(slot = 0; slot < maxDots; slot++)
+        {
+            bestIdx = -1;
+            bestDistance = 999999999;
+            foreach(idx, mound in spots)
+            {
+                if(isDefined(used[idx]) || !isDefined(mound) || !isDefined(mound.origin))
+                    continue;
+                distanceNow = distancesquared(self.origin, mound.origin);
+                if(distanceNow < bestDistance)
+                {
+                    bestDistance = distanceNow;
+                    bestIdx = idx;
+                }
+            }
+
+            if(bestIdx < 0)
+            {
+                huds[slot].alpha = 0;
+                continue;
+            }
+
+            used[bestIdx] = true;
+            mound = spots[bestIdx];
+            huds[slot].x = mound.origin[0];
+            huds[slot].y = mound.origin[1];
+            huds[slot].z = mound.origin[2] + 35;
+            huds[slot].color = (1, 0.75, 0.1);
+            huds[slot].alpha = 1;
+        }
+        wait 0.15;
+    }
+
+    foreach(hud in huds)
+    {
+        if(isDefined(hud))
+            hud destroy();
+    }
+    self.mmOriginsDigESPActive = false;
+}
+
+MM_OriginsStaffProgress()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Staff tracker is only available on Origins.");
+        return;
+    }
+
+    self iprintlnbold("^3ORIGINS STAFF PROGRESS");
+    self MM_OriginsPrintStaffState("Wind", "elemental_staff_air", "staff_air_zm", "staff_air_zm_upgrade_unlocked", 2);
+    self MM_OriginsPrintStaffState("Fire", "elemental_staff_fire", "staff_fire_zm", "staff_fire_zm_upgrade_unlocked", 1);
+    self MM_OriginsPrintStaffState("Lightning", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_zm_upgrade_unlocked", 3);
+    self MM_OriginsPrintStaffState("Ice", "elemental_staff_water", "staff_water_zm", "staff_water_zm_upgrade_unlocked", 4);
+
+    if(flag("ee_all_staffs_placed"))
+        self iprintln("^2All four staffs are placed in the robots.");
+    else
+        self iprintln("^3All staffs placed: NO");
+}
+
+MM_OriginsPrintStaffState(label, craftableName, weaponName, upgradeFlag, crystalIndex)
+{
+    built = false;
+    upgraded = flag(upgradeFlag);
+    placed = false;
+    partsPickedUp = 0;
+    crystalHeld = isDefined(self.crystal_id) && self.crystal_id == crystalIndex;
+
+    if(isDefined(level.craftables_crafted) && isDefined(level.craftables_crafted[craftableName]) && level.craftables_crafted[craftableName])
+        built = true;
+
+    if(isDefined(level.num_staffpieces_picked_up) && isDefined(level.num_staffpieces_picked_up[craftableName]))
+        partsPickedUp = level.num_staffpieces_picked_up[craftableName];
+
+    // The stock robot-head interaction marks the UPGRADED staff entity as
+    // ee_in_use, so inspect the upgraded entity registry for placed staffs.
+    if(isDefined(level.a_elemental_staffs_upgraded))
+    {
+        foreach(staff in level.a_elemental_staffs_upgraded)
+        {
+            if(!isDefined(staff) || !isDefined(staff.base_weapname) || staff.base_weapname != weaponName)
+                continue;
+            if(isDefined(staff.ee_in_use) && staff.ee_in_use)
+                placed = true;
+        }
+    }
+
+    status = "^1Not built";
+    if(built)
+        status = "^2Built";
+    if(upgraded)
+        status = status + " ^7| ^2Upgraded";
+    else
+        status = status + " ^7| ^1Not upgraded";
+    if(placed)
+        status = status + " ^7| ^2Placed";
+    else
+        status = status + " ^7| ^3Not placed";
+    gemStatus = "^3Gem not held";
+    if(crystalHeld)
+        gemStatus = "^2Gem held";
+    self iprintln("^7" + label + ": ^7Parts " + partsPickedUp + " / 3 ^7| " + gemStatus);
+    self iprintln("^7  " + status);
+}
+
+MM_OriginsRecoverDrone()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Maxis Drone Recovery is only available on Origins.");
+        return;
+    }
+
+    if(!isDefined(level.maxis_quadrotor))
+    {
+        self iprintln("^3No active Maxis drone is currently flying.");
+        return;
+    }
+
+    // This is the native notification watched by the stock drone controller;
+    // it sends the live drone back to its build/pickup table.
+    level notify("drone_should_return");
+    self iprintln("^2Maxis drone recall requested.");
+}
+
+MM_OriginsGivePunch(element)
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1One Inch Punch is only available on Origins.");
+        return;
+    }
+
+    if(!isDefined(element))
+        element = "normal";
+
+    punchFunc = getfunction("maps/mp/zombies/_zm_weap_one_inch_punch", "one_inch_punch_melee_attack");
+    if(!isDefined(punchFunc))
+    {
+        self iprintln("^1The stock One Inch Punch handler is not available.");
+        return;
+    }
+
+    if(element == "normal")
+    {
+        self.b_punch_upgraded = 0;
+        self.str_punch_element = "upgraded";
+    }
+    else
+    {
+        self.b_punch_upgraded = 1;
+        self.str_punch_element = element;
+    }
+
+    self thread [[ punchFunc ]]();
+    self iprintlnbold("^2One Inch Punch loadout requested: ^7" + element);
+}
+
+MM_OriginsToggleRobotWarning()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Robot Foot Warning is only available on Origins.");
+        return;
+    }
+
+    self scripts\zm\zm_modmenu::MM_Toggle("origrobotwarn", "Robot Foot Warning", ::MM_OriginsRobotWarningLoop);
+}
+
+MM_OriginsRobotWarningLoop()
+{
+    self endon("disconnect");
+
+    warning = newClientHudElem(self);
+    warning.horzAlign = "center";
+    warning.vertAlign = "top";
+    warning.alignX = "center";
+    warning.alignY = "top";
+    warning.x = 0;
+    warning.y = 28;
+    warning.font = "objective";
+    warning.fontScale = 1.7;
+    warning.foreground = true;
+    warning.hideWhenInMenu = true;
+    warning.sort = 1200;
+    warning.alpha = 0;
+
+    while(self scripts\zm\zm_modmenu::MM_IsOn("origrobotwarn"))
+    {
+        closest = undefined;
+        closestDist = 999999999;
+        if(isDefined(level.a_giant_robots))
+        {
+            foreach(robot in level.a_giant_robots)
+            {
+                if(!isDefined(robot) || !isDefined(robot.origin) || !isDefined(robot.is_walking) || !robot.is_walking)
+                    continue;
+                d = distancesquared(self.origin, robot.origin);
+                if(d < closestDist)
+                {
+                    closestDist = d;
+                    closest = robot;
+                }
+            }
+        }
+
+        if(isDefined(closest) && closestDist < 4000000)
+        {
+            safe = false;
+            if(isDefined(level.giant_robot_footstep_safe_spots))
+            {
+                foreach(safeSpot in level.giant_robot_footstep_safe_spots)
+                {
+                    if(isDefined(safeSpot) && self istouching(safeSpot))
+                    {
+                        safe = true;
+                        break;
+                    }
+                }
+            }
+
+            if(safe)
+            {
+                warning.color = (0.2, 1, 0.2);
+                warning setText("GIANT ROBOT MOVING - SAFE SPOT");
+            }
+            else
+            {
+                warning.color = (1, 0.15, 0.05);
+                warning setText("GIANT ROBOT APPROACHING - FIND COVER!");
+            }
+            warning.alpha = 1;
+        }
+        else
+            warning.alpha = 0;
+
+        wait 0.15;
+    }
+
+    if(isDefined(warning))
+        warning destroy();
+}
+
+MM_OriginsTankStatus()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Tank controls are only available on Origins.");
+        return;
+    }
+    tank = undefined;
+    if(isDefined(level.vh_tank))
+        tank = level.vh_tank;
+    if(!isDefined(tank))
+        tank = getent("tank", "targetname");
+    if(!isDefined(tank))
+    {
+        self iprintln("^1Origins tank entity is not available yet.");
+        return;
+    }
+
+    current = "unknown";
+    if(isDefined(tank.str_location_current))
+        current = tank.str_location_current;
+    next = "village";
+    if(current == "village")
+        next = "bunkers";
+    else if(current == "bunkers")
+        next = "village";
+
+    if(tank ent_flag("tank_moving"))
+        state = "^2MOVING";
+    else if(tank ent_flag("tank_cooldown"))
+        state = "^3COOLDOWN";
+    else if(tank ent_flag("tank_activated"))
+        state = "^3ACTIVATED";
+    else
+        state = "^2STOPPED";
+
+    self iprintlnbold("^3ORIGINS TANK STATUS");
+    self iprintln("^7State: " + state);
+    self iprintln("^7Current station: ^2" + current);
+    self iprintln("^7Next station: ^3" + next);
+}
+
+MM_OriginsCallTank()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Tank controls are only available on Origins.");
+        return;
+    }
+
+    tank = undefined;
+    if(isDefined(level.vh_tank))
+        tank = level.vh_tank;
+    if(!isDefined(tank))
+        tank = getent("tank", "targetname");
+    if(!isDefined(tank) || !isDefined(tank.t_use))
+    {
+        self iprintln("^1Tank use trigger is not available yet.");
+        return;
+    }
+    if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
+    {
+        self iprintln("^3The tank is already moving or activated.");
+        return;
+    }
+    if(tank ent_flag("tank_cooldown"))
+    {
+        self iprintln("^3The tank is cooling down. Try again after it is ready.");
+        return;
+    }
+    if(self.score < 500)
+    {
+        self iprintln("^1You need 500 points to call the tank.");
+        return;
+    }
+
+    // Let the stock use handler perform the payment and movement flags.
+    tank.t_use useby(self);
+    self iprintln("^2Tank call activated through the stock interaction.");
+}
+
+MM_OriginsTeleportFunc(name)
+{
+    if(!isDefined(level.mm_origins_teleport_funcs))
+        level.mm_origins_teleport_funcs = [];
+    if(!isDefined(level.mm_origins_teleport_funcs[name]))
+        level.mm_origins_teleport_funcs[name] = getfunction("maps/mp/zm_tomb_teleporter", name);
+    return level.mm_origins_teleport_funcs[name];
+}
+
+MM_OriginsTeleportHasFreeSpot(targetName)
+{
+    if(!isDefined(targetName) || targetName == "")
+        return false;
+    spots = getstructarray(targetName, "targetname");
+    if(!isDefined(spots) || spots.size < 1)
+        return false;
+    players = getplayers();
+    foreach(spot in spots)
+    {
+        if(!isDefined(spot) || !isDefined(spot.origin))
+            continue;
+        free = true;
+        foreach(player in players)
+        {
+            if(isDefined(player) && distance2dsquared(spot.origin, player.origin) < 4096)
+            {
+                free = false;
+                break;
+            }
+        }
+        if(free)
+            return true;
+    }
+    return false;
+}
+
+MM_OriginsTeleportCrazyPlace()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Crazy Place teleport is only available on Origins.");
+        return;
+    }
+    if(!flag("start_zombie_round_logic"))
+    {
+        self iprintln("^1Start the first round before teleporting.");
+        return;
+    }
+
+    pads = getstructarray("trigger_teleport_pad", "targetname");
+    teleportFunc = MM_OriginsTeleportFunc("stargate_teleport_player");
+    if(!isDefined(teleportFunc))
+    {
+        self iprintln("^1The stock Origins teleporter handler is unavailable.");
+        return;
+    }
+
+    foreach(pad in pads)
+    {
+        if(!isDefined(pad) || !isDefined(pad.target) || !isDefined(pad.script_int))
+            continue;
+        if(!flag("enable_teleporter_" + pad.script_int))
+            continue;
+        if(!MM_OriginsTeleportHasFreeSpot(pad.target))
+            continue;
+
+        level thread [[ teleportFunc ]](pad.target, self, 1.5, 1);
+        self iprintln("^2Crazy Place teleport started.");
+        return;
+    }
+    self iprintln("^1No active Crazy Place portal with a free landing spot was found.");
+}
+
+MM_OriginsTeleportMainMap(portalIndex)
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Map exit teleport is only available on Origins.");
+        return;
+    }
+    if(!isDefined(level.a_teleport_exit_triggers) || !isDefined(level.a_teleport_exit_triggers[portalIndex]))
+    {
+        self iprintln("^1That Crazy Place exit is not initialized yet.");
+        return;
+    }
+
+    exitTrigger = level.a_teleport_exit_triggers[portalIndex];
+    if(!isDefined(exitTrigger.origin) || distance2dsquared(self.origin, exitTrigger.origin) > 4000000)
+    {
+        self iprintln("^3You must be inside the Crazy Place to use a return portal.");
+        return;
+    }
+    if(!isDefined(exitTrigger.target) || !MM_OriginsTeleportHasFreeSpot(exitTrigger.target))
+    {
+        self iprintln("^1That exit has no available landing spot right now.");
+        return;
+    }
+
+    teleportFunc = MM_OriginsTeleportFunc("stargate_teleport_player");
+    if(!isDefined(teleportFunc))
+    {
+        self iprintln("^1The stock Origins teleporter handler is unavailable.");
+        return;
+    }
+
+    level thread [[ teleportFunc ]](exitTrigger.target, self, 1.5, 1);
+    self iprintln("^2Return to the Origins map started.");
+}
 
 MM_OriginsCollectAllSharedParts()
 {
