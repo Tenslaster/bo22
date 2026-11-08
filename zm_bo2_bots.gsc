@@ -3236,7 +3236,7 @@ bot_find_buildable_task()
 		if(isdefined(stub.bot_auto_equip_retry_until) && gettime() < stub.bot_auto_equip_retry_until)
 			continue;
 
-		if(stub.persistent == 1 && self has_player_equipment(stub.weaponname))
+		if(stub.persistent == 1 && (self has_player_equipment(stub.weaponname) || self hasweapon(stub.weaponname)))
 			continue;
 
 		if(stub.persistent == 2 && isdefined(stub.bought) && stub.bought)
@@ -3672,7 +3672,7 @@ bot_run_buildable_task(task)
 			   !isdefined(task.weaponname))
 				break;
 
-			if(task.stub.persistent == 1 && self has_player_equipment(task.weaponname))
+			if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
 				break;
 
 			if(task.stub.persistent == 2 && isdefined(task.stub.bought) && task.stub.bought)
@@ -3728,7 +3728,7 @@ bot_run_buildable_task(task)
 			}
 			else
 			{
-				if(task.stub.persistent == 1 && self has_player_equipment(task.weaponname))
+				if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
 					break;
 
 				if(task.stub.persistent == 2 && isdefined(task.stub.bought) && task.stub.bought)
@@ -3798,7 +3798,7 @@ bot_run_buildable_task(task)
 
 	if(task.kind == "equip" && isdefined(task.stub))
 	{
-		if((task.stub.persistent == 1 && !self has_player_equipment(task.weaponname)) ||
+		if((task.stub.persistent == 1 && !self has_player_equipment(task.weaponname) && !self hasweapon(task.weaponname)) ||
 		   (task.stub.persistent == 2 && !(isdefined(task.stub.bought) && task.stub.bought)))
 			task.stub.bot_auto_equip_retry_until = gettime() + 15000;
 		else
@@ -3934,7 +3934,7 @@ bot_find_craftable_task()
 		if(isdefined(stub.bot_auto_equip_retry_until) && gettime() < stub.bot_auto_equip_retry_until)
 			continue;
 
-		if(stub.persistent == 1 && self has_player_equipment(stub.weaponname))
+		if(stub.persistent == 1 && (self has_player_equipment(stub.weaponname) || self hasweapon(stub.weaponname)))
 			continue;
 
 		if(stub.persistent == 2 && isdefined(stub.bought) && stub.bought)
@@ -4155,7 +4155,7 @@ bot_run_craftable_task(task)
 			   !isdefined(task.weaponname))
 				break;
 
-			if(task.stub.persistent == 1 && self has_player_equipment(task.weaponname))
+			if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
 				break;
 
 			if(task.stub.persistent == 2 &&
@@ -4380,7 +4380,7 @@ bot_run_craftable_task(task)
 				if(!self bot_objective_can_run())
 					break;
 
-				if(task.stub.persistent == 1 && self has_player_equipment(task.weaponname))
+				if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
 					break;
 
 				if(task.stub.persistent == 2 &&
@@ -4446,7 +4446,7 @@ bot_run_craftable_task(task)
 
 	if(task.kind == "equip" && isdefined(task.stub))
 	{
-		if((task.stub.persistent == 1 && !self has_player_equipment(task.weaponname)) ||
+		if((task.stub.persistent == 1 && !self has_player_equipment(task.weaponname) && !self hasweapon(task.weaponname)) ||
 		   (task.stub.persistent == 2 &&
 		    !(isdefined(task.stub.bought) && task.stub.bought)))
 			task.stub.bot_auto_equip_retry_until = gettime() + 15000;
