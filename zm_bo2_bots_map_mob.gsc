@@ -675,6 +675,9 @@ bot_mob_afterlife_needs_entry()
 // Mob's trigger is created by _zm_unitrigger and its callback owns the real
 // life consumption / afterlife_laststand transition. Sending its native
 // "trigger" notification avoids the unreliable bot look-at + use-button path.
+// Activate the bot's actual per-player stock Afterlife unitrigger.
+// Mob's callback consumes the life and starts Afterlife; the bot never edits
+// those states or relies on scripted look-at/use-button input.
 bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
 {
     if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
@@ -685,8 +688,14 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
         goal_name = "bot_mob_afterlife_kill";
 
     stub = trigger_struct.unitrigger_stub;
-    unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
-    if(!isdefined(unitrigger_trigger_func))
+    unitrigger_path = "maps/mp/zombies/_zm_unitrigger";
+    unitrigger_trigger_func = getfunction(unitrigger_path, "unitrigger_trigger");
+    unitrigger_build_func = getfunction(unitrigger_path, "build_trigger_from_unitrigger_stub");
+    unitrigger_visibility_func = getfunction(unitrigger_path, "assess_and_apply_visibility");
+    unitrigger_cleanup_func = getfunction(unitrigger_path, "cleanup_trigger");
+
+    if(!isdefined(unitrigger_trigger_func) || !isdefined(unitrigger_build_func) ||
+       !isdefined(unitrigger_visibility_func) || !isdefined(unitrigger_cleanup_func))
         return false;
 
     if(!findpath(self.origin, trigger_struct.origin, undefined, 0, 1))
@@ -724,32 +733,61 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
         return is_true(self.afterlife);
 
     self.bot.is_objective_using = 1;
+    player_num = self getentitynumber();
     use_trigger = undefined;
 
-    // The stock unitrigger manager creates one trigger per player. Wait for
-    // this bot's trigger and its stock afterlife_trigger_think thread.
-    for(i = 0; i < 30; i++)
-    {
-        if(is_true(self.afterlife))
-            break;
+    // Prefer the per-player trigger already built by the stock manager.
+    if(isdefined(stub.playertrigger) && isdefined(stub.playertrigger[player_num]))
+        use_trigger = stub [[ unitrigger_trigger_func ]](self);
 
-        if(isdefined(stub.playertrigger) &&
-           isdefined(stub.playertrigger[self getentitynumber()]))
+    // The stock manager maintains one current trigger per player. A nearby
+    // perk/debris trigger can occupy that slot, so replace it with the actual
+    // Afterlife stub using the stock cleanup/build/visibility routines.
+    if(!isdefined(use_trigger))
+    {
+        if(!isdefined(level._unitriggers) || !isdefined(level._unitriggers.trigger_pool))
         {
-            use_trigger = stub [[ unitrigger_trigger_func ]](self);
-            if(isdefined(use_trigger) && isdefined(use_trigger.thread_running) &&
-               use_trigger.thread_running)
-                break;
+            self.bot.is_objective_using = undefined;
+            return false;
         }
 
-        wait 0.1;
+        current_trigger = level._unitriggers.trigger_pool[player_num];
+        if(isdefined(current_trigger))
+            current_trigger [[ unitrigger_cleanup_func ]](current_trigger, self);
+
+        use_trigger = stub [[ unitrigger_build_func ]](self);
+        if(!isdefined(use_trigger))
+        {
+            self.bot.is_objective_using = undefined;
+            return false;
+        }
+
+        is_visible = use_trigger [[ unitrigger_visibility_func ]](use_trigger, stub, self, 0);
+        if(!is_visible)
+        {
+            use_trigger [[ unitrigger_cleanup_func ]](use_trigger, self);
+            self.bot.is_objective_using = undefined;
+            return false;
+        }
+
+        level._unitriggers.trigger_pool[player_num] = use_trigger;
+    }
+    else if(!isdefined(use_trigger.thread_running) || !use_trigger.thread_running)
+    {
+        // Ensure the stock callback is listening before we notify it.
+        is_visible = use_trigger [[ unitrigger_visibility_func ]](use_trigger, stub, self, 0);
+        if(!is_visible)
+        {
+            self.bot.is_objective_using = undefined;
+            return false;
+        }
     }
 
     // This is the exact trigger entity built from the stock
-    // ZM_PRISON_AFTERLIFE_KILL stub; its waiting stock callback is what
-    // performs the transition. Do not set self.afterlife or lives here.
-    if(!is_true(self.afterlife) && isdefined(use_trigger) &&
-       isdefined(use_trigger.thread_running) && use_trigger.thread_running)
+    // ZM_PRISON_AFTERLIFE_KILL stub; its waiting stock callback performs the
+    // life consumption and afterlife_laststand transition.
+    if(!is_true(self.afterlife) && isdefined(use_trigger.thread_running) &&
+       use_trigger.thread_running)
     {
         use_trigger notify("trigger", self);
         wait 0.25;
