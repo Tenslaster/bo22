@@ -439,7 +439,7 @@ MM_SpectatorMovementInput()
 
     for(;;)
     {
-        command = self waittill_any_return("mm_spec_forward_down", "mm_spec_forward_up", "mm_spec_back_down", "mm_spec_back_up", "mm_spec_left_down", "mm_spec_left_up", "mm_spec_right_down", "mm_spec_right_up");
+        command = self waittill_any_array_return(array("mm_spec_forward_down", "mm_spec_forward_up", "mm_spec_back_down", "mm_spec_back_up", "mm_spec_left_down", "mm_spec_left_up", "mm_spec_right_down", "mm_spec_right_up"));
 
         if(command == "mm_spec_forward_down")
             self.mmSpecForward = true;
