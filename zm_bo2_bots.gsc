@@ -2610,6 +2610,17 @@ bot_update_wander()
 	for(;;)
 	{
 		wait 0.1;
+
+        // A generator defender must not have its objective goal overwritten by
+        // the normal stay/follow/wander controller.
+        if(is_true(self.bot.is_holding_generator))
+        {
+            if(self getgoal("wander") || self hasgoal("wander"))
+                self cancelgoal("wander");
+
+            wait 0.05;
+            continue;
+        }
 		
 		if(is_true(self.bot.is_building) || is_true(self.bot.is_crafting) || is_true(self.bot.is_perk_buying))
 		{
