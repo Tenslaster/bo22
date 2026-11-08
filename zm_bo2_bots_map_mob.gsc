@@ -678,9 +678,6 @@ bot_mob_afterlife_needs_entry()
 // Activate the bot's actual per-player stock Afterlife unitrigger.
 // Mob's callback consumes the life and starts Afterlife; the bot never edits
 // those states or relies on scripted look-at/use-button input.
-// Activate the bot's actual per-player stock Afterlife unitrigger.
-// Mob's callback consumes the life and starts Afterlife; the bot never edits
-// those states or relies on scripted look-at/use-button input.
 bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
 {
     if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
