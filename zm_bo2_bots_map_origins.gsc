@@ -232,6 +232,7 @@ bot_quest_origins_generators()
        !isdefined(level.zone_capture.zones) || flag("all_zones_captured"))
         return false;
 
+    // Once a generator is active, every bot should help hold its capture area.
     if(flag("zone_capture_in_progress"))
     {
         active_zone = undefined;
@@ -258,10 +259,10 @@ bot_quest_origins_generators()
         if(isdefined(active_zone) && isdefined(active_zone.origin))
         {
             if(distancesquared(self.origin, active_zone.origin) > 220 * 220)
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
                     active_zone.origin, "bot_origins_generator_support", 175, 9000);
             else
-                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(
+                self scripts\\zm\\zm_bo2_bots::bot_quest_hold_in_volume(
                     active_zone.origin, "bot_origins_generator_hold", 190, 2.0);
         }
 
@@ -298,13 +299,18 @@ bot_quest_origins_generators()
        gettime() < level.bot_origins_generator_owner_until)
         return false;
 
-    // Use the exact stock Origins start cost.
-    cost = 200 * get_players().size;
+    // Ask the stock map function for its real cost instead of maintaining a
+    // duplicate formula. The stock cost is 200 times the current player count.
+    get_cost_func = getfunction("maps/mp/zm_tomb_capture_zones", "get_generator_capture_start_cost");
+    if(isdefined(get_cost_func))
+        cost = [[ get_cost_func ]]();
+    else
+        cost = 200 * get_players().size;
+
     if(!isdefined(self.score) || self.score < cost)
         return false;
 
     best_zone = undefined;
-    best_trigger = undefined;
     best_distance = 999999999;
     zone_keys = getarraykeys(level.zone_capture.zones);
 
@@ -315,53 +321,32 @@ bot_quest_origins_generators()
            zone ent_flag("player_controlled") || zone ent_flag("zone_contested"))
             continue;
 
-        trigger_stub = undefined;
-        if(isdefined(level._unitriggers) && isdefined(level._unitriggers.trigger_stubs))
-        {
-            foreach(stub in level._unitriggers.trigger_stubs)
-            {
-                if(isdefined(stub) && isdefined(stub.generator_struct) &&
-                   stub.generator_struct == zone && isdefined(stub.origin))
-                {
-                    trigger_stub = stub;
-                    break;
-                }
-            }
-        }
-
-        target_origin = isdefined(trigger_stub) ? trigger_stub.origin : zone.origin;
-        distance_sq = distancesquared(self.origin, target_origin);
+        distance_sq = distancesquared(self.origin, zone.origin);
         if(distance_sq >= best_distance ||
-           !findpath(self.origin, target_origin, undefined, 0, 1))
+           !findpath(self.origin, zone.origin, undefined, 0, 1))
             continue;
 
         best_zone = zone;
-        best_trigger = trigger_stub;
         best_distance = distance_sq;
     }
 
     if(!isdefined(best_zone))
         return false;
 
-    if(isdefined(best_trigger))
-    {
-        // The unitrigger manager normally filters invalid player entities.
-        // This flag lets the manager build the bot's real per-player trigger;
-        // the stock generator callback still performs the ordinary checks.
-        best_trigger.ignore_player_valid = 1;
-        target_origin = best_trigger.origin;
-    }
-    else
-        target_origin = best_zone.origin;
-
     level.bot_origins_generator_owner = self;
     level.bot_origins_generator_target = best_zone;
     level.bot_origins_generator_owner_until = gettime() + 15000;
 
-    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
-        target_origin, "bot_origins_generator_activate", 32, 10000);
+    // The generator's stock unitrigger is a 128-unit box centered on the zone
+    // origin. The stock unitrigger callback rejects scripted test clients via
+    // is_player_valid(), so do not wait for its per-player trigger thread.
+    // Move inside that box and dispatch the zone's native capture event below.
+    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+        best_zone.origin, "bot_origins_generator_activate", 64, 12000);
 
-    if(!arrived)
+    if(!arrived ||
+       !isdefined(self.score) || self.score < cost ||
+       distancesquared(self.origin, best_zone.origin) > 72 * 72)
     {
         level.bot_origins_generator_owner = undefined;
         level.bot_origins_generator_target = undefined;
@@ -370,68 +355,22 @@ bot_quest_origins_generators()
     }
 
     self.bot.is_objective_using = 1;
-    self lookat(target_origin + (0, 0, 16));
+    self lookat(best_zone.origin + (0, 0, 16));
 
-    unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
-    trigger_dispatched = false;
-
-    for(i = 0; i < 10; i++)
-    {
-        if(flag("zone_capture_in_progress") ||
-           best_zone ent_flag("zone_contested") ||
-           best_zone ent_flag("player_controlled"))
-            break;
-
-        if(!isalive(self))
-            break;
-
-        if(!self isonground() || self isonladder() || self ismantling())
-        {
-            wait 0.1;
-            continue;
-        }
-
-        player_trigger = undefined;
-        if(isdefined(best_trigger) && isdefined(unitrigger_trigger_func))
-            player_trigger = best_trigger [[ unitrigger_trigger_func ]](self);
-
-        if(isdefined(player_trigger) &&
-           isdefined(player_trigger.thread_running) &&
-           player_trigger.thread_running &&
-           player_trigger.parent_player == self)
-        {
-            // Dispatch the same event that the stock trigger would send.
-            // generator_unitrigger_think still checks score/revive state and
-            // then emits the native start_generator_capture event.
-            player_trigger notify("trigger", self);
-            trigger_dispatched = true;
-            wait 0.2;
-            if(flag("zone_capture_in_progress") ||
-               best_zone ent_flag("zone_contested") ||
-               best_zone ent_flag("player_controlled"))
-                break;
-        }
-        else
-        {
-            self pressusebutton(0.2);
-            wait 0.15;
-        }
-    }
-
-    // Fallback only to the stock generator event. It owns the score deduction,
-    // zombie wave, capture progress, and player-controlled flags.
+    // This is the exact event consumed by the stock wait_for_capture_trigger()
+    // thread. It still deducts the proper price, starts the zombies, and runs
+    // the native capture / ownership state machine.
     if(!flag("zone_capture_in_progress") &&
        !best_zone ent_flag("zone_contested") &&
-       !best_zone ent_flag("player_controlled") &&
-       isdefined(self.score) && self.score >= cost)
+       !best_zone ent_flag("player_controlled"))
         best_zone notify("start_generator_capture", self);
 
     self clearlookat();
     self.bot.is_objective_using = undefined;
 
-    // Confirm that the native event actually started. On failure, release the
-    // target quickly so this bot (or another affordable bot) can retry.
-    start_deadline = gettime() + 1500;
+    // The stock event sets this flag as soon as its listener receives the
+    // notification. Give the listener a short window before releasing the lock.
+    start_deadline = gettime() + 2500;
     while(gettime() < start_deadline &&
           !flag("zone_capture_in_progress") &&
           !best_zone ent_flag("zone_contested") &&
