@@ -1598,10 +1598,105 @@ bot_quest_origins_main_steps()
     return false;
 }
 
+// Scripted bots cannot press the player's two-button action-slot input. Use
+// the same stock quadrotor watchers as a human activation, but launch the
+// vehicle directly once this bot owns the crafted drone and has a live target.
+bot_origins_try_deploy_drone()
+{
+    if(!self hasweapon("equip_dieseldrone_zm"))
+        return false;
+
+    if(!isdefined(self.bot) || !isdefined(self.bot.threat) ||
+       !isdefined(self.bot.threat.entity) || !isalive(self.bot.threat.entity))
+        return false;
+
+    if(!self isonground() || self isonladder() || self ismantling() ||
+       self isreloading() || self isswitchingweapons() || self isthrowinggrenade())
+        return false;
+
+    if(isdefined(level.maxis_quadrotor) && isalive(level.maxis_quadrotor))
+        return false;
+
+    existing_drones = getentarray("quadrotor_ai", "targetname");
+    if(isdefined(existing_drones) && existing_drones.size > 0)
+        return false;
+
+    if(flag("quadrotor_cooling_down"))
+        return false;
+
+    if(isdefined(self.bot.origins_drone_deploy_after) &&
+       gettime() < self.bot.origins_drone_deploy_after)
+        return false;
+
+    drone_death_watcher = getfunction("maps/mp/zm_tomb_craftables", "quadrotor_death_watcher");
+    drone_instance_watcher = getfunction("maps/mp/zm_tomb_craftables", "quadrotor_instance_watcher");
+    if(!isdefined(drone_death_watcher) || !isdefined(drone_instance_watcher))
+        return false;
+
+    drone_weapon = "equip_dieseldrone_zm";
+    weapons = self getweaponslistprimaries();
+    switch_weapon = undefined;
+
+    foreach(weapon in weapons)
+    {
+        if(weapon != drone_weapon)
+        {
+            switch_weapon = weapon;
+            break;
+        }
+    }
+
+    // Keep a real firearm equipped before consuming the action-slot drone.
+    if(!isdefined(switch_weapon))
+        return false;
+
+    self switchtoweapon(switch_weapon);
+    switch_deadline = gettime() + 2000;
+    while(self isswitchingweapons() && gettime() < switch_deadline)
+        wait 0.05;
+
+    if(!self hasweapon(drone_weapon))
+        return false;
+
+    self playsound("veh_qrdrone_takeoff");
+    self takeweapon(drone_weapon);
+    self setactionslot(2, "");
+
+    vehicle_name = "heli_quadrotor_zm";
+    if(flag("ee_maxis_drone_retrieved"))
+        vehicle_name = "heli_quadrotor_upgraded_zm";
+
+    drone = spawnvehicle(
+        "veh_t6_dlc_zm_quadrotor",
+        "quadrotor_ai",
+        vehicle_name,
+        self.origin + vectorscale((0, 0, 1), 96.0),
+        self.angles
+    );
+
+    if(!isdefined(drone))
+    {
+        self giveweapon(drone_weapon);
+        self setweaponammoclip(drone_weapon, 1);
+        self setactionslot(2, "weapon", drone_weapon);
+        return false;
+    }
+
+    level thread [[ drone_death_watcher ]](drone);
+    drone thread [[ drone_instance_watcher ]](self);
+    self.bot.origins_drone_deploy_after = gettime() + 15000;
+    return true;
+}
+
 bot_quest_origins()
 {
     // Hard runtime gate: never run Origins objectives on TranZit or any other map.
     if(getdvar("mapname") != "zm_tomb")
+        return;
+
+    // Deploy the assembled Maxis drone during combat. Stock quadrotor watchers
+    // retain control of its AI, cooldown and return/death lifecycle.
+    if(self bot_origins_try_deploy_drone())
         return;
 
     // An active generator capture is the squad's highest-priority objective.
