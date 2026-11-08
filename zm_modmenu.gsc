@@ -432,6 +432,34 @@ MM_SpectatorKeyListener()
     }
 }
 
+MM_SpectatorMovementInput()
+{
+    self endon("disconnect");
+    self endon("mm_stop_spectate");
+
+    for(;;)
+    {
+        command = self waittill_any_return("mm_spec_forward_down", "mm_spec_forward_up", "mm_spec_back_down", "mm_spec_back_up", "mm_spec_left_down", "mm_spec_left_up", "mm_spec_right_down", "mm_spec_right_up");
+
+        if(command == "mm_spec_forward_down")
+            self.mmSpecForward = true;
+        else if(command == "mm_spec_forward_up")
+            self.mmSpecForward = false;
+        else if(command == "mm_spec_back_down")
+            self.mmSpecBack = true;
+        else if(command == "mm_spec_back_up")
+            self.mmSpecBack = false;
+        else if(command == "mm_spec_left_down")
+            self.mmSpecLeft = true;
+        else if(command == "mm_spec_left_up")
+            self.mmSpecLeft = false;
+        else if(command == "mm_spec_right_down")
+            self.mmSpecRight = true;
+        else if(command == "mm_spec_right_up")
+            self.mmSpecRight = false;
+    }
+}
+
 MenuInput()
 {
     self endon("disconnect");
@@ -453,6 +481,16 @@ MenuInput()
     // Spectator hotkey (bind g "+actionslot 3" in the console once).
     self notifyOnPlayerCommand("mm_spec", "+actionslot 3");
     self thread MM_SpectatorKeyListener();
+
+    // Track held movement commands so free-camera movement also works with keyboard WASD.
+    self notifyOnPlayerCommand("mm_spec_forward_down", "+forward");
+    self notifyOnPlayerCommand("mm_spec_forward_up", "-forward");
+    self notifyOnPlayerCommand("mm_spec_back_down", "+back");
+    self notifyOnPlayerCommand("mm_spec_back_up", "-back");
+    self notifyOnPlayerCommand("mm_spec_left_down", "+moveleft");
+    self notifyOnPlayerCommand("mm_spec_left_up", "-moveleft");
+    self notifyOnPlayerCommand("mm_spec_right_down", "+moveright");
+    self notifyOnPlayerCommand("mm_spec_right_up", "-moveright");
 
     // The loop below is the fallback (and handles hold-to-repeat scrolling).
     upSince = 0;
@@ -1486,13 +1524,19 @@ MM_SpectatorEnter()
     self.mmSpecOrigin = self.origin;
     self.mmSpecAngles = self getPlayerAngles();
     self thread SpectatorLoop();
-    self iprintln("Spectator ^2ON ^7- Stick: fly | Jump: up | Frag: down | Attack: fast | G: leave");
+    self iprintln("Spectator ^2ON ^7- WASD/Stick: fly | Jump: up | Frag: down | Attack: fast | G: leave");
 }
 
 SpectatorLoop()
 {
     self endon("disconnect");
     self endon("mm_stop_spectate");
+
+    self.mmSpecForward = false;
+    self.mmSpecBack = false;
+    self.mmSpecLeft = false;
+    self.mmSpecRight = false;
+    self thread MM_SpectatorMovementInput();
 
     obj = spawn("script_origin", self.origin);
     obj.angles = self.angles;
@@ -1518,7 +1562,25 @@ SpectatorLoop()
 
         ang = self getPlayerAngles();
         mv = self getNormalizedMovement();
-        move = (anglesToForward(ang) * (mv[0] * speed)) + (anglesToRight(ang) * (mv[1] * speed));
+
+        forwardInput = mv[0];
+        rightInput = mv[1];
+
+        if(self.mmSpecForward && !self.mmSpecBack)
+            forwardInput = 1;
+        else if(self.mmSpecBack && !self.mmSpecForward)
+            forwardInput = -1;
+        else if(self.mmSpecForward && self.mmSpecBack)
+            forwardInput = 0;
+
+        if(self.mmSpecLeft && !self.mmSpecRight)
+            rightInput = -1;
+        else if(self.mmSpecRight && !self.mmSpecLeft)
+            rightInput = 1;
+        else if(self.mmSpecLeft && self.mmSpecRight)
+            rightInput = 0;
+
+        move = (anglesToForward(ang) * (forwardInput * speed)) + (anglesToRight(ang) * (rightInput * speed));
 
         if(self jumpButtonPressed())
             move = move + (0, 0, speed);
