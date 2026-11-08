@@ -332,65 +332,6 @@ bot_quest_mob_sidequests()
     }
 
     // After the four Nixie codes are accepted, Mob plays the six audio logs
-    // the two sidequest prerequisites. The four stock codes are solved by
-    // advancing the three real tube counters; the game's notifier raises the
-    // corresponding nixie_<code> events and removes each code when accepted.
-    if(is_true(self.afterlife) && flag("quest_completed_thrice") &&
-       flag("spoon_obtained") && flag("warden_blundergat_obtained") &&
-       isdefined(level.a_important_codes) && isdefined(level.a_nixie_tube_code) &&
-       !isdefined(level.m_headphones))
-    {
-        final_codes = array(386, 481, 101, 872);
-        active_code = undefined;
-        foreach(code in final_codes)
-        {
-            if(isinarray(level.a_important_codes, code))
-            {
-                active_code = code;
-                break;
-            }
-        }
-
-        if(isdefined(active_code))
-        {
-            level.bot_mob_final_nixie_started = 1;
-            for(tube_index = 1; tube_index <= 3; tube_index++)
-            {
-                tube = getent("nixie_tube_" + tube_index, "targetname");
-                if(!isdefined(tube) || !isdefined(tube.origin) ||
-                   !isdefined(level.a_nixie_tube_code[tube_index]))
-                    continue;
-
-                // Inline the stock Nixie digit split. This avoids linking a
-                // map-script helper that is not exported in some Plutonium builds.
-                if(tube_index == 1)
-                    desired_digit = int((active_code - active_code % 100) / 100);
-                else if(tube_index == 2)
-                {
-                    digit_remainder = active_code % 100;
-                    digit_remainder = digit_remainder - active_code % 10;
-                    desired_digit = int(digit_remainder / 10);
-                }
-                else
-                    desired_digit = active_code % 10;
-                current_digit = level.a_nixie_tube_code[tube_index];
-                clicks = (desired_digit - current_digit + 10) % 10;
-
-                for(click_index = 0; click_index < clicks; click_index++)
-                {
-                    before_digit = level.a_nixie_tube_code[tube_index];
-                    self scripts\zm\zm_bo2_bots::bot_quest_use_target(tube, "bot_mob_nixie_tube", 32, 1, 1);
-                    wait 0.25;
-                    if(!isdefined(level.a_nixie_tube_code[tube_index]) ||
-                       level.a_nixie_tube_code[tube_index] == before_digit)
-                        break;
-                }
-            }
-            return true;
-        }
-    }
-
-    // After the four Nixie codes are accepted, Mob plays the six audio logs
     // at scripted stop locations. Each log except the first has a touch volume
     // beneath the moving headset; walking into that volume advances the stock
     // stage. The headset disappears when the whole sequence is complete.
@@ -413,11 +354,14 @@ bot_quest_mob_sidequests()
         {
             poster = getent("poster", "targetname");
             if(isdefined(poster) && isdefined(poster.origin) && isdefined(poster.health) && poster.health > 0 &&
-               self hasweapon("bouncing_tomahawk_zm"))
+               (self hasweapon("bouncing_tomahawk_zm") || self hasweapon("upgraded_tomahawk_zm")))
             {
                 if(self scripts\zm\zm_bo2_bots::bot_quest_move_to(poster.origin, "bot_mob_spoon_poster", 220, 8000))
                 {
-                    self switchtoweaponimmediate("bouncing_tomahawk_zm");
+                    if(self hasweapon("upgraded_tomahawk_zm"))
+                        self switchtoweaponimmediate("upgraded_tomahawk_zm");
+                    else
+                        self switchtoweaponimmediate("bouncing_tomahawk_zm");
                     wait 0.25;
                     self lookat(poster.origin);
                     self forcegrenadethrow();
@@ -437,11 +381,15 @@ bot_quest_mob_sidequests()
             }
 
             pickup = getent("pickup_spoon", "targetname");
-            if(isdefined(pickup) && isdefined(pickup.origin) && self hasweapon("bouncing_tomahawk_zm"))
+            if(isdefined(pickup) && isdefined(pickup.origin) &&
+               (self hasweapon("bouncing_tomahawk_zm") || self hasweapon("upgraded_tomahawk_zm")))
             {
                 if(self scripts\zm\zm_bo2_bots::bot_quest_move_to(pickup.origin, "bot_mob_spoon_pickup", 180, 8000))
                 {
-                    self switchtoweaponimmediate("bouncing_tomahawk_zm");
+                    if(self hasweapon("upgraded_tomahawk_zm"))
+                        self switchtoweaponimmediate("upgraded_tomahawk_zm");
+                    else
+                        self switchtoweaponimmediate("bouncing_tomahawk_zm");
                     wait 0.25;
                     self lookat(pickup.origin);
                     self forcegrenadethrow();
@@ -456,8 +404,14 @@ bot_quest_mob_sidequests()
     // Warden's Blundergat prerequisite: reveal one native skull with
     // Lightning Hands, allow its stock hide/reveal cycle to finish, then move
     // close and catch it with the actual Hell's Retriever.
-    if(!flag("warden_blundergat_obtained") && self hasweapon("bouncing_tomahawk_zm") && is_true(self.afterlife))
+    if(!flag("warden_blundergat_obtained") &&
+       (self hasweapon("bouncing_tomahawk_zm") || self hasweapon("upgraded_tomahawk_zm")) &&
+       is_true(self.afterlife))
     {
+        tomahawk_weapon = "bouncing_tomahawk_zm";
+        if(self hasweapon("upgraded_tomahawk_zm"))
+            tomahawk_weapon = "upgraded_tomahawk_zm";
+
         if(isdefined(level.sq_bg_macguffins))
         {
             foreach(item in level.sq_bg_macguffins)
@@ -473,8 +427,7 @@ bot_quest_mob_sidequests()
                 item.bot_mob_macguffin_owner = self;
                 item.bot_mob_macguffin_owner_until = gettime() + 15000;
 
-                if(!isdefined(item.bot_mob_macguffin_reveal_until) ||
-                   gettime() >= item.bot_mob_macguffin_reveal_until)
+                if(!isdefined(item.bot_mob_macguffin_revealed) || !item.bot_mob_macguffin_revealed)
                 {
                     if(isdefined(item.bot_mob_macguffin_retry_until) &&
                        gettime() < item.bot_mob_macguffin_retry_until)
@@ -484,8 +437,14 @@ bot_quest_mob_sidequests()
                     {
                         item.bot_mob_macguffin_retry_until = gettime() + 2200;
                         item.bot_mob_macguffin_reveal_until = gettime() + 1900;
-                        self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
-                            item.origin, "lightning_hands_zm", "bot_mob_macguffin_reveal", 180, 1, 0.12);
+                        if(self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+                            item.origin, "lightning_hands_zm", "bot_mob_macguffin_reveal", 180, 1, 0.12))
+                            item.bot_mob_macguffin_revealed = 1;
+                        else
+                        {
+                            item.bot_mob_macguffin_retry_until = gettime() + 2500;
+                            item.bot_mob_macguffin_reveal_until = undefined;
+                        }
                         return true;
                     }
                 }
@@ -499,10 +458,11 @@ bot_quest_mob_sidequests()
                 {
                     item.bot_mob_macguffin_retry_until = gettime() + 3000;
                     item.bot_mob_macguffin_reveal_until = undefined;
+                    item.bot_mob_macguffin_revealed = undefined;
                     return true;
                 }
 
-                self switchtoweaponimmediate("bouncing_tomahawk_zm");
+                self switchtoweaponimmediate(tomahawk_weapon);
                 wait 0.2;
                 self lookat(item.origin);
                 self forcegrenadethrow();
@@ -510,6 +470,7 @@ bot_quest_mob_sidequests()
                 self clearlookat();
                 item.bot_mob_macguffin_retry_until = gettime() + 5000;
                 item.bot_mob_macguffin_reveal_until = undefined;
+                item.bot_mob_macguffin_revealed = undefined;
                 return true;
             }
         }
