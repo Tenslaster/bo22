@@ -4375,7 +4375,7 @@ bot_auto_quest_think()
     }
 }
 
-bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife)
+bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_offset)
 {
     if(!isdefined(target) || !isdefined(target.origin))
         return false;
@@ -4431,7 +4431,10 @@ bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife)
        (self bot_objective_can_run() || afterlife_objective))
     {
         self.bot.is_objective_using = 1;
-        self lookat(target.origin + (0, 0, 24));
+        if(!isdefined(aim_offset))
+            aim_offset = 24;
+        self lookat(target.origin + (0, 0, aim_offset));
+        wait 0.25;
 
         for(i = 0; i < use_pulses; i++)
         {
