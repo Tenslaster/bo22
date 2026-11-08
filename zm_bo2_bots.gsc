@@ -4263,8 +4263,24 @@ bot_run_craftable_task(task)
 					continue;
 				}
 
-				self pressusebutton(3.2);
-				wait 0.1;
+				// Dispatch the per-player unitrigger event used by the stock craftable
+				// handler. A held use-button alone is unreliable for scripted bots.
+				table_trigger = undefined;
+				if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+					table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+
+				if(isdefined(table_trigger) &&
+				   isdefined(table_trigger.thread_running) && table_trigger.thread_running &&
+				   isdefined(table_trigger.parent_player) && table_trigger.parent_player == self)
+				{
+					table_trigger notify("trigger", self);
+					wait 0.25;
+				}
+				else
+				{
+					self pressusebutton(0.15);
+					wait 0.15;
+				}
 			}
 		}
 		else
