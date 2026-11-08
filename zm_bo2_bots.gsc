@@ -4010,9 +4010,10 @@ bot_run_craftable_task(task)
 	// let bots stop too far away to pick up parts or hold the craft interaction.
 	self addgoal(task.origin, 24, 2, goal_name);
 
-	unitrigger_trigger_func = undefined;
-	if(task.kind != "pickup")
-		unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+	// Origins craftable pickup parts and table actions both expose per-player
+	// unitrigger entities. Use the same lookup for both task kinds so pickup
+	// approach can test the real trigger volume instead of only model distance.
+	unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
 
 	deadline = gettime() + 45000;
 	arrived = false;
@@ -4066,7 +4067,21 @@ bot_run_craftable_task(task)
 
 		if(task.kind == "pickup")
 		{
-			if(distancesquared(self.origin, task.origin) <= 900)
+			// Parts can be mounted above the floor (especially staff/drone
+			// pieces). Their trigger volume is authoritative; a 3D model-radius
+			// test can leave a bot standing underneath while it stares upward.
+			piece_trigger = undefined;
+			if(isdefined(task.piece.unitrigger) && isdefined(unitrigger_trigger_func))
+				piece_trigger = task.piece.unitrigger [[ unitrigger_trigger_func ]](self);
+
+			if(isdefined(piece_trigger) && piece_trigger istouching(self))
+			{
+				arrived = true;
+				break;
+			}
+
+			if(distance2d(self.origin, task.origin) <= 64 &&
+			   abs(self.origin[2] - task.origin[2]) <= 144)
 			{
 				arrived = true;
 				break;
@@ -4121,6 +4136,34 @@ bot_run_craftable_task(task)
 			is_shared = isdefined(task.piece.piecestub.is_shared) && task.piece.piecestub.is_shared;
 			self.bot.is_objective_using = 1;
 
+			// Dispatch the stock pickup callback immediately on arrival. The
+			// native trigger handler normally threads this exact function, but
+			// scripted clients can fail its player-validity/use-input path.
+			// player_take_piece still performs all stock onpickup callbacks,
+			// shared-inventory updates, part unspawn, and quest counters.
+			if(getdvar("mapname") == "zm_tomb" &&
+			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
+			   self bot_craftable_piece_is_available(task.piece))
+			{
+				already_picked = 0;
+				if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+					already_picked = 1;
+				else if(!is_shared && isdefined(self.current_craftable_piece) &&
+				        self.current_craftable_piece.piecename == task.piece.piecename &&
+				        self.current_craftable_piece.craftablename == task.piece.craftablename)
+					already_picked = 1;
+
+				if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)))
+				{
+					take_piece_func = bot_craftables_func("player_take_piece");
+					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
+					{
+						self thread [[ take_piece_func ]](task.piece);
+						wait 0.2;
+					}
+				}
+			}
+
 			while(gettime() < use_deadline)
 			{
 				if(!self bot_objective_can_run())
@@ -4158,7 +4201,8 @@ bot_run_craftable_task(task)
 			if(getdvar("mapname") == "zm_tomb" && isdefined(task.piece) &&
 			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
 			   self bot_craftable_piece_is_available(task.piece) &&
-			   distancesquared(self.origin, task.piece.model.origin) <= 48 * 48)
+			   distance2d(self.origin, task.piece.model.origin) <= 72 &&
+			   abs(self.origin[2] - task.piece.model.origin[2]) <= 160)
 			{
 				is_shared = isdefined(task.piece.piecestub) &&
 				            isdefined(task.piece.piecestub.is_shared) &&
@@ -4176,7 +4220,7 @@ bot_run_craftable_task(task)
 				{
 					take_piece_func = bot_craftables_func("player_take_piece");
 					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
-						self [[ take_piece_func ]](task.piece);
+						self thread [[ take_piece_func ]](task.piece);
 				}
 			}
 		}
@@ -4247,7 +4291,11 @@ bot_run_craftable_task(task)
 			picked_up = 1;
 
 		if(!picked_up)
-			task.piece.bot_auto_retry_until = gettime() + 5000;
+		{
+			task.piece.bot_auto_retry_until = gettime() + 2500;
+			// A failed attempt should not reserve the same model for 5 seconds;
+			// allow this bot to retry quickly after it re-approaches the trigger.
+		}
 	}
 
 	if(did_interact && task.kind == "craft" && isdefined(task.stub))
