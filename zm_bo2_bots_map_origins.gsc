@@ -1,3 +1,7 @@
+#include common_scripts\utility;
+#include maps\mp\_utility;
+#include maps\mp\zombies\_zm_utility;
+
 bot_origins_install_capture_zone_hook()
 {
     if(isdefined(level.bot_origins_capture_zone_hooked) &&
@@ -114,10 +118,6 @@ bot_origins_hold_generator_zone(zone)
 
     return false;
 }
-
-#include common_scripts\utility;
-#include maps\mp\_utility;
-#include maps\mp\zombies\_zm_utility;
 
 // -----------------------------------------------------------------------------
 // Origins map-specific bot logic (zm_tomb).
