@@ -195,21 +195,47 @@ bot_mob_final_fight_think()
 
 bot_quest_mob_sidequests()
 {
-    // First Mob sidequest prerequisite: fill the stock wolf soul catchers by
-    // killing zombies inside each catcher's native volume.
+    // Spread the squad across the three native wolf-soul volumes. A short
+    // lease lets each bot work a different catcher instead of all three
+    // converging on the first uncharged one.
     if(!is_true(self.afterlife) && isdefined(level.soul_catchers) && isdefined(level.soul_catchers_vol))
     {
+        best_catcher = undefined;
+        best_volume = undefined;
+        best_catcher_index = -1;
+        best_distance = 999999999;
+
         for(i = 0; i < level.soul_catchers.size; i++)
         {
             catcher = level.soul_catchers[i];
             volume = level.soul_catchers_vol[i];
-            if(!isdefined(catcher) || !isdefined(volume) || !isdefined(volume.origin))
+            if(!isdefined(catcher) || !isdefined(volume) || !isdefined(volume.origin) ||
+               (isdefined(catcher.is_charged) && catcher.is_charged))
                 continue;
-            if(!isdefined(catcher.is_charged) || !catcher.is_charged)
-            {
-                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(volume.origin, "bot_mob_wolf_souls", 230, 4.0);
-                return true;
-            }
+
+            if(isdefined(catcher.bot_mob_soul_owner) && catcher.bot_mob_soul_owner != self &&
+               isdefined(catcher.bot_mob_soul_owner_until) && gettime() < catcher.bot_mob_soul_owner_until &&
+               isalive(catcher.bot_mob_soul_owner))
+                continue;
+
+            distance_sq = distancesquared(self.origin, volume.origin);
+            if(distance_sq >= best_distance ||
+               !findpath(self.origin, volume.origin, undefined, 0, 1))
+                continue;
+
+            best_catcher = catcher;
+            best_volume = volume;
+            best_catcher_index = i;
+            best_distance = distance_sq;
+        }
+
+        if(isdefined(best_catcher))
+        {
+            best_catcher.bot_mob_soul_owner = self;
+            best_catcher.bot_mob_soul_owner_until = gettime() + 15000;
+            self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(
+                best_volume.origin, "bot_mob_wolf_souls_" + best_catcher_index, 230, 4.0);
+            return true;
         }
     }
 
@@ -228,7 +254,84 @@ bot_quest_mob_sidequests()
         }
     }
 
-    // Mob's final Nixie sequence begins only after all three plane trips and
+    // Do map-native Afterlife power objectives before continuing the sidequests.
+    if(is_true(self.afterlife) && self bot_mob_afterlife_panel_think())
+        return true;
+
+    // Mob's main Nixie code is entered with Afterlife electricity, not the
+    // use button. Reserve one controller so several ghosts cannot over-rotate
+    // the same tube while the stock notifier is checking the three digits.
+    if(is_true(self.afterlife) && flag("quest_completed_thrice") &&
+       flag("spoon_obtained") && flag("warden_blundergat_obtained") &&
+       isdefined(level.a_important_codes) && isdefined(level.a_nixie_tube_code) &&
+       !isdefined(level.m_headphones))
+    {
+        final_codes = array(386, 481, 101, 872);
+        active_code = undefined;
+        foreach(code in final_codes)
+        {
+            if(isinarray(level.a_important_codes, code))
+            {
+                active_code = code;
+                break;
+            }
+        }
+
+        if(isdefined(active_code))
+        {
+            if(isdefined(level.bot_mob_nixie_owner) && level.bot_mob_nixie_owner != self &&
+               isdefined(level.bot_mob_nixie_owner_until) && gettime() < level.bot_mob_nixie_owner_until &&
+               isalive(level.bot_mob_nixie_owner))
+                return true;
+
+            level.bot_mob_nixie_owner = self;
+            level.bot_mob_nixie_owner_until = gettime() + 12000;
+            level.bot_mob_final_nixie_started = 1;
+
+            for(tube_index = 1; tube_index <= 3; tube_index++)
+            {
+                tube = getent("nixie_tube_" + tube_index, "targetname");
+                if(!isdefined(tube) || !isdefined(tube.origin) ||
+                   !isdefined(level.a_nixie_tube_code[tube_index]))
+                    continue;
+
+                // Split the required three-digit code locally; no map-only
+                // function reference is needed from this shared bot module.
+                if(tube_index == 1)
+                    desired_digit = int((active_code - active_code % 100) / 100);
+                else if(tube_index == 2)
+                {
+                    digit_remainder = active_code % 100;
+                    digit_remainder = digit_remainder - active_code % 10;
+                    desired_digit = int(digit_remainder / 10);
+                }
+                else
+                    desired_digit = active_code % 10;
+
+                current_digit = level.a_nixie_tube_code[tube_index];
+                if(current_digit == desired_digit)
+                    continue;
+
+                // The stock afterlife script advances a tube when it receives
+                // damage from lightning_hands_zm. Fire one pulse, then let the
+                // next think re-read the live digit before sending another.
+                if(isdefined(tube.bot_mob_nixie_next_shot) &&
+                   gettime() < tube.bot_mob_nixie_next_shot)
+                    return true;
+
+                tube.bot_mob_nixie_next_shot = gettime() + 650;
+                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+                    tube.origin, "lightning_hands_zm", "bot_mob_nixie_tube", 180, 1, 0.12);
+                return true;
+            }
+
+            // The code is already correct; keep the same controller alive
+            // while the stock notifier emits nixie_<code> and removes it.
+            return true;
+        }
+    }
+
+    // After the four Nixie codes are accepted, Mob plays the six audio logs
     // the two sidequest prerequisites. The four stock codes are solved by
     // advancing the three real tube counters; the game's notifier raises the
     // corresponding nixie_<code> events and removes each code when accepted.
@@ -329,7 +432,7 @@ bot_quest_mob_sidequests()
             spoon = getent("zap_spoon", "targetname");
             if(isdefined(spoon) && isdefined(spoon.origin) && self hasweapon("lightning_hands_zm"))
             {
-                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(spoon.origin, "lightning_hands_zm", "bot_mob_spoon_shock", 700, 8, 0.1);
+                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(spoon.origin, "lightning_hands_zm", "bot_mob_spoon_shock", 180, 1, 0.12);
                 return true;
             }
 
@@ -350,8 +453,9 @@ bot_quest_mob_sidequests()
         }
     }
 
-    // Warden's Blundergat prerequisite: reveal each Afterlife macguffin with
-    // Lightning Hands, then catch it with a real thrown Hell's Retriever.
+    // Warden's Blundergat prerequisite: reveal one native skull with
+    // Lightning Hands, allow its stock hide/reveal cycle to finish, then move
+    // close and catch it with the actual Hell's Retriever.
     if(!flag("warden_blundergat_obtained") && self hasweapon("bouncing_tomahawk_zm") && is_true(self.afterlife))
     {
         if(isdefined(level.sq_bg_macguffins))
@@ -360,17 +464,52 @@ bot_quest_mob_sidequests()
             {
                 if(!isdefined(item) || !isdefined(item.origin))
                     continue;
-                if(self hasweapon("lightning_hands_zm"))
+
+                if(isdefined(item.bot_mob_macguffin_owner) && item.bot_mob_macguffin_owner != self &&
+                   isdefined(item.bot_mob_macguffin_owner_until) && gettime() < item.bot_mob_macguffin_owner_until &&
+                   isalive(item.bot_mob_macguffin_owner))
+                    continue;
+
+                item.bot_mob_macguffin_owner = self;
+                item.bot_mob_macguffin_owner_until = gettime() + 15000;
+
+                if(!isdefined(item.bot_mob_macguffin_reveal_until) ||
+                   gettime() >= item.bot_mob_macguffin_reveal_until)
                 {
-                    self scripts\zm\zm_bo2_bots::bot_quest_fire_at(item.origin, "lightning_hands_zm", "bot_mob_macguffin_reveal", 700, 5, 0.1);
-                    wait 0.4;
+                    if(isdefined(item.bot_mob_macguffin_retry_until) &&
+                       gettime() < item.bot_mob_macguffin_retry_until)
+                        return true;
+
+                    if(self hasweapon("lightning_hands_zm"))
+                    {
+                        item.bot_mob_macguffin_retry_until = gettime() + 2200;
+                        item.bot_mob_macguffin_reveal_until = gettime() + 1900;
+                        self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+                            item.origin, "lightning_hands_zm", "bot_mob_macguffin_reveal", 180, 1, 0.12);
+                        return true;
+                    }
                 }
+
+                if(isdefined(item.bot_mob_macguffin_reveal_until) &&
+                   gettime() < item.bot_mob_macguffin_reveal_until)
+                    return true;
+
+                if(!self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                    item.origin, "bot_mob_macguffin_approach", 72, 7000))
+                {
+                    item.bot_mob_macguffin_retry_until = gettime() + 3000;
+                    item.bot_mob_macguffin_reveal_until = undefined;
+                    return true;
+                }
+
                 self switchtoweaponimmediate("bouncing_tomahawk_zm");
                 wait 0.2;
                 self lookat(item.origin);
                 self forcegrenadethrow();
-                wait 1.0;
+                wait 0.35;
                 self clearlookat();
+                item.bot_mob_macguffin_retry_until = gettime() + 5000;
+                item.bot_mob_macguffin_reveal_until = undefined;
                 return true;
             }
         }
@@ -384,6 +523,118 @@ bot_quest_mob_sidequests()
             self scripts\zm\zm_bo2_bots::bot_quest_use_target(reward, "bot_mob_blundergat_reward", 80, 4, 1);
             return true;
         }
+    }
+
+    return false;
+}
+
+// Find a map-native Afterlife interaction by the event its stock script
+// publishes. The stock _zm_afterlife handler owns the damage callback.
+bot_mob_afterlife_find_interact(event_name)
+{
+    interactions = getentarray("afterlife_interact", "targetname");
+    foreach(interaction in interactions)
+    {
+        if(isdefined(interaction) && isdefined(interaction.origin) &&
+           isdefined(interaction.script_string) && interaction.script_string == event_name)
+            return interaction;
+    }
+    return undefined;
+}
+
+// Send a single Lightning Hands pulse to a stock damage-driven panel. The
+// entity lease prevents the whole squad from repeatedly firing the same panel.
+bot_mob_afterlife_zap_target(target, goal_name)
+{
+    if(!isdefined(target) || !isdefined(target.origin) ||
+       !self hasweapon("lightning_hands_zm"))
+        return false;
+
+    now = gettime();
+    if(isdefined(target.bot_mob_afterlife_zap_owner) &&
+       target.bot_mob_afterlife_zap_owner != self &&
+       isdefined(target.bot_mob_afterlife_zap_until) && now < target.bot_mob_afterlife_zap_until &&
+       isalive(target.bot_mob_afterlife_zap_owner))
+        return false;
+
+    if(isdefined(target.bot_mob_afterlife_zap_owner) &&
+       target.bot_mob_afterlife_zap_owner == self &&
+       isdefined(target.bot_mob_afterlife_zap_next) && now < target.bot_mob_afterlife_zap_next)
+        return true;
+
+    target.bot_mob_afterlife_zap_owner = self;
+    target.bot_mob_afterlife_zap_until = now + 10000;
+    target.bot_mob_afterlife_zap_next = now + 1600;
+
+    if(!self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+        target.origin, "lightning_hands_zm", goal_name, 180, 1, 0.12))
+    {
+        target.bot_mob_afterlife_zap_owner = undefined;
+        target.bot_mob_afterlife_zap_until = 0;
+        target.bot_mob_afterlife_zap_next = 0;
+        return false;
+    }
+
+    return true;
+}
+
+// Work on real Mob Afterlife targets in dependency order: opening power,
+// lowering the Master Key, the three generator panels, docks, then laundry.
+bot_mob_afterlife_panel_think()
+{
+    if(!self hasweapon("lightning_hands_zm"))
+        return false;
+
+    power_door = getent("powerup_door", "targetname");
+    if(isdefined(power_door) &&
+       (!isdefined(power_door.opened) || !power_door.opened))
+    {
+        target = self bot_mob_afterlife_find_interact("intro_powerup_activate");
+        if(isdefined(target) && self bot_mob_afterlife_zap_target(target, "bot_mob_intro_power"))
+            return true;
+    }
+
+    if(!is_true(level getclientfield("master_key_is_lowered")) &&
+       isdefined(level.is_master_key_west))
+    {
+        if(is_true(level.is_master_key_west))
+            pulley = getent("master_key_pulley_west", "targetname");
+        else
+            pulley = getent("master_key_pulley_east", "targetname");
+
+        if(isdefined(pulley) && self bot_mob_afterlife_zap_target(pulley, "bot_mob_master_key_pulley"))
+            return true;
+    }
+
+    if(!flag("generator_challenge_completed") &&
+       isdefined(level.n_generator_panels_active) && level.n_generator_panels_active < 3)
+    {
+        for(panel_index = 1; panel_index <= 3; panel_index++)
+        {
+            panel = getent("generator_panel_" + panel_index, "targetname");
+            if(!isdefined(panel) || !isdefined(panel.origin))
+                continue;
+            if(isdefined(panel.model) && panel.model == "p6_zm_al_power_station_panels_03")
+                continue;
+
+            if(self bot_mob_afterlife_zap_target(panel, "bot_mob_generator_panel"))
+                return true;
+        }
+    }
+
+    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open"))
+    {
+        docks_panel = getent("docks_panel", "targetname");
+        if(isdefined(docks_panel) && self bot_mob_afterlife_zap_target(docks_panel, "bot_mob_docks_gate"))
+            return true;
+    }
+
+    // The dryer remains disabled until the stock Afterlife switch event fires.
+    if(!is_true(level getclientfield("dryer_stage")))
+    {
+        dryer_switch = self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife");
+        if(isdefined(dryer_switch) && self bot_mob_afterlife_zap_target(dryer_switch, "bot_mob_laundry_power"))
+            return true;
     }
 
     return false;
