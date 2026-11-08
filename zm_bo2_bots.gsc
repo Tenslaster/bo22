@@ -4113,8 +4113,8 @@ bot_run_origins_riotshield_craft(task)
 	current_weapon = self getcurrentweapon();
 	self.bot.is_objective_using = 1;
 
-	// Match the stock table's craft state, consume the shared parts through
-	// player_craft(), and keep all native model/stat/completion callbacks.
+	// Match the stock table craft state, consume the shared pieces through
+	// player_craft(), and retain the native model and completion callbacks.
 	task.craftablespawn [[ set_crafting_func ]](undefined);
 
 	craft_time = 3000;
@@ -4215,12 +4215,205 @@ bot_run_craftable_task(task)
 		}
 		else if(task.kind == "craft")
 		{
+			if(!isdefined(task.stub) || !isdefined(task.craftablespawn))
+				break;
+
+			if(!self bot_player_can_craft(task.craftablespawn))
+				break;
+
+			task.stub.bot_auto_crafter_until = gettime() + 45000;
+		}
+		else if(task.kind == "equip")
+		{
+			if(!isdefined(task.stub) || !isdefined(task.stub.crafted) || !task.stub.crafted ||
+			   !isdefined(task.weaponname))
+				break;
+
+			if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
+				break;
+
+			if(task.stub.persistent == 2 &&
+			   (isdefined(task.stub.bought) && task.stub.bought))
+				break;
+
+			task.stub.bot_auto_crafter_until = gettime() + 45000;
+		}
+
+		if(task.kind == "pickup")
+		{
+			// Parts can be mounted above the floor (especially staff/drone
+			// pieces). Their trigger volume is authoritative; a 3D model-radius
+			// test can leave a bot standing underneath while it stares upward.
+			piece_trigger = undefined;
+			if(isdefined(task.piece.unitrigger) && isdefined(unitrigger_trigger_func))
+				piece_trigger = task.piece.unitrigger [[ unitrigger_trigger_func ]](self);
+
+			if(isdefined(piece_trigger) && piece_trigger istouching(self))
+			{
+				arrived = true;
+				break;
+			}
+
+			if(distance2d(self.origin, task.origin) <= 88 &&
+			   abs(self.origin[2] - task.origin[2]) <= 176)
+			{
+				arrived = true;
+				break;
+			}
+		}
+		else
+		{
+			// The stock craftables handler accepts a build only from inside the
+			// bot's own per-player unitrigger, so navigate until that trigger is
+			// actually touching the bot instead of relying on a loose radius.
+			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+			{
+				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+				if(isdefined(table_trigger) && table_trigger istouching(self))
+				{
+					arrived = true;
+					break;
+				}
+			}
+			else if(distancesquared(self.origin, task.origin) <= 24 * 24)
+			{
+				arrived = true;
+				break;
+			}
+		}
+
+		wait 0.25;
+	}
+
+	self cancelgoal(goal_name);
+	did_interact = 0;
+
+	if(!arrived && gettime() >= deadline && task.kind == "craft")
+		self bot_drop_stuck_craftable_piece(task, 12000);
+
+	if(arrived && self bot_objective_can_run())
+	{
+		did_interact = 1;
+		self lookat(task.origin + (0, 0, 32));
+		use_deadline = gettime() + 7000;
+
+		if(task.kind == "pickup")
+		{
+			if(!isdefined(task.piece) || !isdefined(task.piece.piecestub))
+			{
+				self.bot.is_objective_using = undefined;
+				self clearlookat();
+				self bot_release_craftable_task(task);
+				return;
+			}
+
+			is_shared = isdefined(task.piece.piecestub.is_shared) && task.piece.piecestub.is_shared;
+			self.bot.is_objective_using = 1;
+
+			// Retry the native pickup routine while the model is still present.
+			// It updates stock callbacks, staff counters, shared inventory and
+			// part state; repeated use-button pulses alone are unreliable for bots.
+			take_piece_func = undefined;
+			next_take_attempt = 0;
+			if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
+				take_piece_func = bot_craftables_func("player_take_piece");
+
+			while(gettime() < use_deadline)
+			{
+				if(!self bot_objective_can_run())
+					break;
+
+				if(!isdefined(task.piece.model))
+					break;
+
+				if(!self bot_craftable_piece_is_available(task.piece))
+					break;
+
+				if(is_shared)
+				{
+					if(isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+						break;
+				}
+				else if(isdefined(self.current_craftable_piece) &&
+				        self.current_craftable_piece.piecename == task.piece.piecename &&
+				        self.current_craftable_piece.craftablename == task.piece.craftablename)
+					break;
+
+				if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
+				{
+					already_picked = 0;
+					if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+						already_picked = 1;
+					else if(!is_shared && isdefined(self.current_craftable_piece) &&
+					        self.current_craftable_piece.piecename == task.piece.piecename &&
+					        self.current_craftable_piece.craftablename == task.piece.craftablename)
+						already_picked = 1;
+
+					if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)) &&
+					   isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece) &&
+					   gettime() >= next_take_attempt &&
+					   (!isdefined(task.piece.bot_auto_take_pending_until) ||
+					    gettime() >= task.piece.bot_auto_take_pending_until) &&
+					   self isonground() && !self isonladder() && !self ismantling())
+					{
+						// Prevent overlapping pickup threads if a map onpickup callback
+						// takes a little time to finish its stock state updates.
+						next_take_attempt = gettime() + 2000;
+						task.piece.bot_auto_take_pending_until = gettime() + 2000;
+						self thread [[ take_piece_func ]](task.piece);
+					}
+				}
+				else
+				{
+					if(!self isonground() || self isonladder() || self ismantling())
+					{
+						wait 0.1;
+						continue;
+					}
+
+					self pressusebutton(0.15);
+				}
+
+				wait 0.1;
+			}
+
+			// If the engine does not dispatch pickup to this scripted client, invoke
+			// the exact stock pickup routine. Stock callbacks still update inventory,
+			// quest fields, staff counters, and shared-piece state.
+			if((getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb") && isdefined(task.piece) &&
+			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
+			   self bot_craftable_piece_is_available(task.piece) &&
+			   distance2d(self.origin, task.piece.model.origin) <= 96 &&
+			   abs(self.origin[2] - task.piece.model.origin[2]) <= 184)
+			{
+				is_shared = isdefined(task.piece.piecestub) &&
+				            isdefined(task.piece.piecestub.is_shared) &&
+				            task.piece.piecestub.is_shared;
+				already_picked = 0;
+
+				if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+					already_picked = 1;
+				else if(!is_shared && isdefined(self.current_craftable_piece) &&
+				        self.current_craftable_piece.piecename == task.piece.piecename &&
+				        self.current_craftable_piece.craftablename == task.piece.craftablename)
+					already_picked = 1;
+
+				if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)))
+				{
+					take_piece_func = bot_craftables_func("player_take_piece");
+					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
+						self thread [[ take_piece_func ]](task.piece);
+				}
+			}
+		}
+		else if(task.kind == "craft")
+		{
 			self.bot.is_objective_using = 1;
 			progress_before = self bot_count_crafted_parts(task.craftablespawn);
 
 			// Origins' shield is a shared three-piece craftable. Its stock table
-			// trigger rejects scripted bots in is_player_valid(); use the stock
-			// craft callbacks directly after all three parts are in shared inventory.
+			// trigger rejects scripted bots in is_player_valid(); use stock craft
+			// callbacks directly after all three parts enter shared inventory.
 			if(getdvar("mapname") == "zm_tomb" &&
 			   isdefined(task.craftablespawn.craftable_name) &&
 			   task.craftablespawn.craftable_name == "tomb_shield_zm")
@@ -4243,8 +4436,8 @@ bot_run_craftable_task(task)
 						continue;
 					}
 
-					// Dispatch the stock trigger and refresh the held-use input while
-					// its native build-progress loop is running.
+					// Dispatch the stock trigger and refresh held-use while the
+					// native build-progress loop is running.
 					table_trigger = undefined;
 					if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
 						table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
