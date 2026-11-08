@@ -531,6 +531,26 @@ bot_mob_afterlife_find_interact(event_name)
 
 // Send a single Lightning Hands pulse to a stock damage-driven panel. The
 // entity lease prevents the whole squad from repeatedly firing the same panel.
+bot_mob_afterlife_ensure_lightning_hands()
+{
+    if(!self bot_mob_is_afterlife())
+        return false;
+
+    // Stock afterlife_fake_revive() normally grants and equips this weapon.
+    // Recover it if the bot's scripted loadout timing missed that grant.
+    if(!self hasweapon("lightning_hands_zm"))
+        self giveweapon("lightning_hands_zm");
+
+    if(!self hasweapon("lightning_hands_zm"))
+        return false;
+
+    if(self getcurrentweapon() != "lightning_hands_zm")
+        self switchtoweaponimmediate("lightning_hands_zm");
+
+    wait 0.15;
+    return self getcurrentweapon() == "lightning_hands_zm";
+}
+
 bot_mob_afterlife_zap_target(target, goal_name)
 {
     if(!self bot_mob_is_afterlife() || !isdefined(target) || !isdefined(target.origin))
@@ -737,9 +757,13 @@ bot_mob_afterlife_needs_entry()
        isdefined(getent("docks_panel", "targetname")))
         return true;
 
-    if(!is_true(level getclientfield("dryer_stage")) &&
-       isdefined(self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife")))
-        return true;
+    dryer_stage = level getclientfield("dryer_stage");
+    if(!is_true(dryer_stage))
+    {
+        laundry_switch = self bot_mob_afterlife_find_interact("laundry_power_switch_afterlife");
+        if(isdefined(laundry_switch))
+            return true;
+    }
 
     if(flag("soul_catchers_charged") && !flag("spoon_obtained"))
         return true;
