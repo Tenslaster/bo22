@@ -739,8 +739,8 @@ bot_mob_afterlife_should_return()
         death_count = self.afterlifedeaths;
 
     return_mana = death_count * 90;
-    if(return_mana > 190)
-        return_mana = 190;
+    if(return_mana > 150)
+        return_mana = 150;
 
     if(isdefined(self.manacur) && self.manacur <= return_mana)
         return true;
