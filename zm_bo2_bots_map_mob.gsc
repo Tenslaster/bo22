@@ -693,12 +693,16 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
        !isdefined(unitrigger_visibility_func) || !isdefined(unitrigger_cleanup_func))
         return false;
 
-    if(!findpath(self.origin, trigger_struct.origin, undefined, 0, 1))
+    // The stock unitrigger manager measures from player origin + 35 units,
+    // not from the bot's feet. Path to that same height reference so the bot
+    // does not stand underneath the trigger and stare upward forever.
+    player_trigger_offset = vectorscale((0, 0, 1), 35.0);
+    approach_origin = trigger_struct.origin - player_trigger_offset;
+
+    if(!findpath(self.origin, approach_origin, undefined, 0, 1))
         return false;
 
-    // Stop inside the stock 36-unit use radius and the unitrigger manager's
-    // 42-unit vertical scan band (which measures from player origin + 35).
-    self addgoal(trigger_struct.origin, 20, 2, goal_name);
+    self addgoal(approach_origin, 20, 2, goal_name);
     deadline = gettime() + 10000;
     arrived = false;
 
@@ -714,7 +718,14 @@ bot_mob_activate_afterlife_trigger(trigger_struct, goal_name)
            !isdefined(trigger_struct) || !isdefined(trigger_struct.origin))
             break;
 
-        if(distancesquared(self.origin, trigger_struct.origin) <= 20 * 20)
+        player_trigger_origin = self.origin + player_trigger_offset;
+        horizontal_distance_sq = distance2dsquared(
+            player_trigger_origin, trigger_struct.origin);
+        vertical_distance = abs(player_trigger_origin[2] - trigger_struct.origin[2]);
+
+        // Match _zm_unitrigger::get_closest_unitriggers():
+        // horizontal radius plus a 42-unit vertical allowance.
+        if(horizontal_distance_sq <= 20 * 20 && vertical_distance <= 42)
         {
             arrived = true;
             break;
