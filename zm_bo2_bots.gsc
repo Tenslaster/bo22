@@ -4090,6 +4090,64 @@ bot_count_crafted_parts(craftablespawn)
 	return count;
 }
 
+
+bot_run_origins_riotshield_craft(task)
+{
+	if(!isdefined(task) || !isdefined(task.stub) ||
+	   !isdefined(task.craftablespawn) ||
+	   task.craftablespawn.craftable_name != "tomb_shield_zm")
+		return false;
+
+	if(!self bot_player_can_craft(task.craftablespawn))
+		return false;
+
+	set_crafting_func = bot_craftables_func("craftable_set_piece_crafting");
+	clear_crafting_func = bot_craftables_func("craftable_clear_piece_crafting");
+	player_craft_func = bot_craftables_func("player_craft");
+	all_crafted_func = bot_craftables_func("craftable_all_crafted");
+
+	if(!isdefined(set_crafting_func) || !isdefined(clear_crafting_func) ||
+	   !isdefined(player_craft_func) || !isdefined(all_crafted_func))
+		return false;
+
+	current_weapon = self getcurrentweapon();
+	self.bot.is_objective_using = 1;
+
+	// Match the stock table's craft state, consume the shared parts through
+	// player_craft(), and keep all native model/stat/completion callbacks.
+	task.craftablespawn [[ set_crafting_func ]](undefined);
+
+	craft_time = 3000;
+	if(isdefined(task.stub.usetime) && task.stub.usetime > 0)
+		craft_time = task.stub.usetime;
+
+	craft_deadline = gettime() + craft_time + 150;
+	while(gettime() < craft_deadline)
+	{
+		if(!isalive(self) || !self bot_objective_can_run())
+			break;
+		wait 0.05;
+	}
+
+	if(!isalive(self) || !self bot_objective_can_run())
+	{
+		task.craftablespawn [[ clear_crafting_func ]](undefined);
+		self.bot.is_objective_using = undefined;
+		return false;
+	}
+
+	self [[ player_craft_func ]](task.craftablespawn);
+	crafted = task.craftablespawn [[ all_crafted_func ]]();
+
+	if(crafted)
+		self scripts\zm\zm_bo2_bots_map_origins::bot_origins_grant_shield(current_weapon);
+	else
+		task.craftablespawn [[ clear_crafting_func ]](undefined);
+
+	self.bot.is_objective_using = undefined;
+	return crafted;
+}
+
 bot_run_craftable_task(task)
 {
 	if(!isdefined(task) || !isdefined(task.origin))
@@ -4157,232 +4215,46 @@ bot_run_craftable_task(task)
 		}
 		else if(task.kind == "craft")
 		{
-			if(!isdefined(task.stub) || !isdefined(task.craftablespawn))
-				break;
-
-			if(!self bot_player_can_craft(task.craftablespawn))
-				break;
-
-			task.stub.bot_auto_crafter_until = gettime() + 45000;
-		}
-		else if(task.kind == "equip")
-		{
-			if(!isdefined(task.stub) || !isdefined(task.stub.crafted) || !task.stub.crafted ||
-			   !isdefined(task.weaponname))
-				break;
-
-			if(task.stub.persistent == 1 && (self has_player_equipment(task.weaponname) || self hasweapon(task.weaponname)))
-				break;
-
-			if(task.stub.persistent == 2 &&
-			   (isdefined(task.stub.bought) && task.stub.bought))
-				break;
-
-			task.stub.bot_auto_crafter_until = gettime() + 45000;
-		}
-
-		if(task.kind == "pickup")
-		{
-			// Parts can be mounted above the floor (especially staff/drone
-			// pieces). Their trigger volume is authoritative; a 3D model-radius
-			// test can leave a bot standing underneath while it stares upward.
-			piece_trigger = undefined;
-			if(isdefined(task.piece.unitrigger) && isdefined(unitrigger_trigger_func))
-				piece_trigger = task.piece.unitrigger [[ unitrigger_trigger_func ]](self);
-
-			if(isdefined(piece_trigger) && piece_trigger istouching(self))
-			{
-				arrived = true;
-				break;
-			}
-
-			if(distance2d(self.origin, task.origin) <= 88 &&
-			   abs(self.origin[2] - task.origin[2]) <= 176)
-			{
-				arrived = true;
-				break;
-			}
-		}
-		else
-		{
-			// The stock craftables handler accepts a build only from inside the
-			// bot's own per-player unitrigger, so navigate until that trigger is
-			// actually touching the bot instead of relying on a loose radius.
-			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
-			{
-				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
-				if(isdefined(table_trigger) && table_trigger istouching(self))
-				{
-					arrived = true;
-					break;
-				}
-			}
-			else if(distancesquared(self.origin, task.origin) <= 24 * 24)
-			{
-				arrived = true;
-				break;
-			}
-		}
-
-		wait 0.25;
-	}
-
-	self cancelgoal(goal_name);
-	did_interact = 0;
-
-	if(!arrived && gettime() >= deadline && task.kind == "craft")
-		self bot_drop_stuck_craftable_piece(task, 12000);
-
-	if(arrived && self bot_objective_can_run())
-	{
-		did_interact = 1;
-		self lookat(task.origin + (0, 0, 32));
-		use_deadline = gettime() + 7000;
-
-		if(task.kind == "pickup")
-		{
-			if(!isdefined(task.piece) || !isdefined(task.piece.piecestub))
-			{
-				self.bot.is_objective_using = undefined;
-				self clearlookat();
-				self bot_release_craftable_task(task);
-				return;
-			}
-
-			is_shared = isdefined(task.piece.piecestub.is_shared) && task.piece.piecestub.is_shared;
 			self.bot.is_objective_using = 1;
+			progress_before = self bot_count_crafted_parts(task.craftablespawn);
 
-			// Retry the native pickup routine while the model is still present.
-			// It updates stock callbacks, staff counters, shared inventory and
-			// part state; repeated use-button pulses alone are unreliable for bots.
-			take_piece_func = undefined;
-			next_take_attempt = 0;
-			if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
-				take_piece_func = bot_craftables_func("player_take_piece");
-
-			while(gettime() < use_deadline)
+			// Origins' shield is a shared three-piece craftable. Its stock table
+			// trigger rejects scripted bots in is_player_valid(); use the stock
+			// craft callbacks directly after all three parts are in shared inventory.
+			if(getdvar("mapname") == "zm_tomb" &&
+			   isdefined(task.craftablespawn.craftable_name) &&
+			   task.craftablespawn.craftable_name == "tomb_shield_zm")
 			{
-				if(!self bot_objective_can_run())
-					break;
-
-				if(!isdefined(task.piece.model))
-					break;
-
-				if(!self bot_craftable_piece_is_available(task.piece))
-					break;
-
-				if(is_shared)
+				self bot_run_origins_riotshield_craft(task);
+			}
+			else
+			{
+				while(gettime() < use_deadline)
 				{
-					if(isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+					if(!self bot_objective_can_run())
 						break;
-				}
-				else if(isdefined(self.current_craftable_piece) &&
-				        self.current_craftable_piece.piecename == task.piece.piecename &&
-				        self.current_craftable_piece.craftablename == task.piece.craftablename)
-					break;
 
-				if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
-				{
-					already_picked = 0;
-					if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
-						already_picked = 1;
-					else if(!is_shared && isdefined(self.current_craftable_piece) &&
-					        self.current_craftable_piece.piecename == task.piece.piecename &&
-					        self.current_craftable_piece.craftablename == task.piece.craftablename)
-						already_picked = 1;
+					if(self bot_count_crafted_parts(task.craftablespawn) > progress_before)
+						break;
 
-					if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)) &&
-					   isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece) &&
-					   gettime() >= next_take_attempt &&
-					   (!isdefined(task.piece.bot_auto_take_pending_until) ||
-					    gettime() >= task.piece.bot_auto_take_pending_until) &&
-					   self isonground() && !self isonladder() && !self ismantling())
-					{
-						// Prevent overlapping pickup threads if a map onpickup callback
-						// takes a little time to finish its stock state updates.
-						next_take_attempt = gettime() + 2000;
-						task.piece.bot_auto_take_pending_until = gettime() + 2000;
-						self thread [[ take_piece_func ]](task.piece);
-					}
-				}
-				else
-				{
 					if(!self isonground() || self isonladder() || self ismantling())
 					{
 						wait 0.1;
 						continue;
 					}
 
-					self pressusebutton(0.15);
-				}
+					// Dispatch the stock trigger and refresh the held-use input while
+					// its native build-progress loop is running.
+					table_trigger = undefined;
+					if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+						table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
 
-				wait 0.1;
-			}
+					self pressusebutton(0.3);
+					if(isdefined(table_trigger) &&
+					   isdefined(table_trigger.thread_running) && table_trigger.thread_running &&
+					   isdefined(table_trigger.parent_player) && table_trigger.parent_player == self)
+						table_trigger notify("trigger", self);
 
-			// If the engine does not dispatch pickup to this scripted client, invoke
-			// the exact stock pickup routine. Stock callbacks still update inventory,
-			// quest fields, staff counters, and shared-piece state.
-			if((getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb") && isdefined(task.piece) &&
-			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
-			   self bot_craftable_piece_is_available(task.piece) &&
-			   distance2d(self.origin, task.piece.model.origin) <= 96 &&
-			   abs(self.origin[2] - task.piece.model.origin[2]) <= 184)
-			{
-				is_shared = isdefined(task.piece.piecestub) &&
-				            isdefined(task.piece.piecestub.is_shared) &&
-				            task.piece.piecestub.is_shared;
-				already_picked = 0;
-
-				if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
-					already_picked = 1;
-				else if(!is_shared && isdefined(self.current_craftable_piece) &&
-				        self.current_craftable_piece.piecename == task.piece.piecename &&
-				        self.current_craftable_piece.craftablename == task.piece.craftablename)
-					already_picked = 1;
-
-				if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)))
-				{
-					take_piece_func = bot_craftables_func("player_take_piece");
-					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
-						self thread [[ take_piece_func ]](task.piece);
-				}
-			}
-		}
-		else if(task.kind == "craft")
-		{
-			self.bot.is_objective_using = 1;
-			progress_before = self bot_count_crafted_parts(task.craftablespawn);
-
-			while(gettime() < use_deadline)
-			{
-				if(!self bot_objective_can_run())
-					break;
-
-				if(self bot_count_crafted_parts(task.craftablespawn) > progress_before)
-					break;
-
-				if(!self isonground() || self isonladder() || self ismantling())
-				{
-					wait 0.1;
-					continue;
-				}
-
-				// Dispatch the per-player unitrigger event used by the stock craftable
-				// handler. A held use-button alone is unreliable for scripted bots.
-				table_trigger = undefined;
-				if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
-					table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
-
-				if(isdefined(table_trigger) &&
-				   isdefined(table_trigger.thread_running) && table_trigger.thread_running &&
-				   isdefined(table_trigger.parent_player) && table_trigger.parent_player == self)
-				{
-					table_trigger notify("trigger", self);
-					wait 0.25;
-				}
-				else
-				{
-					self pressusebutton(0.15);
 					wait 0.15;
 				}
 			}
