@@ -3422,6 +3422,41 @@ bot_drop_stuck_buildable_piece(task, retry_ms)
 	self maps\mp\zombies\_zm_buildables::player_drop_piece(undefined, task.slot);
 }
 
+// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
+// direct file::function reference is resolved at script load and causes
+// "Unresolved external" on every other map, so look the functions up at runtime.
+// getfunction() returns undefined when the file is not loaded.
+bot_craftables_func(name)
+{
+	if(!isdefined(level.bot_craftables_funcs))
+		level.bot_craftables_funcs = [];
+
+	if(!isdefined(level.bot_craftables_funcs[name]))
+		level.bot_craftables_funcs[name] = getfunction("maps/mp/zombies/_zm_craftables", name);
+
+	return level.bot_craftables_funcs[name];
+}
+
+bot_player_can_craft(craftablespawn)
+{
+	can_craft = bot_craftables_func("player_can_craft");
+
+	if(!isdefined(can_craft))
+		return false;
+
+	return self [[ can_craft ]](craftablespawn, 0);
+}
+
+bot_player_can_take_piece(piece)
+{
+	can_take = bot_craftables_func("player_can_take_piece");
+
+	if(!isdefined(can_take))
+		return false;
+
+	return self [[ can_take ]](piece);
+}
+
 bot_drop_stuck_craftable_piece(task, retry_ms)
 {
 	if(!isdefined(task) || !isdefined(self.current_craftable_piece))
@@ -3429,7 +3464,10 @@ bot_drop_stuck_craftable_piece(task, retry_ms)
 
 	held = self.current_craftable_piece;
 	held.bot_auto_retry_until = gettime() + retry_ms;
-	self maps\mp\zombies\_zm_craftables::player_drop_piece();
+	drop_piece = bot_craftables_func("player_drop_piece");
+
+	if(isdefined(drop_piece))
+		self [[ drop_piece ]]();
 }
 
 bot_run_buildable_task(task)
@@ -3672,7 +3710,7 @@ bot_find_craftable_task()
 		   isalive(stub.bot_auto_crafter))
 			continue;
 
-		if(!self maps\mp\zombies\_zm_craftables::player_can_craft(stub.craftablespawn, 0))
+		if(!self bot_player_can_craft(stub.craftablespawn))
 			continue;
 
 		dist_sq = distancesquared(self.origin, stub.origin);
@@ -3792,7 +3830,7 @@ bot_find_craftable_task()
 			if(isdefined(piece.bot_auto_retry_until) && gettime() < piece.bot_auto_retry_until)
 				continue;
 
-			if(!self maps\mp\zombies\_zm_craftables::player_can_take_piece(piece))
+			if(!self bot_player_can_take_piece(piece))
 				continue;
 
 			if(isdefined(piece.in_shared_inventory) && piece.in_shared_inventory)
@@ -3899,7 +3937,7 @@ bot_run_craftable_task(task)
 			if(!isdefined(task.stub) || !isdefined(task.craftablespawn))
 				break;
 
-			if(!self maps\mp\zombies\_zm_craftables::player_can_craft(task.craftablespawn, 0))
+			if(!self bot_player_can_craft(task.craftablespawn))
 				break;
 
 			task.stub.bot_auto_crafter_until = gettime() + 45000;
