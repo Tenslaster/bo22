@@ -3573,13 +3573,7 @@ bot_run_buildable_task(task)
 		return;
 	}
 
-	// Do not let the navigation goal finish at the old 140-unit radius:
-	// the stock pickup/build triggers are much smaller and require physical contact.
-	self addgoal(task.origin, 24, 2, goal_name);
-
-	unitrigger_trigger_func = undefined;
-	if(task.kind != "pickup")
-		unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+	self addgoal(task.origin, 140, 2, goal_name);
 
 	deadline = gettime() + 45000;
 	arrived = false;
@@ -3629,34 +3623,11 @@ bot_run_buildable_task(task)
 			task.stub.bot_auto_builder_until = gettime() + 45000;
 		}
 
-		if(task.kind == "pickup")
+		arrival_range_sq = task.kind == "pickup" ? 900 : 2500;
+		if(distancesquared(self.origin, task.origin) <= arrival_range_sq)
 		{
-			if(distancesquared(self.origin, task.origin) <= 900)
-			{
-				arrived = true;
-				break;
-			}
-		}
-		else
-		{
-			// Match the stock craftables code: crafting and equipment pickup are
-			// accepted only while the bot is touching its own per-player trigger.
-			// A loose 50-unit distance check can stop at the edge of the table
-			// trigger, where player_continue_crafting() rejects the interaction.
-			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
-			{
-				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
-				if(isdefined(table_trigger) && table_trigger istouching(self))
-				{
-					arrived = true;
-					break;
-				}
-			}
-			else if(distancesquared(self.origin, task.origin) <= 24 * 24)
-			{
-				arrived = true;
-				break;
-			}
+			arrived = true;
+			break;
 		}
 
 		wait 0.25;
@@ -4035,7 +4006,13 @@ bot_run_craftable_task(task)
 		return;
 	}
 
-	self addgoal(task.origin, 140, 2, goal_name);
+	// Reach the actual part or table trigger; the old 140-unit goal radius
+	// let bots stop too far away to pick up parts or hold the craft interaction.
+	self addgoal(task.origin, 24, 2, goal_name);
+
+	unitrigger_trigger_func = undefined;
+	if(task.kind != "pickup")
+		unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
 
 	deadline = gettime() + 45000;
 	arrived = false;
@@ -4087,11 +4064,33 @@ bot_run_craftable_task(task)
 			task.stub.bot_auto_crafter_until = gettime() + 45000;
 		}
 
-		arrival_range_sq = task.kind == "pickup" ? 900 : 2500;
-		if(distancesquared(self.origin, task.origin) <= arrival_range_sq)
+		if(task.kind == "pickup")
 		{
-			arrived = true;
-			break;
+			if(distancesquared(self.origin, task.origin) <= 900)
+			{
+				arrived = true;
+				break;
+			}
+		}
+		else
+		{
+			// The stock craftables handler accepts a build only from inside the
+			// bot's own per-player unitrigger, so navigate until that trigger is
+			// actually touching the bot instead of relying on a loose radius.
+			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+			{
+				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+				if(isdefined(table_trigger) && table_trigger istouching(self))
+				{
+					arrived = true;
+					break;
+				}
+			}
+			else if(distancesquared(self.origin, task.origin) <= 24 * 24)
+			{
+				arrived = true;
+				break;
+			}
 		}
 
 		wait 0.25;
