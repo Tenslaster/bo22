@@ -164,8 +164,6 @@ init()
     for(i = 0; i < bot_amount; i++)
         spawn_bot();
 
-    level thread bot_health_regen();
-
     foreach(player in get_players())
     {
         if(!isdefined(player.pers["isbot"]))
@@ -211,7 +209,6 @@ onspawn()
 		self notify("bot_relife");
 		
 		self thread bot_spawn();
-		self thread bot_health();
 		self thread bot_set_perks();
 	}
 }
@@ -237,54 +234,6 @@ bot_spawn()
 	self thread bot_auto_quest_think();
 	self thread bot_weapon_switch_think();
 	self thread bot_weapon_failsafe_monitor();
-}
-
-bot_health()
-{
-	self endon("disconnect");
-	self endon("bot_relife");
-	self endon("death");
-	
-	level endon("end_game");
-	
-	wait 1;
-	
-	while(1)
-	{
-		max_health = 250;
-		
-		self setnormalhealth(max_health);
-		self setmaxhealth(max_health);
-		
-		self waittill("player_revived");
-	}
-}
-
-bot_health_regen()
-{
-	level endon("end_game");
-	
-	for(;;)
-	{
-		players = getplayers();
-		
-		for(i = 0; i < players.size; i++)
-		{
-			if(!isdefined(players[i]) || !isalive(players[i]))
-				continue;
-			
-			if(!isdefined(players[i].pers["isbot"]))
-				continue;
-			
-            if(players[i].health < 250)
-                players[i].health += 50;
-			
-            if(players[i].health > 250)
-                players[i].health = 250;
-		}
-		
-		wait 0.5;
-	}
 }
 
 bot_set_perks()
