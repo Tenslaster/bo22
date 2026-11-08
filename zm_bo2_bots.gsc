@@ -3623,11 +3623,35 @@ bot_run_buildable_task(task)
 			task.stub.bot_auto_builder_until = gettime() + 45000;
 		}
 
-		arrival_range_sq = task.kind == "pickup" ? 900 : 2500;
-		if(distancesquared(self.origin, task.origin) <= arrival_range_sq)
+		if(task.kind == "pickup")
 		{
-			arrived = true;
-			break;
+			if(distancesquared(self.origin, task.origin) <= 900)
+			{
+				arrived = true;
+				break;
+			}
+		}
+		else
+		{
+			// Match the stock craftables code: crafting and equipment pickup are
+			// accepted only while the bot is touching its own per-player trigger.
+			// A loose 50-unit distance check can stop at the edge of the table
+			// trigger, where player_continue_crafting() rejects the interaction.
+			unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+			if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+			{
+				table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+				if(isdefined(table_trigger) && table_trigger istouching(self))
+				{
+					arrived = true;
+					break;
+				}
+			}
+			else if(distancesquared(self.origin, task.origin) <= 24 * 24)
+			{
+				arrived = true;
+				break;
+			}
 		}
 
 		wait 0.25;
@@ -3887,8 +3911,8 @@ bot_find_craftable_task()
 		return task;
 	}
 
-	// Personal parts occupy one hand; shared pieces (such as Mob's plane parts)
-	// can still be collected into their shared inventory.
+	// Personal parts occupy one hand; Origins staff, shield, and drone parts,
+	// along with Mob's shared pieces, can be collected into shared inventory.
 	best_piece = undefined;
 	best_dist_sq = 999999999;
 	path_checks = 0;
