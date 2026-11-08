@@ -10,6 +10,11 @@
 
 bot_quest_mob_plane()
 {
+    // Living bots must enter through the same stock Afterlife kill trigger as
+    // human players before they can operate the map's electrical objectives.
+    if(!self bot_mob_is_afterlife() && self bot_mob_afterlife_entry_think())
+        return;
+
     if(self bot_quest_mob_sidequests())
         return;
 
@@ -598,6 +603,147 @@ bot_mob_afterlife_panel_think()
             return true;
     }
 
+    return false;
+}
+
+// Mob's stock Afterlife kill points are registered as static unitrigger
+// stubs. The unitrigger manager normally filters scripted test-client bots
+// through is_player_valid(); explicitly allow bots on these specific stubs.
+bot_mob_allow_afterlife_bot_triggers()
+{
+    triggers = getstructarray("afterlife_trigger", "targetname");
+    if(!isdefined(triggers))
+        return;
+
+    foreach(trigger_struct in triggers)
+    {
+        if(isdefined(trigger_struct) && isdefined(trigger_struct.unitrigger_stub))
+            trigger_struct.unitrigger_stub.ignore_player_valid = 1;
+    }
+}
+
+// Check whether a real Mob objective still needs the ghost form. This stops
+// bots from spending their Afterlife life after all electrical/ghost quests
+// have already been completed.
+bot_mob_afterlife_needs_entry()
+{
+    power_door = getent("powerup_door", "targetname");
+    if(isdefined(power_door) && (!isdefined(power_door.opened) || !power_door.opened))
+        return true;
+
+    if(isdefined(level.is_master_key_west))
+    {
+        if(is_true(level.is_master_key_west))
+            pulley = getent("master_key_pulley_west", "targetname");
+        else
+            pulley = getent("master_key_pulley_east", "targetname");
+
+        if(isdefined(pulley) && isdefined(pulley.model) &&
+           pulley.model != "p6_zm_al_power_station_panels_03")
+            return true;
+    }
+
+    if(!flag("generator_challenge_completed") &&
+       isdefined(level.n_generator_panels_active) && level.n_generator_panels_active < 3)
+        return true;
+
+    if(!flag("docks_outer_gate_open") && !flag("docks_gates_remain_open") &&
+       isdefined(getent("docks_panel", "targetname")))
+        return true;
+
+    if(flag("soul_catchers_charged") && !flag("spoon_obtained"))
+        return true;
+
+    if(!flag("warden_blundergat_obtained") &&
+       isdefined(level.sq_bg_macguffins) && level.sq_bg_macguffins.size > 0)
+        return true;
+
+    if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
+       flag("warden_blundergat_obtained") &&
+       isdefined(level.a_important_codes) && level.a_important_codes.size > 0 &&
+       !isdefined(level.m_headphones))
+        return true;
+
+    if(isdefined(level.m_headphones) && isdefined(level.m_headphones.origin))
+        return true;
+
+    return false;
+}
+
+// Use a real ZM_PRISON_AFTERLIFE_KILL unitrigger, not a fabricated event.
+// A successful activation runs stock afterlife_trigger_think(), consumes
+// one life, and lets the stock Afterlife laststand/mana behavior take over.
+bot_mob_afterlife_entry_think()
+{
+    if(!isdefined(self.lives) || self.lives <= 0 ||
+       self is_reviving_any() ||
+       self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+        return false;
+
+    if(isdefined(self.bot_mob_afterlife_retry_until) &&
+       gettime() < self.bot_mob_afterlife_retry_until)
+        return false;
+
+    if(!self bot_mob_afterlife_needs_entry())
+        return false;
+
+    self bot_mob_allow_afterlife_bot_triggers();
+
+    triggers = getstructarray("afterlife_trigger", "targetname");
+    if(!isdefined(triggers) || triggers.size == 0)
+        return false;
+
+    best_trigger = undefined;
+    best_distance = 999999999;
+
+    foreach(trigger_struct in triggers)
+    {
+        if(!isdefined(trigger_struct) || !isdefined(trigger_struct.origin) ||
+           !isdefined(trigger_struct.unitrigger_stub))
+            continue;
+
+        // Reapply the bot exception here in case a round transition rebuilt
+        // or re-registered the stock trigger stub.
+        trigger_struct.unitrigger_stub.ignore_player_valid = 1;
+
+        if(isdefined(trigger_struct.bot_mob_entry_owner) &&
+           trigger_struct.bot_mob_entry_owner != self &&
+           isdefined(trigger_struct.bot_mob_entry_until) &&
+           gettime() < trigger_struct.bot_mob_entry_until &&
+           isalive(trigger_struct.bot_mob_entry_owner))
+            continue;
+
+        distance_sq = distancesquared(self.origin, trigger_struct.origin);
+        if(distance_sq >= best_distance ||
+           !findpath(self.origin, trigger_struct.origin, undefined, 0, 1))
+            continue;
+
+        best_trigger = trigger_struct;
+        best_distance = distance_sq;
+    }
+
+    if(!isdefined(best_trigger))
+        return false;
+
+    best_trigger.bot_mob_entry_owner = self;
+    best_trigger.bot_mob_entry_until = gettime() + 15000;
+
+    self.bot_mob_afterlife_retry_until = gettime() + 5000;
+    self scripts\zm\zm_bo2_bots::bot_quest_use_target(
+        best_trigger, "bot_mob_afterlife_kill", 40, 1);
+
+    if(is_true(self.afterlife))
+    {
+        self.bot_mob_afterlife_retry_until = undefined;
+        best_trigger.bot_mob_entry_owner = undefined;
+        best_trigger.bot_mob_entry_until = undefined;
+        return true;
+    }
+
+    // The stock trigger did not consume the bot's life; release the claim so
+    // another bot can try a different entrance while this bot waits briefly.
+    best_trigger.bot_mob_entry_owner = undefined;
+    best_trigger.bot_mob_entry_until = undefined;
     return false;
 }
 
