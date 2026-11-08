@@ -1177,4 +1177,3 @@ bot_mob_grant_shield(current_weapon)
 {
 	self scripts\zm\zm_bo2_bots::bot_grant_map_shield("alcatraz_shield_zm", current_weapon);
 }
-
