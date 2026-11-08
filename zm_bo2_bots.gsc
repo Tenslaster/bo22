@@ -142,6 +142,11 @@ init()
     bot_set_dvars();
     flag_wait("initial_blackscreen_passed");
 
+    // Origins' stock capture-progress code excludes Plutonium test clients.
+    // Install the map-only replacement before any generator can be started.
+    if(getdvar("mapname") == "zm_tomb")
+        bot_origins_install_capture_zone_hook();
+
     if(!isdefined(level.using_bot_weapon_logic))
         level.using_bot_weapon_logic = 1;
     if(!isdefined(level.using_bot_revive_logic))
@@ -472,6 +477,7 @@ bot_spawn_init()
 	self.bot.is_crafting = undefined;
 	self.bot.is_perk_buying = undefined;
 	self.bot.is_objective_using = undefined;
+	self.bot.is_holding_generator = undefined;
 	self.bot.buildable_scan_after = undefined;
 	self.bot.craftable_scan_after = undefined;
 	self.bot.quest_scan_after = undefined;
@@ -521,6 +527,14 @@ bot_main()
 			
 			continue;
 		}
+
+        // Keep generator defenders on the capture objective; they still fight
+        // through bot_combat_think above this guard.
+        if(is_true(self.bot.is_holding_generator))
+        {
+            wait 0.05;
+            continue;
+        }
 		
 		self bot_update_lookat();
 		self bot_stand_fix();
@@ -3131,7 +3145,8 @@ bot_auto_buildables_think()
 	{
 		wait 0.5;
 
-		if(!self bot_objective_can_run() || is_true(self.bot.is_crafting))
+		if(!self bot_objective_can_run() || is_true(self.bot.is_crafting) ||
+		   is_true(self.bot.is_holding_generator))
 		{
 			if(self getgoal("bot_buildable") || self hasgoal("bot_buildable"))
 				self cancelgoal("bot_buildable");
@@ -3741,7 +3756,8 @@ bot_auto_craftables_think()
 	{
 		wait 0.5;
 
-		if(!self bot_objective_can_run() || is_true(self.bot.is_building))
+		if(!self bot_objective_can_run() || is_true(self.bot.is_building) ||
+		   is_true(self.bot.is_holding_generator))
 		{
 			if(self getgoal("bot_craftable") || self hasgoal("bot_craftable"))
 				self cancelgoal("bot_craftable");
@@ -3890,6 +3906,7 @@ bot_find_craftable_task()
 	// Personal parts occupy one hand; Origins staff, shield, and drone parts,
 	// along with Mob's shared pieces, can be collected into shared inventory.
 	best_piece = undefined;
+	best_piece_approach = undefined;
 	best_dist_sq = 999999999;
 	path_checks = 0;
 
@@ -3943,10 +3960,14 @@ bot_find_craftable_task()
 
 			path_checks++;
 
-			if(!findpath(self.origin, piece.model.origin, undefined, 0, 1))
+			// Some Origins staff and drone pieces are suspended above the
+			// floor. Path to a reachable point just below the visible model.
+			approach_origin = piece.model.origin + (0, 0, -16);
+			if(!findpath(self.origin, approach_origin, undefined, 0, 1))
 				continue;
 
 			best_piece = piece;
+			best_piece_approach = approach_origin;
 			best_dist_sq = dist_sq;
 		}
 	}
@@ -3961,6 +3982,7 @@ bot_find_craftable_task()
 	task.kind = "pickup";
 	task.origin = best_piece.model.origin;
 	task.piece = best_piece;
+	task.approach_origin = best_piece_approach;
 	task.stub = undefined;
 	task.slot = undefined;
 	return task;
@@ -3998,7 +4020,12 @@ bot_run_craftable_task(task)
 			task.stub.ignore_player_valid = 1;
 	}
 
-	if(!findpath(self.origin, task.origin, undefined, 0, 1))
+	nav_origin = task.origin;
+	if(task.kind == "pickup" && getdvar("mapname") == "zm_tomb" &&
+	   isdefined(task.approach_origin))
+		nav_origin = task.approach_origin;
+
+	if(!findpath(self.origin, nav_origin, undefined, 0, 1))
 	{
 		if(task.kind == "craft")
 			self bot_drop_stuck_craftable_piece(task, 12000);
@@ -4008,7 +4035,10 @@ bot_run_craftable_task(task)
 
 	// Reach the actual part or table trigger; the old 140-unit goal radius
 	// let bots stop too far away to pick up parts or hold the craft interaction.
-	self addgoal(task.origin, 24, 2, goal_name);
+	if(task.kind == "pickup" && getdvar("mapname") == "zm_tomb")
+		self addgoal(nav_origin, 56, 2, goal_name);
+	else
+		self addgoal(task.origin, 24, 2, goal_name);
 
 	// Origins craftable pickup parts and table actions both expose per-player
 	// unitrigger entities. Use the same lookup for both task kinds so pickup
@@ -4080,8 +4110,8 @@ bot_run_craftable_task(task)
 				break;
 			}
 
-			if(distance2d(self.origin, task.origin) <= 64 &&
-			   abs(self.origin[2] - task.origin[2]) <= 144)
+			if(distance2d(self.origin, task.origin) <= 88 &&
+			   abs(self.origin[2] - task.origin[2]) <= 176)
 			{
 				arrived = true;
 				break;
@@ -4136,33 +4166,13 @@ bot_run_craftable_task(task)
 			is_shared = isdefined(task.piece.piecestub.is_shared) && task.piece.piecestub.is_shared;
 			self.bot.is_objective_using = 1;
 
-			// Dispatch the stock pickup callback immediately on arrival. The
-			// native trigger handler normally threads this exact function, but
-			// scripted clients can fail its player-validity/use-input path.
-			// player_take_piece still performs all stock onpickup callbacks,
-			// shared-inventory updates, part unspawn, and quest counters.
-			if(getdvar("mapname") == "zm_tomb" &&
-			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
-			   self bot_craftable_piece_is_available(task.piece))
-			{
-				already_picked = 0;
-				if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
-					already_picked = 1;
-				else if(!is_shared && isdefined(self.current_craftable_piece) &&
-				        self.current_craftable_piece.piecename == task.piece.piecename &&
-				        self.current_craftable_piece.craftablename == task.piece.craftablename)
-					already_picked = 1;
-
-				if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)))
-				{
-					take_piece_func = bot_craftables_func("player_take_piece");
-					if(isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece))
-					{
-						self thread [[ take_piece_func ]](task.piece);
-						wait 0.2;
-					}
-				}
-			}
+			// Retry the native pickup routine while the model is still present.
+			// It updates stock callbacks, staff counters, shared inventory and
+			// part state; repeated use-button pulses alone are unreliable for bots.
+			take_piece_func = undefined;
+			next_take_attempt = 0;
+			if(getdvar("mapname") == "zm_tomb")
+				take_piece_func = bot_craftables_func("player_take_piece");
 
 			while(gettime() < use_deadline)
 			{
@@ -4185,13 +4195,36 @@ bot_run_craftable_task(task)
 				        self.current_craftable_piece.craftablename == task.piece.craftablename)
 					break;
 
-				if(!self isonground() || self isonladder() || self ismantling())
+				if(getdvar("mapname") == "zm_tomb")
 				{
-					wait 0.1;
-					continue;
+					already_picked = 0;
+					if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
+						already_picked = 1;
+					else if(!is_shared && isdefined(self.current_craftable_piece) &&
+					        self.current_craftable_piece.piecename == task.piece.piecename &&
+					        self.current_craftable_piece.craftablename == task.piece.craftablename)
+						already_picked = 1;
+
+					if(!already_picked && (is_shared || !isdefined(self.current_craftable_piece)) &&
+					   isdefined(take_piece_func) && self bot_player_can_take_piece(task.piece) &&
+					   gettime() >= next_take_attempt &&
+					   self isonground() && !self isonladder() && !self ismantling())
+					{
+						next_take_attempt = gettime() + 500;
+						self thread [[ take_piece_func ]](task.piece);
+					}
+				}
+				else
+				{
+					if(!self isonground() || self isonladder() || self ismantling())
+					{
+						wait 0.1;
+						continue;
+					}
+
+					self pressusebutton(0.15);
 				}
 
-				self pressusebutton(0.15);
 				wait 0.1;
 			}
 
@@ -4201,8 +4234,8 @@ bot_run_craftable_task(task)
 			if(getdvar("mapname") == "zm_tomb" && isdefined(task.piece) &&
 			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
 			   self bot_craftable_piece_is_available(task.piece) &&
-			   distance2d(self.origin, task.piece.model.origin) <= 72 &&
-			   abs(self.origin[2] - task.piece.model.origin[2]) <= 160)
+			   distance2d(self.origin, task.piece.model.origin) <= 96 &&
+			   abs(self.origin[2] - task.piece.model.origin[2]) <= 184)
 			{
 				is_shared = isdefined(task.piece.piecestub) &&
 				            isdefined(task.piece.piecestub.is_shared) &&
