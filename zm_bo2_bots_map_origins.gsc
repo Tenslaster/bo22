@@ -1732,6 +1732,9 @@ bot_origins_robot_footprint(robot)
         return undefined;
 
     footprints = getstructarray("giant_robot_footprint_center", "targetname");
+    if(!isdefined(footprints) || footprints.size == 0)
+        return undefined;
+
     nearest = undefined;
     nearest_dist = 999999999;
 
