@@ -29,45 +29,87 @@ bot_origins_punch_func(name)
 
 bot_quest_origins_shovel()
 {
-    if(!isdefined(self.dig_vars) || !isdefined(self.dig_vars["has_shovel"]) || self.dig_vars["has_shovel"])
+    // The stock Origins dig module initializes this array from a player-connect
+    // callback. Scripted bots can exist before/without that callback, so create
+    // the same fields the stock shovel/dig callbacks expect.
+    if(!isdefined(self.dig_vars))
+        self.dig_vars = [];
+
+    if(!isdefined(self.dig_vars["has_shovel"]))
+        self.dig_vars["has_shovel"] = 0;
+    if(!isdefined(self.dig_vars["has_upgraded_shovel"]))
+        self.dig_vars["has_upgraded_shovel"] = 0;
+    if(!isdefined(self.dig_vars["has_helmet"]))
+        self.dig_vars["has_helmet"] = 0;
+    if(!isdefined(self.dig_vars["n_spots_dug"]))
+        self.dig_vars["n_spots_dug"] = 0;
+    if(!isdefined(self.dig_vars["n_losing_streak"]))
+        self.dig_vars["n_losing_streak"] = 0;
+
+    if(self.dig_vars["has_shovel"])
         return false;
 
-    shovels = getentarray("script_model", "classname");
-    best = undefined;
+    // Origins registers each real shovel as a per-player static unitrigger.
+    // Its stub contains the exact live shovel entity and the real use origin;
+    // looking up that stub is safer than guessing which script_model property
+    // contains the model name.
+    if(!isdefined(level._unitriggers) || !isdefined(level._unitriggers.trigger_stubs))
+        return false;
+
+    best_stub = undefined;
+    best_shovel = undefined;
     best_distance = 999999999;
-    foreach(shovel in shovels)
+
+    foreach(stub in level._unitriggers.trigger_stubs)
     {
-        if(!isdefined(shovel) || !isdefined(shovel.origin))
+        if(!isdefined(stub) || !isdefined(stub.e_shovel) ||
+           !isdefined(stub.e_shovel.origin) || !isdefined(stub.origin))
             continue;
-        if((!isdefined(shovel.model) || shovel.model != "p6_zm_tm_shovel") &&
-           (!isdefined(shovel.modelname) || shovel.modelname != "p6_zm_tm_shovel"))
+
+        if(isdefined(stub.registered) && !stub.registered)
             continue;
-        distance_sq = distancesquared(self.origin, shovel.origin);
-        if(distance_sq >= best_distance || !findpath(self.origin, shovel.origin, undefined, 0, 1))
+
+        distance_sq = distancesquared(self.origin, stub.e_shovel.origin);
+        if(distance_sq >= best_distance ||
+           !findpath(self.origin, stub.e_shovel.origin, undefined, 0, 1))
             continue;
-        best = shovel;
+
+        best_stub = stub;
+        best_shovel = stub.e_shovel;
         best_distance = distance_sq;
     }
 
-    if(!isdefined(best))
+    if(!isdefined(best_stub) || !isdefined(best_shovel))
         return false;
 
-    // The stock shovel unitrigger is centered 32 units above the model.
-    // Navigate to that exact point and look at the trigger center (rather
-    // than using the generic helper's additional look-at height offset).
-    trigger_origin = best.origin + (0, 0, 32);
-    if(distancesquared(self.origin, trigger_origin) > 24 * 24)
-        return self scripts\zm\zm_bo2_bots::bot_quest_move_to(trigger_origin, "bot_origins_shovel_pickup", 24, 9000);
+    // The shovel model is at floor height; the stock use trigger is 32 units
+    // above it. Navigate to the model position, not the elevated trigger
+    // center (a 24-unit 3D arrival test can never be satisfied on level ground).
+    if(distancesquared(self.origin, best_shovel.origin) > 36 * 36)
+        return self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+            best_shovel.origin, "bot_origins_shovel_pickup", 36, 9000);
 
     self.bot.is_objective_using = 1;
-    self lookat(trigger_origin);
-    for(i = 0; i < 3; i++)
+    self lookat(best_stub.origin);
+
+    // Let the stock per-player unitrigger callback award the shovel, update
+    // shovel_playerN, and unregister/delete the real pickup.
+    for(i = 0; i < 10; i++)
     {
-        if(!isalive(self) || (isdefined(self.dig_vars["has_shovel"]) && self.dig_vars["has_shovel"]))
+        if(!isalive(self) || self.dig_vars["has_shovel"] ||
+           !isdefined(best_stub.e_shovel))
             break;
-        self pressusebutton(0.15);
+
+        if(!self isonground() || self isonladder() || self ismantling())
+        {
+            wait 0.1;
+            continue;
+        }
+
+        self pressusebutton(0.2);
         wait 0.2;
     }
+
     self clearlookat();
     self.bot.is_objective_using = undefined;
     return true;
@@ -79,66 +121,194 @@ bot_quest_origins_generators()
        !isdefined(level.zone_capture.zones) || flag("all_zones_captured"))
         return false;
 
-    // During a capture event the entire squad stays in the active generator
-    // area. Combat remains enabled so kills can finish the stock capture wave.
+    // Once a capture begins, every bot can reinforce the exact generator the
+    // stock event is running on. Keep using the saved target even during the
+    // short interval before the stock script sets zone_contested.
     if(flag("zone_capture_in_progress"))
     {
-        foreach(zone in level.zone_capture.zones)
-        {
-            if(!isdefined(zone) || !isdefined(zone.origin) || !zone ent_flag("zone_contested"))
-                continue;
+        active_zone = undefined;
 
-            if(distancesquared(self.origin, zone.origin) > 220 * 220)
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(zone.origin, "bot_origins_generator_support", 175, 9000);
-            else
-                self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(zone.origin, "bot_origins_generator_hold", 190, 2.0);
-            return true;
+        if(isdefined(level.bot_origins_generator_target) &&
+           isdefined(level.bot_origins_generator_target.origin) &&
+           !level.bot_origins_generator_target ent_flag("player_controlled"))
+            active_zone = level.bot_origins_generator_target;
+
+        if(!isdefined(active_zone))
+        {
+            zone_keys = getarraykeys(level.zone_capture.zones);
+            foreach(zone_key in zone_keys)
+            {
+                zone = level.zone_capture.zones[zone_key];
+                if(isdefined(zone) && isdefined(zone.origin) && zone ent_flag("zone_contested"))
+                {
+                    active_zone = zone;
+                    break;
+                }
+            }
         }
 
-        // Another generator may be transitioning into its contested state.
+        if(isdefined(active_zone) && isdefined(active_zone.origin))
+        {
+            if(distancesquared(self.origin, active_zone.origin) > 220 * 220)
+                self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+                    active_zone.origin, "bot_origins_generator_support", 175, 9000);
+            else
+                self scripts\\zm\\zm_bo2_bots::bot_quest_hold_in_volume(
+                    active_zone.origin, "bot_origins_generator_hold", 190, 2.0);
+        }
+
         return true;
     }
+
+    // Clear ownership after a completed or interrupted attempt.
+    if(isdefined(level.bot_origins_generator_target))
+    {
+        if(level.bot_origins_generator_target ent_flag("player_controlled"))
+        {
+            level.bot_origins_generator_target = undefined;
+            level.bot_origins_generator_owner = undefined;
+            level.bot_origins_generator_owner_until = 0;
+            level.bot_origins_generator_start_wait_until = 0;
+        }
+        else if(isdefined(level.bot_origins_generator_start_wait_until) &&
+                gettime() >= level.bot_origins_generator_start_wait_until)
+        {
+            level.bot_origins_generator_target = undefined;
+            level.bot_origins_generator_owner = undefined;
+            level.bot_origins_generator_owner_until = 0;
+            level.bot_origins_generator_start_wait_until = 0;
+        }
+    }
+
+    // Do not send the same stock start event repeatedly while it is being
+    // processed by wait_for_capture_trigger().
+    if(isdefined(level.bot_origins_generator_owner) &&
+       level.bot_origins_generator_owner == self &&
+       isdefined(level.bot_origins_generator_start_wait_until) &&
+       gettime() < level.bot_origins_generator_start_wait_until)
+        return true;
 
     if(isdefined(level.bot_origins_generator_owner) && level.bot_origins_generator_owner != self &&
        isalive(level.bot_origins_generator_owner) && isdefined(level.bot_origins_generator_owner_until) &&
        gettime() < level.bot_origins_generator_owner_until)
         return false;
 
-    cost = 200 * get_players().size; // Same formula as the stock Origins capture-cost function.
-    if(self.score < cost)
+    // This is the exact stock Origins price from
+    // zm_tomb_capture_zones::get_generator_capture_start_cost().
+    cost = 200 * get_players().size;
+    if(!isdefined(self.score) || self.score < cost)
         return false;
 
     best_zone = undefined;
+    best_trigger = undefined;
     best_distance = 999999999;
-    foreach(zone in level.zone_capture.zones)
+    zone_keys = getarraykeys(level.zone_capture.zones);
+
+    foreach(zone_key in zone_keys)
     {
-        if(!isdefined(zone) || !isdefined(zone.origin) || zone ent_flag("player_controlled") ||
-           zone ent_flag("zone_contested"))
+        zone = level.zone_capture.zones[zone_key];
+        if(!isdefined(zone) || !isdefined(zone.origin) ||
+           zone ent_flag("player_controlled") || zone ent_flag("zone_contested"))
             continue;
 
-        distance_sq = distancesquared(self.origin, zone.origin);
-        if(distance_sq >= best_distance || !findpath(self.origin, zone.origin, undefined, 0, 1))
+        // Use the actual registered stock unitrigger when available. The
+        // trigger carries generator_struct, which is how the native callback
+        // identifies the zone it is activating.
+        trigger_stub = undefined;
+        if(isdefined(level._unitriggers) && isdefined(level._unitriggers.trigger_stubs))
+        {
+            foreach(stub in level._unitriggers.trigger_stubs)
+            {
+                if(isdefined(stub) && isdefined(stub.generator_struct) &&
+                   stub.generator_struct == zone && isdefined(stub.origin))
+                {
+                    trigger_stub = stub;
+                    break;
+                }
+            }
+        }
+
+        if(isdefined(trigger_stub))
+            target_origin = trigger_stub.origin;
+        else
+            target_origin = zone.origin;
+
+        distance_sq = distancesquared(self.origin, target_origin);
+        if(distance_sq >= best_distance ||
+           !findpath(self.origin, target_origin, undefined, 0, 1))
             continue;
+
         best_zone = zone;
+        best_trigger = trigger_stub;
         best_distance = distance_sq;
     }
 
     if(!isdefined(best_zone))
         return false;
 
-    level.bot_origins_generator_owner = self;
-    level.bot_origins_generator_owner_until = gettime() + 12000;
-    used = self scripts\zm\zm_bo2_bots::bot_quest_use_target(best_zone, "bot_origins_generator_activate", 24, 3);
+    if(isdefined(best_trigger))
+        target_origin = best_trigger.origin;
+    else
+        target_origin = best_zone.origin;
 
-    if(!isdefined(best_zone) || best_zone ent_flag("player_controlled"))
+    level.bot_origins_generator_owner = self;
+    level.bot_origins_generator_target = best_zone;
+    level.bot_origins_generator_owner_until = gettime() + 15000;
+
+    // The native unitrigger is a 128x128x64 box around the generator. Approach
+    // its actual center, then attempt the normal use input first.
+    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+        target_origin, "bot_origins_generator_activate", 64, 10000);
+
+    if(!arrived)
     {
         level.bot_origins_generator_owner = undefined;
+        level.bot_origins_generator_target = undefined;
         level.bot_origins_generator_owner_until = 0;
+        return false;
     }
-    else
-        level.bot_origins_generator_owner_until = gettime() + 12000;
 
-    return used;
+    self.bot.is_objective_using = 1;
+    self lookat(target_origin + (0, 0, 16));
+
+    for(i = 0; i < 4; i++)
+    {
+        if(flag("zone_capture_in_progress") ||
+           best_zone ent_flag("zone_contested") ||
+           best_zone ent_flag("player_controlled"))
+            break;
+
+        if(!isalive(self))
+            break;
+
+        if(!self isonground() || self isonladder() || self ismantling())
+        {
+            wait 0.1;
+            continue;
+        }
+
+        self pressusebutton(0.2);
+        wait 0.2;
+    }
+
+    // Some scripted bot entities do not generate the client's unitrigger
+    // activation event consistently. Notify the stock generator's existing
+    // start event as a fallback; wait_for_capture_trigger still performs the
+    // real score deduction, zombie wave, capture progress, and ownership flags.
+    if(!flag("zone_capture_in_progress") &&
+       !best_zone ent_flag("zone_contested") &&
+       !best_zone ent_flag("player_controlled") &&
+       isdefined(self.score) && self.score >= cost)
+        best_zone notify("start_generator_capture", self);
+
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
+
+    // Keep this bot assigned to the target until the stock event starts or
+    // the short timeout expires; other bots can then reinforce the same zone.
+    level.bot_origins_generator_start_wait_until = gettime() + 5000;
+    level.bot_origins_generator_owner_until = gettime() + 15000;
+    return true;
 }
 
 bot_quest_origins_chamber_door()
