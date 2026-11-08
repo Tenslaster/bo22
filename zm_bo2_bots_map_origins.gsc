@@ -318,6 +318,135 @@ bot_quest_origins_generators()
     return true;
 }
 
+bot_quest_origins_dig_ice_staff_parts()
+{
+    if(!isdefined(self.dig_vars) ||
+       !isdefined(self.dig_vars["has_shovel"]) || !self.dig_vars["has_shovel"])
+        return false;
+
+    // Origins only spawns Ice Staff dig mounds while snow weather is on.
+    if(!isdefined(level.weather_snow) || level.weather_snow <= 0 ||
+       !isdefined(level.ice_staff_pieces) || level.ice_staff_pieces.size == 0 ||
+       !isdefined(level.a_dig_spots))
+        return false;
+
+    best_spot = undefined;
+    best_distance = 999999999;
+
+    foreach(spot in level.a_dig_spots)
+    {
+        if(!isdefined(spot) || !isdefined(spot.origin) ||
+           !isdefined(spot.str_zone) || !isdefined(spot.m_dig) ||
+           !isdefined(spot.m_dig.origin))
+            continue;
+
+        if(isdefined(spot.dug) && spot.dug)
+            continue;
+
+        if(isdefined(spot.bot_origins_dig_retry_until) &&
+           gettime() < spot.bot_origins_dig_retry_until)
+            continue;
+
+        if(isdefined(spot.bot_origins_dig_owner) && spot.bot_origins_dig_owner != self &&
+           isdefined(spot.bot_origins_dig_owner_until) &&
+           gettime() < spot.bot_origins_dig_owner_until &&
+           isalive(spot.bot_origins_dig_owner))
+            continue;
+
+        // Stock dig_spot_get_staff_piece uses these same zone substrings.
+        has_staff_for_zone = false;
+        foreach(staff_piece in level.ice_staff_pieces)
+        {
+            if(isdefined(staff_piece) && isdefined(staff_piece.zone_substr) &&
+               issubstr(spot.str_zone, staff_piece.zone_substr))
+            {
+                has_staff_for_zone = true;
+                break;
+            }
+        }
+
+        if(!has_staff_for_zone)
+            continue;
+
+        distance_sq = distancesquared(self.origin, spot.origin);
+        if(distance_sq >= best_distance ||
+           !findpath(self.origin, spot.origin, undefined, 0, 1))
+            continue;
+
+        best_spot = spot;
+        best_distance = distance_sq;
+    }
+
+    if(!isdefined(best_spot))
+        return false;
+
+    best_spot.bot_origins_dig_owner = self;
+    best_spot.bot_origins_dig_owner_until = gettime() + 12000;
+
+    // The stock mound-use trigger is centered 20 units above the dig spot.
+    if(distancesquared(self.origin, best_spot.origin) > 64 * 64)
+    {
+        arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+            best_spot.origin, "bot_origins_ice_staff_dig", 64, 9000);
+
+        if(!arrived)
+        {
+            best_spot.bot_origins_dig_owner = undefined;
+            best_spot.bot_origins_dig_owner_until = 0;
+            best_spot.bot_origins_dig_retry_until = gettime() + 2500;
+            return true;
+        }
+    }
+
+    if(!isdefined(best_spot.m_dig) || !isdefined(best_spot.m_dig.origin) ||
+       (isdefined(best_spot.dug) && best_spot.dug))
+    {
+        best_spot.bot_origins_dig_owner = undefined;
+        best_spot.bot_origins_dig_owner_until = 0;
+        return true;
+    }
+
+    self.bot.is_objective_using = 1;
+    trigger_origin = best_spot.origin + (0, 0, 20);
+    self lookat(trigger_origin);
+
+    // The original waittill_dug callback picks the reward and reveals the
+    // Ice Staff part, updating all stock counters and trigger state.
+    for(i = 0; i < 12; i++)
+    {
+        if(!isalive(self) || !isdefined(best_spot.m_dig) ||
+           (isdefined(best_spot.dug) && best_spot.dug))
+            break;
+
+        if(!self isonground() || self isonladder() || self ismantling())
+        {
+            wait 0.1;
+            continue;
+        }
+
+        self pressusebutton(0.2);
+        wait 0.2;
+    }
+
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
+
+    if(isdefined(best_spot.dug) && best_spot.dug)
+    {
+        best_spot.bot_origins_dig_retry_until = undefined;
+        best_spot.bot_origins_dig_owner = undefined;
+        best_spot.bot_origins_dig_owner_until = 0;
+    }
+    else
+    {
+        best_spot.bot_origins_dig_owner = undefined;
+        best_spot.bot_origins_dig_owner_until = 0;
+        best_spot.bot_origins_dig_retry_until = gettime() + 2500;
+    }
+
+    return true;
+}
+
 bot_quest_origins_chamber_door()
 {
     if(flag("chamber_entrance_opened"))
@@ -1299,6 +1428,8 @@ bot_quest_origins()
     if(self bot_quest_origins_shovel())
         return;
     if(self bot_quest_origins_generators())
+        return;
+    if(self bot_quest_origins_dig_ice_staff_parts())
         return;
     if(self bot_quest_origins_chamber_door())
         return;
