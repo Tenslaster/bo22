@@ -3419,6 +3419,61 @@ bot_drop_stuck_buildable_piece(task, retry_ms)
 	self maps\mp\zombies\_zm_buildables::player_drop_piece(undefined, task.slot);
 }
 
+// Resolve stock buildables helpers at runtime so this controller remains safe on
+// maps that do not initialize a particular buildable subsystem.
+bot_buildables_func(name)
+{
+    if(!isdefined(level.bot_buildables_funcs))
+        level.bot_buildables_funcs = [];
+
+    if(!isdefined(level.bot_buildables_funcs[name]))
+        level.bot_buildables_funcs[name] = getfunction("maps/mp/zombies/_zm_buildables", name);
+
+    return level.bot_buildables_funcs[name];
+}
+
+// Unittriggers are per-player entities. Bots need to explicitly dispatch the
+// same event that a human use input sends after the stock trigger is active.
+bot_dispatch_buildable_trigger(stub)
+{
+    if(!isdefined(stub))
+        return false;
+
+    unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+    if(!isdefined(unitrigger_trigger_func))
+        return false;
+
+    trigger = stub [[ unitrigger_trigger_func ]](self);
+
+    if(!isdefined(trigger) ||
+       !isdefined(trigger.thread_running) || !trigger.thread_running ||
+       !isdefined(trigger.parent_player) || trigger.parent_player != self)
+        return false;
+
+    trigger notify("trigger", self);
+    return true;
+}
+
+// Call the stock pickup routine so all map callbacks, inventory state,
+// clientfields and piece tracking are updated exactly as for a human player.
+bot_take_buildable_piece(piece)
+{
+    if(!isdefined(piece))
+        return false;
+
+    can_take_func = bot_buildables_func("player_can_take_piece");
+    take_piece_func = bot_buildables_func("player_take_piece");
+
+    if(!isdefined(can_take_func) || !isdefined(take_piece_func))
+        return false;
+
+    if(!self [[ can_take_func ]](piece))
+        return false;
+
+    self thread [[ take_piece_func ]](piece);
+    return true;
+}
+
 // _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
 // direct file::function reference is resolved at script load and causes
 // "Unresolved external" on every other map, so look the functions up at runtime.
@@ -3562,6 +3617,12 @@ bot_run_buildable_task(task)
 
 	goal_name = "bot_buildable";
 
+	// Make the stock per-player unitrigger prompts visible to scripted bots.
+	if(task.kind == "pickup" && isdefined(task.piece) && isdefined(task.piece.unitrigger))
+		task.piece.unitrigger.ignore_player_valid = 1;
+	else if(isdefined(task.stub))
+		task.stub.ignore_player_valid = 1;
+
 	if(!findpath(self.origin, task.origin, undefined, 0, 1))
 	{
 		if(task.kind == "build")
@@ -3681,9 +3742,36 @@ bot_run_buildable_task(task)
 			}
 
 			if(task.kind == "pickup")
-				self pressusebutton(0.15);
-			else
+			{
+				if(!isdefined(task.piece.bot_auto_take_pending_until) ||
+				   gettime() >= task.piece.bot_auto_take_pending_until)
+				{
+					if(self bot_take_buildable_piece(task.piece))
+						task.piece.bot_auto_take_pending_until = gettime() + 2000;
+					else if(!self bot_dispatch_buildable_trigger(task.piece.unitrigger))
+						self pressusebutton(0.15);
+				}
+			}
+			else if(task.kind == "build")
+			{
+				// Notify the stock build worker, then hold use through its native timer.
+				if(!isdefined(task.trigger_dispatch_after) || gettime() >= task.trigger_dispatch_after)
+				{
+					self bot_dispatch_buildable_trigger(task.stub);
+					task.trigger_dispatch_after = gettime() + 500;
+				}
 				self pressusebutton(3.2);
+			}
+			else
+			{
+				// A completed persistent buildable grants its equipment from this trigger.
+				if(!isdefined(task.trigger_dispatch_after) || gettime() >= task.trigger_dispatch_after)
+				{
+					if(!self bot_dispatch_buildable_trigger(task.stub))
+						self pressusebutton(0.15);
+					task.trigger_dispatch_after = gettime() + 500;
+				}
+			}
 
 			wait 0.1;
 		}
@@ -3993,8 +4081,8 @@ bot_run_craftable_task(task)
 
 	goal_name = "bot_craftable";
 
-	// Make Origins' per-player part/table triggers eligible for scripted bots.
-	if(getdvar("mapname") == "zm_tomb")
+	// Make Origins and Mob's per-player part/table triggers eligible for bots.
+	if(getdvar("mapname") == "zm_tomb" || getdvar("mapname") == "zm_prison")
 	{
 		if(task.kind == "pickup" && isdefined(task.piece) && isdefined(task.piece.unitrigger))
 			task.piece.unitrigger.ignore_player_valid = 1;
@@ -4153,7 +4241,7 @@ bot_run_craftable_task(task)
 			// part state; repeated use-button pulses alone are unreliable for bots.
 			take_piece_func = undefined;
 			next_take_attempt = 0;
-			if(getdvar("mapname") == "zm_tomb")
+			if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
 				take_piece_func = bot_craftables_func("player_take_piece");
 
 			while(gettime() < use_deadline)
@@ -4177,7 +4265,7 @@ bot_run_craftable_task(task)
 				        self.current_craftable_piece.craftablename == task.piece.craftablename)
 					break;
 
-				if(getdvar("mapname") == "zm_tomb")
+				if(getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb")
 				{
 					already_picked = 0;
 					if(is_shared && isdefined(task.piece.in_shared_inventory) && task.piece.in_shared_inventory)
@@ -4218,7 +4306,7 @@ bot_run_craftable_task(task)
 			// If the engine does not dispatch pickup to this scripted client, invoke
 			// the exact stock pickup routine. Stock callbacks still update inventory,
 			// quest fields, staff counters, and shared-piece state.
-			if(getdvar("mapname") == "zm_tomb" && isdefined(task.piece) &&
+			if((getdvar("mapname") == "zm_prison" || getdvar("mapname") == "zm_tomb") && isdefined(task.piece) &&
 			   isdefined(task.piece.model) && isdefined(task.piece.model.origin) &&
 			   self bot_craftable_piece_is_available(task.piece) &&
 			   distance2d(self.origin, task.piece.model.origin) <= 96 &&
@@ -4305,8 +4393,22 @@ bot_run_craftable_task(task)
 					continue;
 				}
 
-				self pressusebutton(3.2);
-				wait 0.1;
+				table_trigger = undefined;
+				if(isdefined(unitrigger_trigger_func) && isdefined(task.stub))
+					table_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+
+				if(isdefined(table_trigger) &&
+				   isdefined(table_trigger.thread_running) && table_trigger.thread_running &&
+				   isdefined(table_trigger.parent_player) && table_trigger.parent_player == self)
+				{
+					table_trigger notify("trigger", self);
+					wait 0.25;
+				}
+				else
+				{
+					self pressusebutton(0.15);
+					wait 0.15;
+				}
 			}
 		}
 
