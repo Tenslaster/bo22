@@ -2368,7 +2368,20 @@ bot_self_revive_afterlife()
             self cancelgoal("selfrevive");
 
         self.bot.is_selfreviving = false;
+        return;
+    }
 
+    // Mob bots should finish their Afterlife objectives first. The map AI
+    // overrides this only when all supported ghost work is complete or mana
+    // is low enough that returning becomes the survival priority.
+    if(getdvar("mapname") == "zm_prison" &&
+       self bot_mob_is_afterlife() &&
+       !self bot_mob_afterlife_should_return())
+    {
+        if(self getgoal("selfrevive") || self hasgoal("selfrevive"))
+            self cancelgoal("selfrevive");
+
+        self.bot.is_selfreviving = false;
         return;
     }
 
@@ -2376,18 +2389,27 @@ bot_self_revive_afterlife()
         return;
 
     corpse = self.e_afterlife_corpse;
+    revive_origin = corpse.origin;
+
+    if(getdvar("mapname") == "zm_prison")
+    {
+        // The corpse creates its own linked revive trigger shortly after it
+        // spawns. Navigate to that actual trigger volume, not just the clone.
+        if(!isdefined(corpse.revivetrigger) || !isdefined(corpse.revivetrigger.origin))
+            return;
+
+        revive_origin = corpse.revivetrigger.origin;
+    }
 
     if(!self hasgoal("selfrevive"))
     {
-        self addgoal(corpse.origin, 50, 3, "selfrevive");
-		
+        self addgoal(revive_origin, 42, 3, "selfrevive");
         return;
     }
 
-    if(self atgoal("selfrevive") || distancesquared(self.origin, self getgoal("selfrevive")) < 5625)
-    {
+    if(self atgoal("selfrevive") ||
+       distancesquared(self.origin, revive_origin) <= 55 * 55)
         self thread bot_simulate_self_revive(corpse);
-    }
 }
 
 bot_simulate_self_revive(corpse)
