@@ -1415,10 +1415,10 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
         return false;
 
     if(is_true(explore_roof))
-        landing_nodes = getnodesinradius(self.origin, 1450, -260, 360, "any", 256);
+        landing_nodes = getnodesinradius(self.origin, 1450, -260, 360, "any", 128);
     else
-        landing_nodes = getnodesinradius(target_origin, 760, -260, 420, "any", 192);
-    takeoff_nodes = getnodesinradius(self.origin, 360, 0, 220, "any", 128);
+        landing_nodes = getnodesinradius(target_origin, 760, -260, 420, "any", 128);
+    takeoff_nodes = getnodesinradius(self.origin, 360, -160, 220, "any", 64);
 
     if(!isdefined(landing_nodes) || landing_nodes.size == 0 ||
        !isdefined(takeoff_nodes) || takeoff_nodes.size == 0)
@@ -1585,7 +1585,14 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
         return true;
     }
 
-    vertical_velocity = (delta[2] + 0.5 * gravity * flight_time * flight_time) / flight_time;
+    // A short sustained impulse is used below to keep the bot's path AI from
+    // cancelling the launch. Account for that hold time in the ballistic arc.
+    launch_hold_time = 0.12;
+    coast_time = flight_time - launch_hold_time;
+    if(coast_time < 0.25)
+        coast_time = 0.25;
+
+    vertical_velocity = (delta[2] + 0.5 * gravity * coast_time * coast_time) / flight_time;
     if(vertical_velocity < 100)
         vertical_velocity = 100;
     if(vertical_velocity > 650)
@@ -1609,9 +1616,11 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
     self.lander = 1;
     self setstance("stand");
     wait 0.1;
+
+    jump_start_origin = self.origin;
     self setorigin(self.origin + (0, 0, 1));
 
-    launch_duration = int(flight_time * 500);
+    launch_duration = int(launch_hold_time * 1000);
     launch_start = gettime();
     while(gettime() - launch_start < launch_duration && isalive(self))
     {
@@ -1619,7 +1628,9 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
         wait 0.05;
     }
 
-    launched = !self isonground();
+    // The +1 unit stock lift by itself is not counted as a successful jump.
+    launched = !self isonground() &&
+               distancesquared(self.origin, jump_start_origin) > 24 * 24;
     if(launched)
     {
         land_deadline = gettime() + 5000;
