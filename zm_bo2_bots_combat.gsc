@@ -276,6 +276,8 @@ bot_update_situation()
 	self.bot.fast_close = 0;
 	self.bot.allies_near = 0;
 	self.bot.nearest_dist = 99999;
+	self.bot.nearest_boss = undefined;
+	self.bot.nearest_boss_dist = 99999;
 	self.bot.danger = 0;
 	self.bot.boss_near = false;
 	
@@ -295,24 +297,47 @@ bot_update_situation()
 			continue;
 		
 		d = distancesquared(self.origin, zombie.origin);
-		
-		if(d > 202500)
-			continue;
-		
-		dist = sqrt(d);
-		
-		if(dist < self.bot.nearest_dist)
-			self.bot.nearest_dist = dist;
-		
+
+		// Bosses threaten us from farther away than ordinary zombies. In particular,
+		// Origins Panzer's claw can reach from roughly 300-1000 units.
 		if(is_true(zombie.is_brutus) || is_true(zombie.is_mechz))
 		{
-			if(dist < 450)
+			if(d <= 3240000)
 			{
-				self.bot.boss_near = true;
-				
-				danger += 5;
+				dist = sqrt(d);
+
+				if(dist < self.bot.nearest_boss_dist)
+				{
+					self.bot.nearest_boss = zombie;
+					self.bot.nearest_boss_dist = dist;
+				}
+
+				if(is_true(zombie.is_mechz) && dist < 1100)
+				{
+					self.bot.boss_near = true;
+					danger += 8;
+
+					if(dist < 600)
+						danger += 3;
+				}
+				else if(is_true(zombie.is_brutus) && dist < 650)
+				{
+					self.bot.boss_near = true;
+					danger += 6;
+
+					if(dist < 300)
+						danger += 2;
+				}
 			}
 		}
+
+		if(d > 202500)
+			continue;
+
+		dist = sqrt(d);
+
+		if(dist < self.bot.nearest_dist)
+			self.bot.nearest_dist = dist;
 		
 		if(d > 90000)
 			continue;
@@ -584,6 +609,18 @@ bot_flee_goal(kite)
 			
             threat_pos = zombie.origin;
         }
+    }
+
+    // If a boss is actively threatening us, choose flee nodes relative to it,
+    // even when a regular zombie happens to be a few units closer.
+    if(isdefined(self.bot.nearest_boss) && isalive(self.bot.nearest_boss))
+    {
+        boss = self.bot.nearest_boss;
+        boss_dist_sq = distancesquared(self.origin, boss.origin);
+
+        if((is_true(boss.is_mechz) && boss_dist_sq < 1210000) ||
+           (is_true(boss.is_brutus) && boss_dist_sq < 422500))
+            threat_pos = boss.origin;
     }
 
     if(!isdefined(threat_pos) && isdefined(self.bot.threat.entity) && isdefined(self.bot.threat.position))
@@ -1597,6 +1634,29 @@ bot_update_aim(frames)
 	
 	if(!self threat_is_player())
 	{
+		// Brutus' helmet is removed by repeated head hits. Do not aim at his torso.
+		if(is_true(ent.is_brutus))
+		{
+			head = ent gettagorigin("j_head");
+			if(isdefined(head))
+				return prediction + (head - ent.origin);
+		}
+
+		// Panzer: damage the stock tag_powersupply hit location while the
+		// power plant is intact; after it is destroyed, attack the faceplate/head.
+		if(is_true(ent.is_mechz))
+		{
+			weakpoint = undefined;
+			if(is_true(ent.has_powerplant))
+				weakpoint = ent gettagorigin("tag_powersupply");
+
+			if(!isdefined(weakpoint))
+				weakpoint = ent gettagorigin("j_head");
+
+			if(isdefined(weakpoint))
+				return prediction + (weakpoint - ent.origin);
+		}
+
 		if(self bot_can_headshot(ent))
 		{
 			head = ent gettagorigin("j_head");
@@ -1777,13 +1837,21 @@ bot_best_enemy()
 
         dist = distance(self.origin, zombie.origin);
 
-        if(dist > max_range)
+        candidate_range = max_range;
+        if(is_true(zombie.is_mechz) && candidate_range < 1800)
+            candidate_range = 1800;
+        else if(is_true(zombie.is_brutus) && candidate_range < 1400)
+            candidate_range = 1400;
+
+        if(dist > candidate_range)
             continue;
 
         key = dist;
 
-        if(is_true(zombie.is_brutus) || is_true(zombie.is_mechz))
-            key -= 400;
+        if(is_true(zombie.is_mechz))
+            key -= 1000;
+        else if(is_true(zombie.is_brutus))
+            key -= 850;
 
         pos = cand.size;
 
@@ -1812,6 +1880,34 @@ bot_best_enemy()
 
         cand[pos] = zombie;
         cand_key[pos] = key;
+    }
+
+    // Keep the nearest boss in the candidate list even when several ordinary
+    // zombies would otherwise push it out of the top eight candidates.
+    boss = self.bot.nearest_boss;
+    if(isdefined(boss) && isalive(boss) && !self threat_should_ignore(boss) && !is_true(boss.in_the_ground))
+    {
+        boss_range = max_range;
+        if(is_true(boss.is_mechz) && boss_range < 1800)
+            boss_range = 1800;
+        else if(is_true(boss.is_brutus) && boss_range < 1400)
+            boss_range = 1400;
+
+        if(distance(self.origin, boss.origin) <= boss_range)
+        {
+            boss_in_list = false;
+            for(i = 0; i < cand.size; i++)
+            {
+                if(cand[i] == boss)
+                {
+                    boss_in_list = true;
+                    break;
+                }
+            }
+
+            if(!boss_in_list)
+                cand[cand.size] = boss;
+        }
     }
 
     // Keep the current target in the list so hysteresis can work even if it's now slightly out of the top few.
@@ -1911,8 +2007,20 @@ bot_best_enemy()
         if(is_true(zombie.isscreecher))
             score += 450;
 
-        if(is_true(zombie.is_brutus) || is_true(zombie.is_mechz))
-            score += 350;
+        if(is_true(zombie.is_brutus))
+        {
+            // Brutus takes reduced body damage while his helmet is intact.
+            score += 1250;
+            if(is_true(zombie.has_helmet))
+                score += 150;
+        }
+        else if(is_true(zombie.is_mechz))
+        {
+            // Panzer's exposed/covered power supply is a better target than its armor.
+            score += 1400;
+            if(is_true(zombie.has_powerplant))
+                score += 200;
+        }
 
         if(is_true(zombie.is_avogadro))
             score += 300;
