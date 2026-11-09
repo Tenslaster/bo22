@@ -98,7 +98,7 @@ The shared bot framework also includes:
 - Buildable/craftable part collection and station interaction.
 - Map shield support on maps that use a shield.
 
-Bots are assigned a basic perk loadout by the script: **Speed Cola, Deadshot Daiquiri, Fast Hands/Fast Reload, and Flak Jacket** through the game's perk identifiers.
+The bot worker reapplies four perk identifiers after spawn/revival: `specialty_rof`, `specialty_deadshot`, `specialty_fastreload`, and `specialty_flakjacket`. Their exact in-game presentation depends on the game's perk definitions.
 
 ### Map-aware task system
 
