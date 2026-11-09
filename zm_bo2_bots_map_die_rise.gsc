@@ -641,123 +641,146 @@ bot_quest_die_rise_traverse()
     if(!isdefined(self.bot) || is_true(self.bot.is_parkour))
         return false;
 
-    if(is_true(self._padded) || is_true(self.lander))
-        return false;
-
-    if(isdefined(self.bot.parkour_retry) && gettime() < self.bot.parkour_retry)
-        return false;
-
-    // Never replace an active combat escape, revive, purchase, or map objective.
     if(is_true(self.bot.is_objective_using) || is_true(self.bot.is_building) ||
        is_true(self.bot.is_crafting) || is_true(self.bot.is_buying) ||
        is_true(self.bot.is_using_box) || is_true(self.bot.is_reviving) ||
        is_true(self.bot.is_selfreviving) || self getgoal("flee") || self hasgoal("flee"))
         return false;
 
-    if(!self isonground() || self isonladder() || self ismantling())
+    if(is_true(self._padded) || is_true(self.lander) ||
+       !self isonground() || self isonladder() || self ismantling())
+        return false;
+
+    if(isdefined(self.bot.parkour_retry) && gettime() < self.bot.parkour_retry)
         return false;
 
     target_origin = self bot_die_rise_movement_target();
     if(!isdefined(target_origin) ||
+       abs(target_origin[2] - self.origin[2]) > 96 ||
+       distancesquared(self.origin, target_origin) < 260 * 260 ||
        findpath(self.origin, target_origin, undefined, 0, 1))
         return false;
 
-    pads = getentarray("trig_jump_pad", "targetname");
-    if(!isdefined(pads) || pads.size == 0)
+    springpad_name = "equip_springpad_zm";
+    if(isdefined(level.springpad_name))
+        springpad_name = level.springpad_name;
+
+    if(!isdefined(self.current_equipment) || self.current_equipment != springpad_name)
         return false;
 
-    current_target_distance = distancesquared(self.origin, target_origin);
-    best = undefined;
-    best_distance = 999999999;
-
-    foreach(pad in pads)
+    // Die Rise uses buildable Trample Steam, not the generic trig_jump_pad
+    // system. Find a same-height landing node across a disconnected route.
+    nodes = getnodesinradius(target_origin, 760, 0, 420, "any", 192);
+    if(!isdefined(nodes) || nodes.size == 0)
     {
-        if(!isdefined(pad) || !isdefined(pad.origin) ||
-           !isdefined(pad.destination) || pad.destination.size == 0)
+        self.bot.parkour_retry = gettime() + 6000;
+        return false;
+    }
+
+    best_node = undefined;
+    best_score = 999999999;
+    current_target_dist = distancesquared(self.origin, target_origin);
+    foreach(node in nodes)
+    {
+        if(!isdefined(node) || !isdefined(node.origin))
+            continue;
+        if(abs(node.origin[2] - self.origin[2]) > 96)
+            continue;
+        if(distancesquared(node.origin, target_origin) >= current_target_dist - 22500)
+            continue;
+        if(!check_point_in_playable_area(node.origin))
+            continue;
+        if(!findpath(node.origin, target_origin, undefined, 0, 1))
             continue;
 
-        dist_sq = distancesquared(self.origin, pad.origin);
-        if(dist_sq < 96 * 96 || dist_sq > 1800 * 1800)
-            continue;
-        if(!findpath(self.origin, pad.origin, undefined, 0, 1))
+        delta = node.origin - self.origin;
+        horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
+        if(horizontal_sq < 220 * 220 || horizontal_sq > 1150 * 1150)
             continue;
 
-        // The stock jump-pad script randomly chooses one destination from
-        // this array. Only use this pad when every possible landing is a
-        // useful, pathable step toward the bot's actual movement target.
-        all_destinations_useful = true;
-        destination_score = 0;
-        for(dest_index = 0; dest_index < pad.destination.size; dest_index++)
+        if(isdefined(level.zones))
         {
-            destination = pad.destination[dest_index];
-            if(!isdefined(destination) || !isdefined(destination.origin) ||
-               distancesquared(destination.origin, target_origin) >= current_target_distance - 14400 ||
-               !findpath(destination.origin, target_origin, undefined, 0, 1))
-            {
-                all_destinations_useful = false;
-                break;
-            }
-            destination_score += distancesquared(destination.origin, target_origin);
+            zone = maps\mp\zombies\_zm_zonemgr::get_zone_from_position(node.origin + (0, 0, 32), 1);
+            if(isdefined(zone) && !maps\mp\zombies\_zm_zonemgr::zone_is_enabled(zone))
+                continue;
         }
 
-        if(!all_destinations_useful)
+        if(findpath(self.origin, node.origin, undefined, 0, 1))
             continue;
 
-        score = dist_sq + (destination_score / pad.destination.size) * 0.2;
-        if(score < best_distance)
+        score = distancesquared(node.origin, target_origin) + horizontal_sq * 0.15;
+        if(score < best_score)
         {
-            best = pad;
-            best_distance = score;
+            best_score = score;
+            best_node = node;
         }
     }
 
-    if(!isdefined(best))
+    if(!isdefined(best_node))
     {
-        self.bot.parkour_retry = gettime() + 5000;
+        self.bot.parkour_retry = gettime() + 9000;
         return false;
     }
 
     self.bot.is_parkour = 1;
     self.bot.is_objective_using = 1;
-    self addgoal(best.origin, 28, 2, "bot_die_rise_parkour");
+    self.bot.parkour_retry = gettime() + 25000;
 
-    // The native trigger launches the bot when it physically reaches the pad.
-    // Give navigation enough time to reach the trigger, but never camp forever.
-    approach_deadline = gettime() + 8000;
-    launched = false;
+    // The registered stock placement callback creates the actual Trample
+    // Steam model and linked trigger. Native code owns the fling and landing.
+    launch_angles = vectortoangles(best_node.origin - self.origin);
+    self setplayerangles((0, launch_angles[1], 0));
+    wait 0.05;
+    self maps\mp\zombies\_zm_equipment::equipment_drop_to_planted(springpad_name, self);
 
-    while(gettime() < approach_deadline && isalive(self))
+    pad = undefined;
+    deadline = gettime() + 6500;
+    while(gettime() < deadline && isalive(self))
     {
-        if(is_true(self._padded) || is_true(self.lander))
+        if(isdefined(self.buildablespringpad) &&
+           isdefined(self.buildablespringpad.trigger) &&
+           isdefined(self.buildablespringpad.trigger.origin))
         {
-            launched = true;
-            break;
+            pad = self.buildablespringpad;
+            if(is_true(pad.is_armed))
+                break;
         }
-
-        if(distancesquared(self.origin, best.origin) <= 48 * 48)
-        {
-            // A trigger touch is normally delivered by the game. Do not fake
-            // the event: wait briefly for the stock pad handler to respond.
-            wait 0.2;
-        }
-        else
-            wait 0.15;
+        wait 0.1;
     }
 
-    self cancelgoal("bot_die_rise_parkour");
+    launched = false;
+    if(isdefined(pad) && isdefined(pad.trigger) && isdefined(pad.trigger.origin) &&
+       is_true(pad.is_armed))
+    {
+        self addgoal(pad.trigger.origin, 12, 2, "bot_die_rise_springpad");
+        launch_deadline = gettime() + 7000;
+        while(gettime() < launch_deadline && isalive(self))
+        {
+            if(!isdefined(pad) || !isdefined(pad.trigger) || !isdefined(pad.trigger.origin))
+                break;
+            if(!self isonground())
+            {
+                launched = true;
+                break;
+            }
+            wait 0.1;
+        }
+        self cancelgoal("bot_die_rise_springpad");
+    }
 
     if(launched)
     {
-        // Keep the traversal task reserved until the stock launch has landed.
-        landing_deadline = gettime() + 16000;
-        while(gettime() < landing_deadline && isalive(self) &&
-              (is_true(self._padded) || is_true(self.lander) || !self isonground()))
+        land_deadline = gettime() + 14000;
+        while(gettime() < land_deadline && isalive(self) && !self isonground())
             wait 0.1;
+
+        if(isalive(self) && self isonground())
+            self scripts\zm\zm_bo2_bots::bot_quest_navigate_to(
+                target_origin, "bot_die_rise_springpad_target", 72, 9000);
     }
 
-    if(launched && isdefined(target_origin) && isalive(self))
-        self scripts\zm\zm_bo2_bots::bot_quest_navigate_to(target_origin, "bot_die_rise_parkour_target", 72, 9000);
-
+    self cancelgoal("bot_die_rise_springpad");
+    self cancelgoal("bot_die_rise_springpad_target");
     self.bot.is_parkour = undefined;
     self.bot.is_objective_using = undefined;
     self.bot.parkour_retry = gettime() + (launched ? 1800 : 6000);
