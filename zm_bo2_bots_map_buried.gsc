@@ -438,38 +438,74 @@ bot_quest_buried_traverse()
     if(isdefined(self.bot.buried_parkour_retry) && gettime() < self.bot.buried_parkour_retry)
         return;
 
-    // Buried uses the stock Trample Steam equipment. Only deploy it when the
-    // bot actually owns the selected equipment and can stand on the ground.
+    // Buried's Trample Steam launches horizontally. It is not a vertical
+    // elevator, so only use it for a same-height gap with a real route beyond.
     if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
        !self isonground() || self isonladder() || self ismantling())
         return;
 
-    // A springpad launches upward and forward. Pick a real nav node on a
-    // higher level which the ordinary path graph cannot reach from here.
-    nodes = getnodesinradius(self.origin, 1280, 120, 700, "any", 256);
-    if(!isdefined(nodes) || nodes.size == 0)
+    target_origin = undefined;
+    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow")
+    {
+        commander = level.bot_commander;
+        if(isdefined(commander) && isdefined(commander.origin) && isalive(commander) &&
+           !isdefined(commander.bot) &&
+           !(isdefined(commander.pers) && isdefined(commander.pers["isbot"])))
+            target_origin = commander.origin;
+        else
+        {
+            foreach(candidate in get_players())
+            {
+                if(!isdefined(candidate) || !isdefined(candidate.origin) || !isalive(candidate) ||
+                   isdefined(candidate.bot) ||
+                   (isdefined(candidate.pers) && isdefined(candidate.pers["isbot"])))
+                    continue;
+                target_origin = candidate.origin;
+                break;
+            }
+        }
+    }
+    else if(self hasgoal("wander"))
+        target_origin = self getgoal("wander");
+
+    if(!isdefined(target_origin) ||
+       abs(target_origin[2] - self.origin[2]) > 96 ||
+       distancesquared(self.origin, target_origin) < 260 * 260 ||
+       findpath(self.origin, target_origin, undefined, 0, 1))
     {
         self.bot.buried_parkour_retry = gettime() + 5000;
         return;
     }
 
+    // Look for a plausible landing-side navigation node: same height, in the
+    // direction of the final goal, and able to path onward to that goal.
+    nodes = getnodesinradius(target_origin, 760, 0, 420, "any", 192);
+    if(!isdefined(nodes) || nodes.size == 0)
+    {
+        self.bot.buried_parkour_retry = gettime() + 6000;
+        return;
+    }
+
     best_node = undefined;
     best_score = 999999999;
+    current_target_dist = distancesquared(self.origin, target_origin);
+
     foreach(node in nodes)
     {
         if(!isdefined(node) || !isdefined(node.origin))
             continue;
-
-        height = node.origin[2] - self.origin[2];
-        if(height < 120 || height > 620)
+        if(abs(node.origin[2] - self.origin[2]) > 96)
+            continue;
+        if(distancesquared(node.origin, target_origin) >= current_target_dist - 22500)
+            continue;
+        if(!check_point_in_playable_area(node.origin))
+            continue;
+        if(!findpath(node.origin, target_origin, undefined, 0, 1))
             continue;
 
         delta = node.origin - self.origin;
         horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
-        if(horizontal_sq < 180 * 180 || horizontal_sq > 1050 * 1050)
-            continue;
-
-        if(!check_point_in_playable_area(node.origin))
+        if(horizontal_sq < 220 * 220 || horizontal_sq > 1150 * 1150)
             continue;
 
         if(isdefined(level.zones))
@@ -479,16 +515,12 @@ bot_quest_buried_traverse()
                 continue;
         }
 
-        // If the normal graph already has a route, let the stock nav/mantle
-        // traversal handle it. Use the springpad for an actual vertical gap.
+        // A useful landing candidate should be across the missing route, not
+        // simply another node on the bot's current connected nav island.
         if(findpath(self.origin, node.origin, undefined, 0, 1))
             continue;
 
-        height_error = height - 300;
-        if(height_error < 0)
-            height_error = -height_error;
-
-        score = horizontal_sq + height_error * height_error * 3;
+        score = distancesquared(node.origin, target_origin) + horizontal_sq * 0.15;
         if(score < best_score)
         {
             best_score = score;
@@ -498,7 +530,7 @@ bot_quest_buried_traverse()
 
     if(!isdefined(best_node))
     {
-        self.bot.buried_parkour_retry = gettime() + 10000;
+        self.bot.buried_parkour_retry = gettime() + 9000;
         return;
     }
 
@@ -506,22 +538,19 @@ bot_quest_buried_traverse()
     self.bot.is_parkouring = 1;
     self.bot.is_objective_using = 1;
 
-    // Aim the native launcher at the selected upper node. The stock helper
-    // consumes the carried equipment and calls the registered springpad
-    // placement callback; no custom velocity or teleport is applied here.
+    // Use the stock equipment placement callback. The stock springpad thinker
+    // creates its linked trigger and performs the actual horizontal launch.
     launch_angles = vectortoangles(best_node.origin - self.origin);
     self setplayerangles((0, launch_angles[1], 0));
     wait 0.05;
     self maps\mp\zombies\_zm_equipment::equipment_drop_to_planted("equip_springpad_zm", self);
 
-    // The stock springpad watcher records the placed model on the player.
-    // Wait for it to arm, then walk into its linked trigger if not already
-    // touching it. Its native player_fling callback handles the launch.
     pad = undefined;
     deadline = gettime() + 6500;
-    while(gettime() < deadline)
+    while(gettime() < deadline && isalive(self))
     {
-        if(isdefined(self.buildablespringpad) && isdefined(self.buildablespringpad.trigger) &&
+        if(isdefined(self.buildablespringpad) &&
+           isdefined(self.buildablespringpad.trigger) &&
            isdefined(self.buildablespringpad.trigger.origin))
         {
             pad = self.buildablespringpad;
@@ -537,40 +566,55 @@ bot_quest_buried_traverse()
     {
         self addgoal(pad.trigger.origin, 12, 2, "bot_buried_springpad");
         launch_deadline = gettime() + 7000;
-
-        while(gettime() < launch_deadline)
+        while(gettime() < launch_deadline && isalive(self))
         {
-            if(!isdefined(pad) || !isdefined(pad.trigger) || !isdefined(pad.trigger.origin) ||
-               !isalive(self))
+            if(!isdefined(pad) || !isdefined(pad.trigger) || !isdefined(pad.trigger.origin))
                 break;
-
             if(!self isonground())
             {
                 launched = true;
                 break;
             }
-
             wait 0.1;
         }
-
         self cancelgoal("bot_buried_springpad");
     }
 
     if(launched)
     {
-        // Let the stock launch/flight/landing complete before the wander and
-        // objective workers regain control of this bot.
         land_deadline = gettime() + 14000;
         while(gettime() < land_deadline && isalive(self) && !self isonground())
             wait 0.1;
-        wait 0.25;
+
+        if(isalive(self) && self isonground())
+        {
+            if(findpath(self.origin, best_node.origin, undefined, 0, 1))
+            {
+                self addgoal(best_node.origin, 48, 2, "bot_buried_springpad_landing");
+                move_deadline = gettime() + 7000;
+                while(gettime() < move_deadline && isalive(self) &&
+                      distancesquared(self.origin, best_node.origin) > 48 * 48)
+                    wait 0.15;
+                self cancelgoal("bot_buried_springpad_landing");
+            }
+            if(findpath(self.origin, target_origin, undefined, 0, 1))
+            {
+                self addgoal(target_origin, 72, 2, "bot_buried_springpad_target");
+                move_deadline = gettime() + 8000;
+                while(gettime() < move_deadline && isalive(self) &&
+                      distancesquared(self.origin, target_origin) > 72 * 72)
+                    wait 0.2;
+                self cancelgoal("bot_buried_springpad_target");
+            }
+        }
     }
 
     self cancelgoal("bot_buried_springpad");
+    self cancelgoal("bot_buried_springpad_landing");
+    self cancelgoal("bot_buried_springpad_target");
     self.bot.is_parkouring = undefined;
     self.bot.is_objective_using = undefined;
 }
-
 bot_buried_tpo_restore_host()
 {
     level endon("end_game");
