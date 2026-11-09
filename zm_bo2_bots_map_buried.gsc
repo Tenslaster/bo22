@@ -1405,6 +1405,187 @@ bot_buried_claim_quest_lead()
 }
 
 
+// Find a connected takeoff node and a disconnected landing node across a
+// short Buried roof gap. The launch uses the same native player setvelocity
+// method used by Treyarch's jump-pad traversal code.
+bot_quest_buried_try_roof_jump(target_origin)
+{
+    if(!isdefined(target_origin) ||
+       findpath(self.origin, target_origin, undefined, 0, 1))
+        return false;
+
+    landing_nodes = getnodesinradius(target_origin, 760, 0, 420, "any", 192);
+    takeoff_nodes = getnodesinradius(self.origin, 360, 0, 220, "any", 128);
+
+    if(!isdefined(landing_nodes) || landing_nodes.size == 0 ||
+       !isdefined(takeoff_nodes) || takeoff_nodes.size == 0)
+        return false;
+
+    current_target_dist = distancesquared(self.origin, target_origin);
+    best_takeoff = undefined;
+    best_landing = undefined;
+    best_score = 999999999;
+
+    foreach(landing_node in landing_nodes)
+    {
+        if(!isdefined(landing_node) || !isdefined(landing_node.origin))
+            continue;
+
+        if(distancesquared(landing_node.origin, target_origin) >= current_target_dist - 22500)
+            continue;
+
+        if(!check_point_in_playable_area(landing_node.origin) ||
+           !findpath(landing_node.origin, target_origin, undefined, 0, 1) ||
+           findpath(self.origin, landing_node.origin, undefined, 0, 1))
+            continue;
+
+        foreach(takeoff_node in takeoff_nodes)
+        {
+            if(!isdefined(takeoff_node) || !isdefined(takeoff_node.origin))
+                continue;
+
+            if(distancesquared(self.origin, takeoff_node.origin) > 340 * 340 ||
+               !findpath(self.origin, takeoff_node.origin, undefined, 0, 1) ||
+               findpath(takeoff_node.origin, landing_node.origin, undefined, 0, 1))
+                continue;
+
+            delta = landing_node.origin - takeoff_node.origin;
+            horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
+            if(horizontal_sq < 180 * 180 || horizontal_sq > 680 * 680)
+                continue;
+
+            if(delta[2] > 180 || delta[2] < -200)
+                continue;
+
+            score = distancesquared(self.origin, takeoff_node.origin) +
+                    horizontal_sq * 0.25 +
+                    distancesquared(landing_node.origin, target_origin) * 0.5;
+
+            if(score < best_score)
+            {
+                best_score = score;
+                best_takeoff = takeoff_node;
+                best_landing = landing_node;
+            }
+        }
+    }
+
+    if(!isdefined(best_takeoff) || !isdefined(best_landing))
+        return false;
+
+    takeoff_origin = best_takeoff.origin;
+    landing_origin = best_landing.origin;
+    self.bot.is_parkouring = 1;
+    self.bot.buried_parkour_retry = gettime() + 18000;
+
+    // Move to the last reachable node at the edge of the disconnected route.
+    if(distancesquared(self.origin, takeoff_origin) > 48 * 48)
+    {
+        self addgoal(takeoff_origin, 40, 2, "bot_buried_roof_jump_takeoff");
+        move_deadline = gettime() + 7000;
+        while(gettime() < move_deadline && isalive(self) &&
+              distancesquared(self.origin, takeoff_origin) > 48 * 48)
+            wait 0.1;
+        self cancelgoal("bot_buried_roof_jump_takeoff");
+    }
+
+    if(!isalive(self) || distancesquared(self.origin, takeoff_origin) > 104 * 104)
+    {
+        self cancelgoal("bot_buried_roof_jump_takeoff");
+        self.bot.is_parkouring = undefined;
+        self.bot.buried_parkour_retry = gettime() + 8000;
+        return true;
+    }
+
+    // Compute a ballistic launch to the landing node. Buried's stock Sloth
+    // traversal data covers jumps up to roughly 154-222 units; keep the bot
+    // within a conservative player-sized vertical envelope.
+    delta = landing_origin - self.origin;
+    horizontal_dist = sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
+    if(horizontal_dist < 160 || horizontal_dist > 680 ||
+       delta[2] > 180 || delta[2] < -200)
+    {
+        self.bot.is_parkouring = undefined;
+        self.bot.buried_parkour_retry = gettime() + 8000;
+        return true;
+    }
+
+    gravity = getdvarint("bg_gravity");
+    if(!isdefined(gravity) || gravity < 400 || gravity > 1200)
+        gravity = 800;
+
+    flight_time = horizontal_dist / 650.0;
+    if(flight_time < 0.72)
+        flight_time = 0.72;
+
+    if(delta[2] < 0)
+    {
+        fall_time = sqrt((-2 * delta[2]) / gravity);
+        if(flight_time < fall_time + 0.12)
+            flight_time = fall_time + 0.12;
+    }
+
+    if(flight_time > 1.25)
+    {
+        self.bot.is_parkouring = undefined;
+        self.bot.buried_parkour_retry = gettime() + 8000;
+        return true;
+    }
+
+    vertical_velocity = (delta[2] + 0.5 * gravity * flight_time * flight_time) / flight_time;
+    if(vertical_velocity < 100)
+        vertical_velocity = 100;
+    if(vertical_velocity > 650)
+    {
+        self.bot.is_parkouring = undefined;
+        self.bot.buried_parkour_retry = gettime() + 8000;
+        return true;
+    }
+
+    launch_velocity = (delta[0] / flight_time, delta[1] / flight_time, vertical_velocity);
+    jump_angles = vectortoangles((delta[0], delta[1], 0));
+    self setplayerangles((0, jump_angles[1], 0));
+    wait 0.05;
+
+    // Reapply the initial impulse briefly so the bot's path controller cannot
+    // cancel the launch on the first physics frame.
+    launch_start = gettime();
+    while(gettime() - launch_start < 180 && isalive(self) && self isonground())
+    {
+        self setvelocity(launch_velocity);
+        wait 0.05;
+    }
+
+    air_deadline = gettime() + 1200;
+    while(gettime() < air_deadline && isalive(self) && self isonground())
+        wait 0.05;
+
+    if(isalive(self) && !self isonground())
+    {
+        land_deadline = gettime() + 4000;
+        while(gettime() < land_deadline && isalive(self) && !self isonground())
+            wait 0.05;
+    }
+
+    if(isalive(self) && self isonground() &&
+       findpath(self.origin, landing_origin, undefined, 0, 1))
+    {
+        self addgoal(landing_origin, 56, 2, "bot_buried_roof_jump_landing");
+        land_move_deadline = gettime() + 5500;
+        while(gettime() < land_move_deadline && isalive(self) &&
+              distancesquared(self.origin, landing_origin) > 56 * 56)
+            wait 0.15;
+        self cancelgoal("bot_buried_roof_jump_landing");
+    }
+
+    self cancelgoal("bot_buried_roof_jump_takeoff");
+    self cancelgoal("bot_buried_roof_jump_landing");
+    self.bot.is_parkouring = undefined;
+    self.bot.buried_parkour_retry = gettime() + 14000;
+    return true;
+}
+
+
 bot_quest_buried_traverse()
 {
     self endon("disconnect");
@@ -1421,10 +1602,9 @@ bot_quest_buried_traverse()
     if(isdefined(self.bot.buried_parkour_retry) && gettime() < self.bot.buried_parkour_retry)
         return;
 
-    // Buried's Trample Steam launches horizontally. It is not a vertical
-    // elevator, so only use it for a same-height gap with a real route beyond.
-    if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
-       !self isonground() || self isonladder() || self ismantling())
+    // Keep player movement grounded before choosing a roof route. A bot may
+    // cross a normal roof gap with a controlled jump even without Trample Steam.
+    if(!self isonground() || self isonladder() || self ismantling())
         return;
 
     target_origin = undefined;
@@ -1452,11 +1632,24 @@ bot_quest_buried_traverse()
         target_origin = self getgoal("wander");
 
     if(!isdefined(target_origin) ||
-       abs(target_origin[2] - self.origin[2]) > 96 ||
-       distancesquared(self.origin, target_origin) < 260 * 260 ||
+       distancesquared(self.origin, target_origin) < 220 * 220 ||
        findpath(self.origin, target_origin, undefined, 0, 1))
     {
         self.bot.buried_parkour_retry = gettime() + 5000;
+        return;
+    }
+
+    // Try a player-controlled roof jump first. If no safe landing/takeoff pair
+    // exists, the original Trample Steam route below remains available.
+    if(self bot_quest_buried_try_roof_jump(target_origin))
+        return;
+
+    // The stock Buried springpad launches horizontally, so retain it only for
+    // same-height gaps and only when the bot actually carries that equipment.
+    if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
+       abs(target_origin[2] - self.origin[2]) > 96)
+    {
+        self.bot.buried_parkour_retry = gettime() + 7000;
         return;
     }
 
