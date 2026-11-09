@@ -10,6 +10,11 @@
 
 bot_quest_buried()
 {
+    // Trample Steam navigation is per-bot: each bot uses its own equipment
+    // and its own wander/follow target. Easter-egg trigger ownership remains
+    // single-leader below so the whole squad does not stack on one objective.
+    self bot_quest_buried_traverse();
+
     // Only one bot should drive the Buried sidequest at a time. Without a
     // shared leader, every bot independently chooses the same trigger/part and
     // the squad piles into one doorway or interaction point.
@@ -413,7 +418,6 @@ bot_quest_buried()
         return;
     }
 
-    self bot_quest_buried_traverse();
 }
 
 // -----------------------------------------------------------------------------
