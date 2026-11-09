@@ -3264,6 +3264,11 @@ get_wander_location(origin, range)
                 continue;
             }
 
+            // Give each bot a different destination. Bots that spawn together
+            // otherwise tend to select the same nearby nav nodes and form a pack.
+            if(level bot_wander_destination_reserved(node.origin, self, timer))
+                continue;
+
             if(isdefined(level.zones))
             {
                 zone = maps\mp\zombies\_zm_zonemgr::get_zone_from_position(node.origin + (0, 0, 32), 1);
@@ -3284,6 +3289,7 @@ get_wander_location(origin, range)
             entry.expire = timer + 15000;
 
             self.bot.wander_visited[self.bot.wander_visited.size] = entry;
+            level bot_reserve_wander_destination(node.origin, self, timer + 20000);
 
             return node.origin;
         }
@@ -3301,6 +3307,44 @@ get_wander_location(origin, range)
     self.bot.wander_retry = gettime() + 1500;
 
     return undefined;
+}
+
+// Shared squad-level destination reservations prevent every bot from
+// independently choosing the same nearby nav node while in wander mode.
+bot_wander_destination_reserved(pos, owner, timer)
+{
+    if(!isdefined(level.bot_wander_reservations))
+        level.bot_wander_reservations = [];
+
+    fresh = [];
+    reserved = false;
+
+    foreach(entry in level.bot_wander_reservations)
+    {
+        if(!isdefined(entry) || !isdefined(entry.expire) || entry.expire <= timer)
+            continue;
+
+        fresh[fresh.size] = entry;
+
+        if(isdefined(entry.owner) && entry.owner != owner &&
+           isdefined(entry.origin) && distancesquared(pos, entry.origin) < 122500)
+            reserved = true;
+    }
+
+    level.bot_wander_reservations = fresh;
+    return reserved;
+}
+
+bot_reserve_wander_destination(pos, owner, expire_time)
+{
+    if(!isdefined(level.bot_wander_reservations))
+        level.bot_wander_reservations = [];
+
+    entry = spawnstruct();
+    entry.origin = pos;
+    entry.owner = owner;
+    entry.expire = expire_time;
+    level.bot_wander_reservations[level.bot_wander_reservations.size] = entry;
 }
 
 bot_wander_on_cooldown(pos, timer)
