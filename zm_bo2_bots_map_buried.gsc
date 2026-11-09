@@ -172,9 +172,11 @@ bot_quest_buried()
            !isalive(level.bot_buried_wisp_timebomb_owner))
         {
             level.bot_buried_wisp_timebomb_owner = self;
-            wisp_for_save = getent("sq_wisp", "targetname");
+            // Maxis uses the vehicle Wisp; Richtofen uses the sq_wisp entity.
+            wisp_for_save = level.vh_wisp;
             if(isdefined(wisp_for_save) && isdefined(wisp_for_save.origin))
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(wisp_for_save.origin, "bot_buried_wisp_timebomb_save", 120, 7000);
+                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                    wisp_for_save.origin, "bot_buried_wisp_timebomb_save", 160, 8000);
             self.bot.is_objective_using = 1;
             self switchtoweaponimmediate("time_bomb_zm");
             wait 0.25;
@@ -247,7 +249,7 @@ bot_quest_buried()
                     }
                 }
 
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(timebomb_volume.origin, "bot_buried_tpo_all_players", 110, 7000);
+                self bot_buried_tpo_gather_team(timebomb_volume);
                 if(flag("sq_tpo_players_in_position_for_time_warp") && self hasweapon("time_bomb_detonator_zm") &&
                    !is_true(level.bot_buried_tpo_detonate_started))
                 {
