@@ -5273,6 +5273,43 @@ bot_weapon_tactical_score(weapon, target_distance)
         }
     }
 
+    // Use weapons that actually damage the boss armor efficiently.
+    // Panzer's stock damage handler gives elemental staffs a stronger damage floor;
+    // Brutus takes 1.5x shotgun damage and needs repeated helmet hits.
+    threat = self.bot.threat.entity;
+    if(isdefined(threat) && isalive(threat))
+    {
+        class = weaponclass(weapon);
+
+        if(is_true(threat.is_mechz))
+        {
+            if(issubstr(weapon, "staff_"))
+                score += 220;
+            else if(class == "mg")
+                score += 170;
+            else if(class == "rifle")
+                score += 130;
+            else if(class == "spread")
+                score += 100;
+            else if(class == "smg")
+                score += 65;
+
+            if(isdefined(target_distance) && target_distance > 700 && class == "spread")
+                score -= 80;
+        }
+        else if(is_true(threat.is_brutus))
+        {
+            if(class == "spread")
+                score += 200;
+            else if(class == "mg")
+                score += 150;
+            else if(class == "rifle")
+                score += 110;
+            else if(class == "smg")
+                score += 70;
+        }
+    }
+
     return score;
 }
 
