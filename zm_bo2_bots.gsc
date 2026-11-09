@@ -1666,7 +1666,7 @@ bot_buy_perks()
 			best_machine = machine;
 			best_perk = perk;
 			best_cost = machine.cost;
-			best_dist_sq = piece_score;
+			best_dist_sq = dist_sq;
 		}
 
 		if(!isdefined(best_machine))
@@ -4394,7 +4394,7 @@ bot_find_craftable_task()
 
 			best_piece = piece;
 			best_piece_approach = approach_origin;
-			best_dist_sq = dist_sq;
+			best_dist_sq = piece_score;
 		}
 	}
 
