@@ -1400,7 +1400,7 @@ bot_buried_claim_quest_lead()
         return false;
 
     level.bot_buried_quest_owner = self;
-    level.bot_buried_quest_owner_until = now + 30000;
+    level.bot_buried_quest_owner_until = now + 60000;
     return true;
 }
 
