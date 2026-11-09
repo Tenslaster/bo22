@@ -4154,6 +4154,7 @@ bot_run_craftable_task(task)
 		return;
 
 	goal_name = "bot_craftable";
+	use_deadline = 0;
 
 	// Make Origins and Mob's per-player part/table triggers eligible for bots.
 	if(getdvar("mapname") == "zm_tomb" || getdvar("mapname") == "zm_prison")
