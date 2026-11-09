@@ -1474,7 +1474,7 @@ bot_quest_buried_try_roof_jump(target_origin)
             if(horizontal_sq < 180 * 180 || horizontal_sq > 680 * 680)
                 continue;
 
-            if(delta[2] > 180 || delta[2] < -200)
+            if(delta[2] > 220 || delta[2] < -240)
                 continue;
 
             score = distancesquared(self.origin, takeoff_node.origin) +
@@ -1522,12 +1522,12 @@ bot_quest_buried_try_roof_jump(target_origin)
     }
 
     // Compute a ballistic launch to the landing node. Buried's stock Sloth
-    // traversal data covers jumps up to roughly 154-222 units; keep the bot
+    // traversal data includes climbs and drops around 154-240 units; keep the bot
     // within a conservative player-sized vertical envelope.
     delta = landing_origin - self.origin;
     horizontal_dist = sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
     if(horizontal_dist < 160 || horizontal_dist > 680 ||
-       delta[2] > 180 || delta[2] < -200)
+       delta[2] > 220 || delta[2] < -240)
     {
         self.bot.buried_roof_takeoff_origin = undefined;
         self.bot.buried_roof_takeoff_until = 0;
