@@ -1612,31 +1612,3 @@ bot_buried_tpo_restore_host()
     level.bot_buried_tpo_host_origin = undefined;
     level.bot_buried_tpo_host_angles = undefined;
 }
-bot_buried_weapon_score_override(weapon)
-{
-	if(weapon == "time_bomb_zm" &&
-	   ((isdefined(level._cur_stage_name) && level._cur_stage_name == "ctw" &&
-	     flag("sq_is_max_tower_built") && !is_true(level.bot_buried_wisp_timebomb_saved)) ||
-	    (isdefined(level._cur_stage_name) && level._cur_stage_name == "tpo" &&
-	     flag("sq_is_ric_tower_built") && !flag("sq_tpo_time_bomb_in_valid_location"))))
-		return 110;
-
-	return undefined;
-}
-
-bot_buried_should_take_box_weapon(boxweapon)
-{
-	if(!isdefined(boxweapon) || boxweapon != "time_bomb_zm" || self hasweapon("time_bomb_zm"))
-		return false;
-
-	if(isdefined(level._cur_stage_name) && level._cur_stage_name == "ctw" &&
-	   flag("sq_is_max_tower_built") && !is_true(level.bot_buried_wisp_timebomb_saved))
-		return true;
-
-	if(isdefined(level._cur_stage_name) && level._cur_stage_name == "tpo" &&
-	   flag("sq_is_ric_tower_built") && !flag("sq_tpo_time_bomb_in_valid_location"))
-		return true;
-
-	return false;
-}
-
