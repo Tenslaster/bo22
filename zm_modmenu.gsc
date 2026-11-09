@@ -138,7 +138,7 @@ MM_CreateMenuHud()
     // a five-row viewport and scrolls through every option.
     self.menuRows = [];
     for(i = 0; i < 5; i++)
-        self.menuRows[i] = self MM_NewText(22, 112 + (i * 32), 1.2);
+        self.menuRows[i] = self MM_NewText(22, 112 + (i * 19), 1.25);
 }
 
 MM_NewText(px, py, scale)
