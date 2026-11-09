@@ -315,7 +315,7 @@ bot_update_situation()
 				if(is_true(zombie.is_mechz) && dist < 1100)
 				{
 					self.bot.boss_near = true;
-					danger += 8;
+					danger += 10;
 
 					if(dist < 600)
 						danger += 3;
@@ -323,7 +323,7 @@ bot_update_situation()
 				else if(is_true(zombie.is_brutus) && dist < 650)
 				{
 					self.bot.boss_near = true;
-					danger += 6;
+					danger += 10;
 
 					if(dist < 300)
 						danger += 2;
