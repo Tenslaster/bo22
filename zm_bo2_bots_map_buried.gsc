@@ -1424,7 +1424,10 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
        !isdefined(takeoff_nodes) || takeoff_nodes.size == 0)
         return false;
 
-    current_target_dist = distancesquared(self.origin, target_origin);
+    current_target_dist = 999999999;
+    if(isdefined(target_origin))
+        current_target_dist = distancesquared(self.origin, target_origin);
+
     best_takeoff = undefined;
     best_landing = undefined;
     best_score = 999999999;
@@ -1599,24 +1602,41 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
     self setplayerangles((0, jump_angles[1], 0));
     wait 0.05;
 
-    // Reapply the initial impulse briefly so the bot's path controller cannot
-    // cancel the launch on the first physics frame.
+    // Match the native jump-pad movement contract: mark the player as
+    // airborne/landing-owned, stand upright, lift one unit off the floor, and
+    // sustain the launch velocity for half the calculated flight duration.
+    self._padded = 1;
+    self.lander = 1;
+    self setstance("stand");
+    wait 0.1;
+    self setorigin(self.origin + (0, 0, 1));
+
+    launch_duration = int(flight_time * 500);
     launch_start = gettime();
-    while(gettime() - launch_start < 180 && isalive(self) && self isonground())
+    while(gettime() - launch_start < launch_duration && isalive(self))
     {
         self setvelocity(launch_velocity);
         wait 0.05;
     }
 
-    air_deadline = gettime() + 1200;
-    while(gettime() < air_deadline && isalive(self) && self isonground())
-        wait 0.05;
-
-    if(isalive(self) && !self isonground())
+    launched = !self isonground();
+    if(launched)
     {
-        land_deadline = gettime() + 4000;
+        land_deadline = gettime() + 5000;
         while(gettime() < land_deadline && isalive(self) && !self isonground())
             wait 0.05;
+    }
+
+    self._padded = 0;
+    self.lander = 0;
+
+    if(!launched || !isalive(self) || !self isonground())
+    {
+        self.bot.buried_roof_takeoff_origin = undefined;
+        self.bot.buried_roof_takeoff_until = 0;
+        self.bot.is_parkouring = undefined;
+        self.bot.buried_parkour_retry = gettime() + 9000;
+        return true;
     }
 
     if(isalive(self) && self isonground() &&
@@ -1680,6 +1700,11 @@ bot_quest_buried_traverse(quest_leader)
         explore_roof = 1;
         if(self bot_quest_buried_try_roof_jump(undefined, 1))
             return;
+
+        // No jumpable roof island was found. Retry after a short delay rather
+        // than rescanning hundreds of nodes on every objective tick.
+        self.bot.buried_parkour_retry = gettime() + 8000;
+        return;
     }
 
     if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow")
