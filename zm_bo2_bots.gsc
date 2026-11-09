@@ -3370,6 +3370,11 @@ bot_objective_can_run()
 	if(self bot_mob_is_afterlife())
 		return false;
 
+	// A Buried Trample Steam traversal owns this bot's movement until it lands.
+	// Keep the shared buildable/quest controllers from replacing its pad goals.
+	if(is_true(self.bot.is_parkouring))
+		return false;
+
 	// Let the navigation graph carry the bot over stairs, jumps, ladders and mantles.
 	// Grounded checks are performed only at the interaction point below.
 
