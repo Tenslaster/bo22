@@ -135,10 +135,10 @@ MM_CreateMenuHud()
 
     // Keep the HUD pool small and predictable. Some Plutonium HUD layouts
     // only render the first few client text elements reliably; the menu uses
-    // a four-row viewport and scrolls through every option.
+    // a five-row viewport and scrolls through every option.
     self.menuRows = [];
-    for(i = 0; i < 4; i++)
-        self.menuRows[i] = self MM_NewText(22, 112 + (i * 34), 1.25);
+    for(i = 0; i < 5; i++)
+        self.menuRows[i] = self MM_NewText(22, 112 + (i * 32), 1.2);
 }
 
 MM_NewText(px, py, scale)
@@ -597,7 +597,7 @@ UpdateMenuUI()
     if(isDefined(opts))
         total = opts.size;
 
-    maxRows = 4;
+    maxRows = 5;
     first = 0;
     if(total > maxRows)
     {
