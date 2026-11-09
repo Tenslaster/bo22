@@ -2942,7 +2942,7 @@ bot_movement_recovery_think()
 
 		goal = self getgoal("wander");
 		if(isdefined(self.bot.movement_recovery_waypoint) &&
-		   distancesquared(goal, self.bot.movement_recovery_waypoint) > 16)
+		   (!isdefined(goal) || distancesquared(goal, self.bot.movement_recovery_waypoint) > 16))
 		{
 			// Another controller replaced our detour goal. Drop the stale
 			// destination so follow/stay/wander remains authoritative.
@@ -2972,7 +2972,8 @@ bot_movement_recovery_think()
 					// Continue the same route with another reachable waypoint.
 					waypoint = self bot_movement_find_waypoint(final_goal, 1000);
 					if(isdefined(waypoint) &&
-					   distancesquared(waypoint, self.bot.movement_recovery_waypoint) > 64)
+					   (!isdefined(self.bot.movement_recovery_waypoint) ||
+					    distancesquared(waypoint, self.bot.movement_recovery_waypoint) > 64))
 					{
 						self cancelgoal("wander");
 						self addgoal(waypoint, 48, 2, "wander");
