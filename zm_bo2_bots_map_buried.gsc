@@ -139,6 +139,7 @@ bot_quest_buried()
                 }
             }
         }
+        return;
     }
 
     // Ghost lantern: the map attaches its pickup trigger to the moving lantern.
@@ -312,6 +313,7 @@ bot_quest_buried()
                 self scripts\zm\zm_bo2_bots::bot_quest_move_to(wisp.origin, "bot_buried_wisp_follow", 128, 5000);
             return;
         }
+        return;
     }
 
     // Interact with the live Maxis light-board button sequence or the
@@ -414,7 +416,159 @@ bot_quest_buried()
             self.bot.is_objective_using = undefined;
             self clearlookat();
         }
+        return;
     }
+
+    self bot_quest_buried_traverse();
+}
+
+bot_quest_buried_traverse()
+{
+    self endon("disconnect");
+    self endon("death");
+    level endon("end_game");
+
+    if(!isdefined(self.bot) || is_true(self.bot.is_parkouring) ||
+       is_true(self.bot.is_objective_using) || is_true(self.bot.is_building) ||
+       is_true(self.bot.is_crafting) || is_true(self.bot.is_perk_buying) ||
+       is_true(self.bot.is_buying) || is_true(self.bot.is_using_box) ||
+       is_true(self.bot.is_reviving) || is_true(self.bot.is_selfreviving))
+        return;
+
+    if(isdefined(self.bot.buried_parkour_retry) && gettime() < self.bot.buried_parkour_retry)
+        return;
+
+    // Buried uses the stock Trample Steam equipment. Only deploy it when the
+    // bot actually owns the selected equipment and can stand on the ground.
+    if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
+       !self isonground() || self isonladder() || self ismantling())
+        return;
+
+    // A springpad launches upward and forward. Pick a real nav node on a
+    // higher level which the ordinary path graph cannot reach from here.
+    nodes = getnodesinradius(self.origin, 1280, 120, 700, "any", 256);
+    if(!isdefined(nodes) || nodes.size == 0)
+    {
+        self.bot.buried_parkour_retry = gettime() + 5000;
+        return;
+    }
+
+    best_node = undefined;
+    best_score = 999999999;
+    foreach(node in nodes)
+    {
+        if(!isdefined(node) || !isdefined(node.origin))
+            continue;
+
+        height = node.origin[2] - self.origin[2];
+        if(height < 120 || height > 620)
+            continue;
+
+        delta = node.origin - self.origin;
+        horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
+        if(horizontal_sq < 180 * 180 || horizontal_sq > 1050 * 1050)
+            continue;
+
+        if(!check_point_in_playable_area(node.origin))
+            continue;
+
+        if(isdefined(level.zones))
+        {
+            zone = maps\mp\zombies\_zm_zonemgr::get_zone_from_position(node.origin + (0, 0, 32), 1);
+            if(isdefined(zone) && !maps\mp\zombies\_zm_zonemgr::zone_is_enabled(zone))
+                continue;
+        }
+
+        // If the normal graph already has a route, let the stock nav/mantle
+        // traversal handle it. Use the springpad for an actual vertical gap.
+        if(findpath(self.origin, node.origin, undefined, 0, 1))
+            continue;
+
+        height_error = height - 300;
+        if(height_error < 0)
+            height_error = -height_error;
+
+        score = horizontal_sq + height_error * height_error * 3;
+        if(score < best_score)
+        {
+            best_score = score;
+            best_node = node;
+        }
+    }
+
+    if(!isdefined(best_node))
+    {
+        self.bot.buried_parkour_retry = gettime() + 10000;
+        return;
+    }
+
+    self.bot.buried_parkour_retry = gettime() + 25000;
+    self.bot.is_parkouring = 1;
+    self.bot.is_objective_using = 1;
+
+    // Aim the native launcher at the selected upper node. The stock helper
+    // consumes the carried equipment and calls the registered springpad
+    // placement callback; no custom velocity or teleport is applied here.
+    launch_angles = vectortoangles(best_node.origin - self.origin);
+    self setplayerangles((0, launch_angles[1], 0));
+    wait 0.05;
+    self maps\mp\zombies\_zm_equipment::equipment_drop_to_planted("equip_springpad_zm", self);
+
+    // The stock springpad watcher records the placed model on the player.
+    // Wait for it to arm, then walk into its linked trigger if not already
+    // touching it. Its native player_fling callback handles the launch.
+    pad = undefined;
+    deadline = gettime() + 6500;
+    while(gettime() < deadline)
+    {
+        if(isdefined(self.buildablespringpad) && isdefined(self.buildablespringpad.trigger) &&
+           isdefined(self.buildablespringpad.trigger.origin))
+        {
+            pad = self.buildablespringpad;
+            if(is_true(pad.is_armed))
+                break;
+        }
+        wait 0.1;
+    }
+
+    launched = false;
+    if(isdefined(pad) && isdefined(pad.trigger) && isdefined(pad.trigger.origin) &&
+       is_true(pad.is_armed))
+    {
+        self addgoal(pad.trigger.origin, 12, 2, "bot_buried_springpad");
+        launch_deadline = gettime() + 7000;
+
+        while(gettime() < launch_deadline)
+        {
+            if(!isdefined(pad) || !isdefined(pad.trigger) || !isdefined(pad.trigger.origin) ||
+               !isalive(self))
+                break;
+
+            if(!self isonground())
+            {
+                launched = true;
+                break;
+            }
+
+            wait 0.1;
+        }
+
+        self cancelgoal("bot_buried_springpad");
+    }
+
+    if(launched)
+    {
+        // Let the stock launch/flight/landing complete before the wander and
+        // objective workers regain control of this bot.
+        land_deadline = gettime() + 14000;
+        while(gettime() < land_deadline && isalive(self) && !self isonground())
+            wait 0.1;
+        wait 0.25;
+    }
+
+    self cancelgoal("bot_buried_springpad");
+    self.bot.is_parkouring = undefined;
+    self.bot.is_objective_using = undefined;
 }
 
 bot_buried_tpo_restore_host()
