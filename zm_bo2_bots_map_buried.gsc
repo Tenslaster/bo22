@@ -1407,13 +1407,17 @@ bot_buried_claim_quest_lead()
 // Find a connected takeoff node and a disconnected landing node across a
 // short Buried roof gap. The launch uses the same native player setvelocity
 // method used by Treyarch's jump-pad traversal code.
-bot_quest_buried_try_roof_jump(target_origin)
+bot_quest_buried_try_roof_jump(target_origin, explore_roof)
 {
-    if(!isdefined(target_origin) ||
-       findpath(self.origin, target_origin, undefined, 0, 1))
+    if(!is_true(explore_roof) &&
+       (!isdefined(target_origin) ||
+        findpath(self.origin, target_origin, undefined, 0, 1)))
         return false;
 
-    landing_nodes = getnodesinradius(target_origin, 760, 0, 420, "any", 192);
+    if(is_true(explore_roof))
+        landing_nodes = getnodesinradius(self.origin, 1450, -260, 360, "any", 256);
+    else
+        landing_nodes = getnodesinradius(target_origin, 760, -260, 420, "any", 192);
     takeoff_nodes = getnodesinradius(self.origin, 360, 0, 220, "any", 128);
 
     if(!isdefined(landing_nodes) || landing_nodes.size == 0 ||
@@ -1430,12 +1434,18 @@ bot_quest_buried_try_roof_jump(target_origin)
         if(!isdefined(landing_node) || !isdefined(landing_node.origin))
             continue;
 
-        if(distancesquared(landing_node.origin, target_origin) >= current_target_dist - 22500)
+        if(isdefined(target_origin) &&
+           distancesquared(landing_node.origin, target_origin) >= current_target_dist - 22500)
             continue;
 
-        if(!check_point_in_playable_area(landing_node.origin) ||
-           !findpath(landing_node.origin, target_origin, undefined, 0, 1) ||
-           findpath(self.origin, landing_node.origin, undefined, 0, 1))
+        if(!check_point_in_playable_area(landing_node.origin))
+            continue;
+
+        if(isdefined(target_origin) &&
+           !findpath(landing_node.origin, target_origin, undefined, 0, 1))
+            continue;
+
+        if(findpath(self.origin, landing_node.origin, undefined, 0, 1))
             continue;
 
         foreach(takeoff_node in takeoff_nodes)
@@ -1478,8 +1488,20 @@ bot_quest_buried_try_roof_jump(target_origin)
                 continue;
 
             score = distancesquared(self.origin, takeoff_node.origin) +
-                    horizontal_sq * 0.25 +
-                    distancesquared(landing_node.origin, target_origin) * 0.5;
+                    horizontal_sq * 0.25;
+
+            if(isdefined(target_origin))
+                score += distancesquared(landing_node.origin, target_origin) * 0.5;
+
+            if(is_true(explore_roof) && isdefined(self.bot.wander_visited))
+            {
+                foreach(visited in self.bot.wander_visited)
+                {
+                    if(isdefined(visited) && isdefined(visited.origin) &&
+                       distancesquared(visited.origin, landing_node.origin) < 120 * 120)
+                        score += 500000;
+                }
+            }
 
             if(score < best_score)
             {
@@ -1608,6 +1630,16 @@ bot_quest_buried_try_roof_jump(target_origin)
         self cancelgoal("bot_buried_roof_jump_landing");
     }
 
+    if(is_true(explore_roof) && isalive(self) && self isonground() &&
+       distancesquared(self.origin, landing_origin) < 180 * 180 &&
+       findpath(self.origin, landing_origin, undefined, 0, 1))
+    {
+        self cancelgoal("wander");
+        self addgoal(landing_origin, 72, 1, "wander");
+        self.bot.last_wander_pos = self.origin;
+        self.bot.wander_stay_time = gettime();
+    }
+
     self cancelgoal("bot_buried_roof_jump_takeoff");
     self cancelgoal("bot_buried_roof_jump_landing");
     self.bot.buried_roof_takeoff_origin = undefined;
@@ -1640,6 +1672,16 @@ bot_quest_buried_traverse(quest_leader)
         return;
 
     target_origin = undefined;
+    explore_roof = 0;
+
+    if(isdefined(level.bot_command_mode) &&
+       (level.bot_command_mode == "wander" || level.bot_command_mode == "wander_further"))
+    {
+        explore_roof = 1;
+        if(self bot_quest_buried_try_roof_jump(undefined, 1))
+            return;
+    }
+
     if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow")
     {
         commander = level.bot_commander;
@@ -1673,7 +1715,7 @@ bot_quest_buried_traverse(quest_leader)
 
     // Try a player-controlled roof jump first. If no safe landing/takeoff pair
     // exists, the original Trample Steam route below remains available.
-    if(self bot_quest_buried_try_roof_jump(target_origin))
+    if(self bot_quest_buried_try_roof_jump(target_origin, 0))
         return;
 
     // The springpad is a shared launch point, so keep its old follow-mode
