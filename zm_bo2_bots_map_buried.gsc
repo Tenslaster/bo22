@@ -97,74 +97,66 @@ bot_quest_buried()
         return;
     }
 
-    // Mined Games' amplifier stage: find all stock amplifier triggers, then
-    // charge/break the amplifiers with the map-required Slow Gun.
+    // Mined Games is route-specific in the stock script:
+    // Maxis breaks every amplifier with the Subwoofer; Richtofen fills every
+    // amplifier with 25 Slow Gun hits. Treating both routes as Slow Gun is a
+    // dead end because the stock stage accepts either all-broken or all-filled.
     if(isdefined(stage) && stage == "mta")
     {
-        amplifiers = getentarray("sq_amplifier", "targetname");
-        if(isdefined(amplifiers))
-        {
-            foreach(amp in amplifiers)
-            {
-                if(!isdefined(amp) || !isdefined(amp.origin))
-                    continue;
-
-                if(isdefined(amp.amplifier_state) && amp.amplifier_state == "filled")
-                    continue;
-
-                if(isdefined(amp.amplifier_state) && amp.amplifier_state == "broken")
-                    continue;
-
-                if(distancesquared(self.origin, amp.origin) > 16384)
-                {
-                    self scripts\zm\zm_bo2_bots::bot_quest_move_to(amp.origin, "bot_buried_amp_find", 96, 6000);
-                    return;
-                }
-
-                slowgun = undefined;
-                if(self hasweapon("slowgun_zm"))
-                    slowgun = "slowgun_zm";
-                else if(self hasweapon("slowgun_upgraded_zm"))
-                    slowgun = "slowgun_upgraded_zm";
-
-                if(isdefined(slowgun))
-                {
-                    self.bot.is_objective_using = 1;
-                    self switchtoweaponimmediate(slowgun);
-                    deadline = gettime() + 5000;
-                    while(isdefined(amp) && gettime() < deadline &&
-                          (!isdefined(amp.amplifier_state) || amp.amplifier_state == "base"))
-                    {
-                        self lookat(amp.origin);
-                        self pressattackbutton(0.1);
-                        wait 0.15;
-                    }
-                    self.bot.is_objective_using = undefined;
-                    self clearlookat();
-                    return;
-                }
-            }
-        }
+        if(flag("sq_is_max_tower_built"))
+            self bot_buried_mta_maxis();
+        else if(flag("sq_is_ric_tower_built"))
+            self bot_buried_mta_richtofen();
         return;
     }
 
-    // Ghost lantern: the map attaches its pickup trigger to the moving lantern.
-    if(isdefined(level.vh_lantern) && isdefined(level.vh_lantern.t_pickup))
+    // Ghost lantern: first use a real frag/sticky impact to make the stock
+    // lantern crash. Only after its native pickup trigger appears do we collect
+    // the buildable piece through the stock player_take_piece callback.
+    if(isdefined(level.vh_lantern))
     {
-        pickup = level.vh_lantern.t_pickup;
-        if(isdefined(pickup.origin))
+        if(isdefined(level.vh_lantern.t_pickup) && isdefined(level.vh_lantern.t_pickup.origin))
         {
-            self scripts\zm\zm_bo2_bots::bot_quest_use_target(pickup, "bot_buried_ghost_lantern", 42, 4);
+            self scripts\zm\zm_bo2_bots::bot_quest_use_target(
+                level.vh_lantern.t_pickup, "bot_buried_ghost_lantern", 42, 4);
+            return;
+        }
+
+        if(isdefined(level.vh_lantern.m_lantern) && isdefined(level.vh_lantern.m_lantern.origin))
+        {
+            if(!self bot_buried_throw_grenade_at(level.vh_lantern.m_lantern.origin,
+                "bot_buried_ghost_lantern_shot", 1100))
+            {
+                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                    level.vh_lantern.m_lantern.origin, "bot_buried_ghost_lantern_approach", 420, 5000);
+            }
             return;
         }
     }
 
-    // Fill the built oil lamp by fighting within the map's own lamp generator
-    // area. Kill credit and charge counters are still handled by the stock code.
-    if(isdefined(level.sq_lamp_generator_unitrig) && isdefined(level.sq_lamp_generator_unitrig.realorigin) &&
-       !flag("ftl_lantern_charged"))
+    // Fuel the ghost lamp using the real map kill watcher. On Maxis, player
+    // kills do not increment the stock fuel counter, so deploy the Subwoofer
+    // beside the lamp area and let its native non-player damage create fuel.
+    // Richtofen's ghost kills are credited by the stock watcher while the
+    // lantern carrier remains inside the same radius.
+    if(isdefined(stage) && stage == "ftl" && !flag("ftl_lantern_charged") &&
+       isdefined(level.sq_lamp_generator_unitrig) &&
+       isdefined(level.sq_lamp_generator_unitrig.realorigin))
     {
-        self scripts\zm\zm_bo2_bots::bot_quest_move_to(level.sq_lamp_generator_unitrig.realorigin, "bot_buried_lantern_defend", 180, 5000);
+        self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+            level.sq_lamp_generator_unitrig.realorigin, "bot_buried_lantern_defend", 220, 6500);
+
+        if(flag("sq_is_max_tower_built") &&
+           self has_player_equipment("equip_subwoofer_zm") &&
+           (!isdefined(level.bot_buried_lamp_subwoofer_at) ||
+            distancesquared(level.bot_buried_lamp_subwoofer_at,
+                level.sq_lamp_generator_unitrig.realorigin) > 96 * 96))
+        {
+            if(self scripts\zm\zm_bo2_bots::bot_quest_deploy_equipment(
+                "equip_subwoofer_zm", level.sq_lamp_generator_unitrig.realorigin,
+                "bot_buried_lamp_subwoofer"))
+                level.bot_buried_lamp_subwoofer_at = level.sq_lamp_generator_unitrig.realorigin;
+        }
         return;
     }
 
@@ -307,16 +299,30 @@ bot_quest_buried()
         }
     }
 
-    // Follow the live Wisp during the guillotine stage so that the normal
-    // combat worker can kill nearby powered zombies for the stock quest logic.
+    // Catch the live Wisp during the Guillotine stage. Richtofen's stock
+    // watcher requires Vulture Aid and a player within 64 units of each Wisp
+    // waypoint before its 12-second timeout. Maxis instead needs nearby zombies
+    // for the moving Wisp's energy watcher; stay close enough for kills to help.
     if(isdefined(stage) && stage == "ctw" && !flag("sq_wisp_success") &&
        !flag("sq_wisp_failed"))
     {
+        if(flag("sq_is_max_tower_built") && isdefined(level.vh_wisp) &&
+           isdefined(level.vh_wisp.origin))
+        {
+            if(distancesquared(self.origin, level.vh_wisp.origin) > 180 * 180)
+                self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                    level.vh_wisp.origin, "bot_buried_maxis_wisp_support", 180, 6500);
+            return;
+        }
+
         wisp = getent("sq_wisp", "targetname");
         if(isdefined(wisp) && isdefined(wisp.origin))
         {
-            if(distancesquared(self.origin, wisp.origin) > 65536)
-                self scripts\zm\zm_bo2_bots::bot_quest_move_to(wisp.origin, "bot_buried_wisp_follow", 128, 5000);
+            if(!self hasperk("specialty_nomotionsensor"))
+                self maps\mp\zombies\_zm_perks::give_perk("specialty_nomotionsensor", 0);
+
+            self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                wisp.origin, "bot_buried_ric_wisp_touch", 48, 8500);
             return;
         }
         return;
@@ -328,11 +334,13 @@ bot_quest_buried()
     {
         if(flag("sq_is_max_tower_built"))
         {
+            // The stock script spawns a trigger at level.t_start. The board
+            // itself is only a script_model and cannot receive use input.
             if(!isdefined(level.str_sq_bp_active_light) || level.str_sq_bp_active_light == "")
             {
-                board = getent("sq_bp_board", "targetname");
-                if(isdefined(board) && isdefined(board.origin))
-                    self scripts\zm\zm_bo2_bots::bot_quest_use_target(board, "bot_buried_lightboard_start", 64, 3);
+                if(isdefined(level.t_start) && isdefined(level.t_start.origin))
+                    self scripts\zm\zm_bo2_bots::bot_quest_use_target(
+                        level.t_start, "bot_buried_lightboard_start", 30, 2);
                 return;
             }
 
@@ -350,25 +358,27 @@ bot_quest_buried()
         }
         else
         {
+            // The stock maze puzzle assigns each spawned lever a randomized
+            // n_lever_order. Its interaction records the current global index,
+            // so the lever for the next index must be pulled next.
             levers = getentarray("sq_ml_lever", "targetname");
             best_lever = undefined;
-            best_order = 9999;
+            next_order = isdefined(level.sq_ml_curr_lever) ? level.sq_ml_curr_lever : 0;
             foreach(lever in levers)
             {
                 if(!isdefined(lever) || !isdefined(lever.n_lever_order) ||
+                   lever.n_lever_order != next_order ||
                    (isdefined(lever.is_flipped) && lever.is_flipped) ||
                    !isdefined(lever.trig) || !isdefined(lever.trig.origin))
                     continue;
 
-                if(lever.n_lever_order < best_order)
-                {
-                    best_order = lever.n_lever_order;
-                    best_lever = lever;
-                }
+                best_lever = lever;
+                break;
             }
 
             if(isdefined(best_lever))
-                self scripts\zm\zm_bo2_bots::bot_quest_use_target(best_lever.trig, "bot_buried_maze_lever", 36, 2);
+                self scripts\zm\zm_bo2_bots::bot_quest_use_target(
+                    best_lever.trig, "bot_buried_maze_lever_" + next_order, 34, 1);
         }
 
         return;
@@ -391,37 +401,7 @@ bot_quest_buried()
             return;
         }
 
-        script_models = getentarray("script_model", "classname");
-        best_target = undefined;
-        best_dist_sq = 999999999;
-        foreach(target in script_models)
-        {
-            if(!isdefined(target) || !isdefined(target.origin))
-                continue;
-            if((!isdefined(target.modelname) || target.modelname != "p6_zm_bu_target") &&
-               (!isdefined(target.model) || target.model != "p6_zm_bu_target"))
-                continue;
-
-            dist_sq = distancesquared(self.origin, target.origin);
-            if(dist_sq < best_dist_sq)
-            {
-                best_dist_sq = dist_sq;
-                best_target = target;
-            }
-        }
-
-        if(isdefined(best_target))
-        {
-            self.bot.is_objective_using = 1;
-            self lookat(best_target.origin);
-            for(i = 0; i < 8 && isdefined(best_target); i++)
-            {
-                self pressattackbutton(0.1);
-                wait 0.1;
-            }
-            self.bot.is_objective_using = undefined;
-            self clearlookat();
-        }
+        self bot_buried_ows_shoot_active_targets();
         return;
     }
 
