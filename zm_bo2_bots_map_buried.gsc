@@ -1529,6 +1529,8 @@ bot_quest_buried_try_roof_jump(target_origin)
     if(horizontal_dist < 160 || horizontal_dist > 680 ||
        delta[2] > 180 || delta[2] < -200)
     {
+        self.bot.buried_roof_takeoff_origin = undefined;
+        self.bot.buried_roof_takeoff_until = 0;
         self.bot.is_parkouring = undefined;
         self.bot.buried_parkour_retry = gettime() + 8000;
         return true;
@@ -1551,6 +1553,8 @@ bot_quest_buried_try_roof_jump(target_origin)
 
     if(flight_time > 1.25)
     {
+        self.bot.buried_roof_takeoff_origin = undefined;
+        self.bot.buried_roof_takeoff_until = 0;
         self.bot.is_parkouring = undefined;
         self.bot.buried_parkour_retry = gettime() + 8000;
         return true;
@@ -1561,6 +1565,8 @@ bot_quest_buried_try_roof_jump(target_origin)
         vertical_velocity = 100;
     if(vertical_velocity > 650)
     {
+        self.bot.buried_roof_takeoff_origin = undefined;
+        self.bot.buried_roof_takeoff_until = 0;
         self.bot.is_parkouring = undefined;
         self.bot.buried_parkour_retry = gettime() + 8000;
         return true;
