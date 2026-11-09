@@ -351,6 +351,232 @@ bot_quest_hold_elevator(trigger, flag_name)
 }
 
 
+// Use the live Die Rise elevator system when a quest/follow destination is
+// on another floor and the normal nav graph has no direct route. The stock map
+// controls elevator timing, moving-platform links and floor path activation.
+bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
+{
+    if(!isdefined(target_origin) || getdvar("mapname") != "zm_highrise" ||
+       !isdefined(level.elevators) || level.elevators.size == 0)
+        return false;
+
+    if(!isdefined(range) || range < 24)
+        range = 96;
+    if(!isdefined(max_time) || max_time < 1000)
+        max_time = 12000;
+
+    // Elevators are only a vertical-connection fallback; don't ride them for
+    // a same-floor obstacle that the alternate-node recovery should handle.
+    if(abs(target_origin[2] - self.origin[2]) < 180)
+        return false;
+
+    chosen_elevator = undefined;
+    chosen_floor_key = undefined;
+    chosen_exit = undefined;
+    chosen_score = 999999999;
+
+    // If the bot is already riding a lift, keep using that lift instead of
+    // trying to path to a second platform.
+    current_parent = undefined;
+    if(self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+       isdefined(self.elevator_parent))
+        current_parent = self.elevator_parent;
+
+    foreach(elevator in level.elevators)
+    {
+        if(!isdefined(elevator) || !isdefined(elevator.body) ||
+           !isdefined(elevator.floors) || !isdefined(elevator.body.origin))
+            continue;
+
+        body = elevator.body;
+        already_boarded = isdefined(current_parent) && current_parent == body;
+
+        if(!already_boarded)
+        {
+            if(is_true(body.is_moving))
+                continue;
+
+            board_ent = body;
+            if(isdefined(body.trig) && isdefined(body.trig.origin))
+                board_ent = body.trig;
+
+            if(!findpath(self.origin, board_ent.origin, undefined, 0, 1))
+                continue;
+        }
+
+        floor_keys = getarraykeys(elevator.floors);
+        foreach(floor_key in floor_keys)
+        {
+            floor = elevator.floors[floor_key];
+            if(!isdefined(floor) || !isdefined(floor.origin))
+                continue;
+
+            if(isdefined(body.current_level) && ("" + body.current_level) == ("" + floor_key))
+                continue;
+
+            exit_node = undefined;
+            exit_score = 999999999;
+
+            if(isdefined(floor.paths) && floor.paths.size > 0)
+            {
+                foreach(path_node in floor.paths)
+                {
+                    if(!isdefined(path_node) || !isdefined(path_node.origin))
+                        continue;
+
+                    if(!findpath(path_node.origin, target_origin, undefined, 0, 1))
+                        continue;
+
+                    node_score = distancesquared(path_node.origin, target_origin);
+                    if(node_score < exit_score)
+                    {
+                        exit_score = node_score;
+                        exit_node = path_node;
+                    }
+                }
+            }
+
+            // Some elevator floors expose their entry point directly, without
+            // a separate named floor-path node.
+            if(!isdefined(exit_node) &&
+               findpath(floor.origin, target_origin, undefined, 0, 1))
+            {
+                exit_node = floor;
+                exit_score = distancesquared(floor.origin, target_origin);
+            }
+
+            if(!isdefined(exit_node))
+                continue;
+
+            board_distance = 0;
+            if(!already_boarded)
+            {
+                board_point = body.origin;
+                if(isdefined(body.trig) && isdefined(body.trig.origin))
+                    board_point = body.trig.origin;
+                board_distance = distancesquared(self.origin, board_point);
+            }
+
+            // Prefer a nearby elevator whose selected floor has a real route
+            // toward the destination, not merely the numerically nearest lift.
+            score = board_distance + exit_score * 0.18;
+            if(score < chosen_score)
+            {
+                chosen_score = score;
+                chosen_elevator = elevator;
+                chosen_floor_key = "" + floor_key;
+                chosen_exit = exit_node;
+            }
+        }
+
+        if(already_boarded && isdefined(chosen_elevator))
+            break;
+    }
+
+    if(!isdefined(chosen_elevator) || !isdefined(chosen_floor_key) ||
+       !isdefined(chosen_exit) || !isdefined(chosen_elevator.body))
+        return false;
+
+    self.bot.is_objective_using = 1;
+    elevator_body = chosen_elevator.body;
+    boarded = self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+              isdefined(self.elevator_parent) && self.elevator_parent == elevator_body;
+
+    if(!boarded)
+    {
+        board_ent = elevator_body;
+        if(isdefined(elevator_body.trig) && isdefined(elevator_body.trig.origin))
+            board_ent = elevator_body.trig;
+
+        board_deadline = gettime() + 14000;
+        next_refresh = 0;
+        while(gettime() < board_deadline && isalive(self) && isdefined(elevator_body))
+        {
+            if(self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+               isdefined(self.elevator_parent) && self.elevator_parent == elevator_body)
+            {
+                boarded = true;
+                break;
+            }
+
+            if(gettime() >= next_refresh && isdefined(board_ent.origin))
+            {
+                self cancelgoal(goal_name + "_board");
+                self addgoal(board_ent.origin, 32, 2, goal_name + "_board");
+                next_refresh = gettime() + 900;
+            }
+            wait 0.15;
+        }
+        self cancelgoal(goal_name + "_board");
+    }
+
+    reached_floor = false;
+    if(boarded)
+    {
+        ride_deadline = gettime() + 75000;
+        while(gettime() < ride_deadline && isalive(self) && isdefined(elevator_body))
+        {
+            if(!self maps\mp\zm_highrise_elevators::object_is_on_elevator() ||
+               !isdefined(self.elevator_parent) || self.elevator_parent != elevator_body)
+                break;
+
+            if(isdefined(elevator_body.current_level) &&
+               ("" + elevator_body.current_level) == chosen_floor_key &&
+               !is_true(elevator_body.is_moving))
+            {
+                reached_floor = true;
+                break;
+            }
+            wait 0.2;
+        }
+    }
+
+    exited = false;
+    if(reached_floor && isdefined(chosen_exit) && isdefined(chosen_exit.origin))
+    {
+        self addgoal(chosen_exit.origin, 28, 2, goal_name + "_exit");
+        exit_deadline = gettime() + 9000;
+        while(gettime() < exit_deadline && isalive(self))
+        {
+            if(!self maps\mp\zm_highrise_elevators::object_is_on_elevator() ||
+               !isdefined(self.elevator_parent) || self.elevator_parent != elevator_body)
+            {
+                exited = true;
+                break;
+            }
+
+            if(distancesquared(self.origin, chosen_exit.origin) <= 28 * 28)
+                wait 0.1;
+            else
+                wait 0.15;
+        }
+        self cancelgoal(goal_name + "_exit");
+    }
+
+    arrived = false;
+    if(exited && findpath(self.origin, target_origin, undefined, 0, 1))
+    {
+        self addgoal(target_origin, range, 2, goal_name);
+        move_deadline = gettime() + max_time;
+        while(gettime() < move_deadline && isalive(self))
+        {
+            if(distancesquared(self.origin, target_origin) <= range * range)
+            {
+                arrived = true;
+                break;
+            }
+            wait 0.2;
+        }
+        self cancelgoal(goal_name);
+    }
+
+    self cancelgoal(goal_name + "_board");
+    self cancelgoal(goal_name + "_exit");
+    self.bot.is_objective_using = undefined;
+    return arrived;
+}
+
+
 // -----------------------------------------------------------------------------
 // Die Rise traversal: route bots onto native jump-pad triggers.
 //
