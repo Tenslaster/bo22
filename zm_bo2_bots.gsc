@@ -4394,7 +4394,7 @@ bot_find_craftable_task()
 
 			best_piece = piece;
 			best_piece_approach = approach_origin;
-			best_dist_sq = piece_score;
+			best_dist_sq = dist_sq;
 		}
 	}
 
