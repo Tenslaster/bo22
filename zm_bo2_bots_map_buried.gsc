@@ -535,8 +535,9 @@ bot_quest_buried_traverse()
     }
 
     self.bot.buried_parkour_retry = gettime() + 25000;
+    // Keep this separate from is_objective_using: that flag makes the shared
+    // wander controller delete the bot's normal movement goal.
     self.bot.is_parkouring = 1;
-    self.bot.is_objective_using = 1;
 
     // Use the stock equipment placement callback. The stock springpad thinker
     // creates its linked trigger and performs the actual horizontal launch.
@@ -613,7 +614,6 @@ bot_quest_buried_traverse()
     self cancelgoal("bot_buried_springpad_landing");
     self cancelgoal("bot_buried_springpad_target");
     self.bot.is_parkouring = undefined;
-    self.bot.is_objective_using = undefined;
 }
 bot_buried_tpo_restore_host()
 {
