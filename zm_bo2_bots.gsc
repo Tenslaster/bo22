@@ -437,6 +437,8 @@ bot_spawn_init()
 	self.bot.movement_air_since = undefined;
 	self.bot.movement_fall_pending = undefined;
 	self.bot.movement_recovery_after = undefined;
+	self.bot.movement_recovery_target = undefined;
+	self.bot.movement_recovery_waypoint = undefined;
 	self.bot.update_idle_lookat = time + randomintrange(1000, 3000);
 	self.bot.think_interval = 0.1;
 	self.bot.threat.entity = undefined;
@@ -2933,15 +2935,60 @@ bot_movement_recovery_think()
 			self.bot.movement_last_origin = self.origin;
 			self.bot.movement_last_progress = now;
 			self.bot.movement_fall_pending = undefined;
+			self.bot.movement_recovery_target = undefined;
+			self.bot.movement_recovery_waypoint = undefined;
 			continue;
 		}
 
 		goal = self getgoal("wander");
-		if(!isdefined(goal) || distancesquared(self.origin, goal) <= 6400 || self atgoal("wander"))
+		if(isdefined(self.bot.movement_recovery_waypoint) &&
+		   distancesquared(goal, self.bot.movement_recovery_waypoint) > 16)
 		{
-			self.bot.movement_last_origin = self.origin;
-			self.bot.movement_last_progress = now;
-			self.bot.movement_fall_pending = undefined;
+			// Another controller replaced our detour goal. Drop the stale
+			// destination so follow/stay/wander remains authoritative.
+			self.bot.movement_recovery_target = undefined;
+			self.bot.movement_recovery_waypoint = undefined;
+		}
+
+		if(isdefined(self.bot.movement_recovery_target))
+			final_goal = self.bot.movement_recovery_target;
+		else
+			final_goal = goal;
+
+		at_waypoint = distancesquared(self.origin, goal) <= 6400 || self atgoal("wander");
+		if(at_waypoint)
+		{
+			if(isdefined(self.bot.movement_recovery_target))
+			{
+				if(findpath(self.origin, final_goal, undefined, 0, 1))
+				{
+					self cancelgoal("wander");
+					self addgoal(final_goal, 100, 1, "wander");
+					self.bot.movement_recovery_target = undefined;
+					self.bot.movement_recovery_waypoint = undefined;
+				}
+				else
+				{
+					// Continue the same route with another reachable waypoint.
+					waypoint = self bot_movement_find_waypoint(final_goal, 1000);
+					if(isdefined(waypoint) &&
+					   distancesquared(waypoint, self.bot.movement_recovery_waypoint) > 64)
+					{
+						self cancelgoal("wander");
+						self addgoal(waypoint, 48, 2, "wander");
+						self.bot.movement_recovery_waypoint = waypoint;
+						self.bot.movement_recovery_after = now + 2500;
+					}
+					else
+						self.bot.movement_recovery_after = now + 3500;
+				}
+			}
+			else
+			{
+				self.bot.movement_last_origin = self.origin;
+				self.bot.movement_last_progress = now;
+				self.bot.movement_fall_pending = undefined;
+			}
 			continue;
 		}
 
@@ -2956,11 +3003,17 @@ bot_movement_recovery_think()
 		if(!stuck && !is_true(self.bot.movement_fall_pending))
 			continue;
 
-		waypoint = self bot_movement_find_waypoint(goal, 1000);
-		if(isdefined(waypoint))
+		if(!isdefined(self.bot.movement_recovery_target))
+			self.bot.movement_recovery_target = goal;
+
+		final_goal = self.bot.movement_recovery_target;
+		waypoint = self bot_movement_find_waypoint(final_goal, 1000);
+		if(isdefined(waypoint) && (!isdefined(self.bot.movement_recovery_waypoint) ||
+		   distancesquared(waypoint, self.bot.movement_recovery_waypoint) > 64))
 		{
 			self cancelgoal("wander");
 			self addgoal(waypoint, 48, 2, "wander");
+			self.bot.movement_recovery_waypoint = waypoint;
 			self.bot.movement_recovery_after = now + 3500;
 		}
 		else
