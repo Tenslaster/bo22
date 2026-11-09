@@ -2590,6 +2590,14 @@ bot_update_wander()
 	{
 		wait 0.1;
 
+        // Parkour owns its temporary movement goals. Pause the normal
+        // wander controller without deleting the bot's existing wander goal.
+        if(is_true(self.bot.is_parkouring))
+        {
+            wait 0.05;
+            continue;
+        }
+
         // A generator defender must not have its objective goal overwritten by
         // the normal stay/follow/wander controller.
         if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using))
