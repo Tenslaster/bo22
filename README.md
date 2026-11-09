@@ -197,7 +197,7 @@ F7 moves the bot group near your position using small offsets. Stand on the grou
 | **Jump** | Select the highlighted option |
 | **Melee** | Go back; close the menu from the main page |
 
-The menu displays a scrolling list. On the current layout, **five entries are visible at a time**; use Action Slot 1 and 2 to reach the remaining entries. The footer shows the current selection and total number of entries.
+The menu displays a scrolling list. On the current layout, **eight entries are visible at a time**; use Action Slot 1 and 2 to reach the remaining entries. The footer shows the current selection and total number of entries.
 
 ### Spectator / free camera
 
@@ -252,7 +252,7 @@ All nine source files are required for the complete installation.
 
 ### I can only see part of the menu
 
-The menu uses a five-entry scrolling viewport. Use **Action Slot 1** and **Action Slot 2** to move through the complete list. The footer indicates your current position, for example \`3 / 8\`.
+The menu uses a eight-entry scrolling viewport. Use **Action Slot 1** and **Action Slot 2** to move through the complete list. The footer indicates your current position, for example \`3 / 8\`.
 
 ### A bot does not complete a map objective
 
