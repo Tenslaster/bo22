@@ -390,6 +390,8 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
 
         body = elevator.body;
         already_boarded = isdefined(current_parent) && current_parent == body;
+        if(isdefined(current_parent) && !already_boarded)
+            continue;
 
         if(!already_boarded)
         {
@@ -584,6 +586,35 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
 // _zm_jump_pad script owns the launch, trajectory, landing, and POI cleanup.
 // This worker only navigates to a reachable trigger and waits for that system.
 // -----------------------------------------------------------------------------
+bot_die_rise_movement_target()
+{
+    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow")
+    {
+        commander = level.bot_commander;
+        if(isdefined(commander) && isdefined(commander.origin) && isalive(commander) &&
+           !isdefined(commander.bot) &&
+           !(isdefined(commander.pers) && isdefined(commander.pers["isbot"])))
+            return commander.origin;
+
+        foreach(candidate in get_players())
+        {
+            if(!isdefined(candidate) || !isdefined(candidate.origin) || !isalive(candidate) ||
+               isdefined(candidate.bot) ||
+               (isdefined(candidate.pers) && isdefined(candidate.pers["isbot"])))
+                continue;
+            return candidate.origin;
+        }
+    }
+
+    if(isdefined(level.bot_command_mode) &&
+       (level.bot_command_mode == "wander" || level.bot_command_mode == "wander_further") &&
+       self hasgoal("wander"))
+        return self getgoal("wander");
+
+    return undefined;
+}
+
+
 bot_quest_die_rise_traverse()
 {
     if(!isdefined(self.bot) || is_true(self.bot.is_parkour))
@@ -605,27 +636,58 @@ bot_quest_die_rise_traverse()
     if(!self isonground() || self isonladder() || self ismantling())
         return false;
 
+    target_origin = self bot_die_rise_movement_target();
+    if(!isdefined(target_origin) ||
+       findpath(self.origin, target_origin, undefined, 0, 1))
+        return false;
+
     pads = getentarray("trig_jump_pad", "targetname");
     if(!isdefined(pads) || pads.size == 0)
         return false;
 
+    current_target_distance = distancesquared(self.origin, target_origin);
     best = undefined;
-    best_distance = 1800 * 1800;
+    best_distance = 999999999;
 
     foreach(pad in pads)
     {
-        if(!isdefined(pad) || !isdefined(pad.origin))
+        if(!isdefined(pad) || !isdefined(pad.origin) ||
+           !isdefined(pad.destination) || pad.destination.size == 0)
             continue;
 
         dist_sq = distancesquared(self.origin, pad.origin);
-        if(dist_sq < 96 * 96 || dist_sq >= best_distance)
+        if(dist_sq < 96 * 96 || dist_sq > 1800 * 1800)
             continue;
-
         if(!findpath(self.origin, pad.origin, undefined, 0, 1))
             continue;
 
-        best = pad;
-        best_distance = dist_sq;
+        // The stock jump-pad script randomly chooses one destination from
+        // this array. Only use this pad when every possible landing is a
+        // useful, pathable step toward the bot's actual movement target.
+        all_destinations_useful = true;
+        destination_score = 0;
+        for(dest_index = 0; dest_index < pad.destination.size; dest_index++)
+        {
+            destination = pad.destination[dest_index];
+            if(!isdefined(destination) || !isdefined(destination.origin) ||
+               distancesquared(destination.origin, target_origin) >= current_target_distance - 14400 ||
+               !findpath(destination.origin, target_origin, undefined, 0, 1))
+            {
+                all_destinations_useful = false;
+                break;
+            }
+            destination_score += distancesquared(destination.origin, target_origin);
+        }
+
+        if(!all_destinations_useful)
+            continue;
+
+        score = dist_sq + (destination_score / pad.destination.size) * 0.2;
+        if(score < best_distance)
+        {
+            best = pad;
+            best_distance = score;
+        }
     }
 
     if(!isdefined(best))
@@ -635,6 +697,7 @@ bot_quest_die_rise_traverse()
     }
 
     self.bot.is_parkour = 1;
+    self.bot.is_objective_using = 1;
     self addgoal(best.origin, 28, 2, "bot_die_rise_parkour");
 
     // The native trigger launches the bot when it physically reaches the pad.
@@ -671,7 +734,11 @@ bot_quest_die_rise_traverse()
             wait 0.1;
     }
 
+    if(launched && isdefined(target_origin) && isalive(self))
+        self scripts\zm\zm_bo2_bots::bot_quest_navigate_to(target_origin, "bot_die_rise_parkour_target", 72, 9000);
+
     self.bot.is_parkour = undefined;
+    self.bot.is_objective_using = undefined;
     self.bot.parkour_retry = gettime() + (launched ? 1800 : 6000);
     return launched;
 }
