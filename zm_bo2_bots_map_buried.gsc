@@ -10,6 +10,12 @@
 
 bot_quest_buried()
 {
+    // Only one bot should drive the Buried sidequest at a time. Without a
+    // shared leader, every bot independently chooses the same trigger/part and
+    // the squad piles into one doorway or interaction point.
+    if(!self bot_buried_claim_quest_lead())
+        return;
+
     stage = level._cur_stage_name;
 
     // Tower Snare: activate the three signs belonging to the already-built
@@ -420,6 +426,25 @@ bot_quest_buried()
     }
 
     self bot_quest_buried_traverse();
+}
+
+// Squad-level lease for the Buried Easter Egg controller. The current
+// leader renews this on every quest tick; a dead/disconnected leader is
+// replaced automatically after the lease expires.
+bot_buried_claim_quest_lead()
+{
+    now = gettime();
+
+    if(isdefined(level.bot_buried_quest_owner) &&
+       level.bot_buried_quest_owner != self &&
+       isalive(level.bot_buried_quest_owner) &&
+       isdefined(level.bot_buried_quest_owner_until) &&
+       now < level.bot_buried_quest_owner_until)
+        return false;
+
+    level.bot_buried_quest_owner = self;
+    level.bot_buried_quest_owner_until = now + 30000;
+    return true;
 }
 
 bot_quest_buried_traverse()
