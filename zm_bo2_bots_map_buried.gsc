@@ -10,12 +10,11 @@
 
 bot_quest_buried()
 {
-    // Keep Easter-egg trigger ownership single-leader. In wander mode each bot
-    // may solve its own Trample Steam gap; in follow mode only the leader
-    // deploys a pad so the whole squad does not stack on the same launch point.
+    // Keep Easter-egg trigger ownership single-leader, but let every bot
+    // navigate its own roof jump. Temporary takeoff reservations prevent the
+    // whole follow squad from trying to occupy the same launch point.
     quest_leader = self bot_buried_claim_quest_lead();
-    if(!isdefined(level.bot_command_mode) || level.bot_command_mode != "follow" || quest_leader)
-        self bot_quest_buried_traverse();
+    self bot_quest_buried_traverse(quest_leader);
 
     if(!quest_leader)
         return;
@@ -1449,6 +1448,27 @@ bot_quest_buried_try_roof_jump(target_origin)
                findpath(takeoff_node.origin, landing_node.origin, undefined, 0, 1))
                 continue;
 
+            takeoff_reserved = false;
+            foreach(other_player in get_players())
+            {
+                if(!isdefined(other_player) || other_player == self ||
+                   !isdefined(other_player.bot) ||
+                   !isdefined(other_player.bot.buried_roof_takeoff_until) ||
+                   gettime() >= other_player.bot.buried_roof_takeoff_until ||
+                   !isdefined(other_player.bot.buried_roof_takeoff_origin))
+                    continue;
+
+                if(distancesquared(other_player.bot.buried_roof_takeoff_origin,
+                                   takeoff_node.origin) < 80 * 80)
+                {
+                    takeoff_reserved = true;
+                    break;
+                }
+            }
+
+            if(takeoff_reserved)
+                continue;
+
             delta = landing_node.origin - takeoff_node.origin;
             horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
             if(horizontal_sq < 180 * 180 || horizontal_sq > 680 * 680)
@@ -1476,6 +1496,8 @@ bot_quest_buried_try_roof_jump(target_origin)
     takeoff_origin = best_takeoff.origin;
     landing_origin = best_landing.origin;
     self.bot.is_parkouring = 1;
+    self.bot.buried_roof_takeoff_origin = takeoff_origin;
+    self.bot.buried_roof_takeoff_until = gettime() + 25000;
     self.bot.buried_parkour_retry = gettime() + 18000;
 
     // Move to the last reachable node at the edge of the disconnected route.
@@ -1492,6 +1514,8 @@ bot_quest_buried_try_roof_jump(target_origin)
     if(!isalive(self) || distancesquared(self.origin, takeoff_origin) > 104 * 104)
     {
         self cancelgoal("bot_buried_roof_jump_takeoff");
+        self.bot.buried_roof_takeoff_origin = undefined;
+        self.bot.buried_roof_takeoff_until = 0;
         self.bot.is_parkouring = undefined;
         self.bot.buried_parkour_retry = gettime() + 8000;
         return true;
@@ -1580,13 +1604,15 @@ bot_quest_buried_try_roof_jump(target_origin)
 
     self cancelgoal("bot_buried_roof_jump_takeoff");
     self cancelgoal("bot_buried_roof_jump_landing");
+    self.bot.buried_roof_takeoff_origin = undefined;
+    self.bot.buried_roof_takeoff_until = 0;
     self.bot.is_parkouring = undefined;
     self.bot.buried_parkour_retry = gettime() + 14000;
     return true;
 }
 
 
-bot_quest_buried_traverse()
+bot_quest_buried_traverse(quest_leader)
 {
     self endon("disconnect");
     self endon("death");
@@ -1642,6 +1668,12 @@ bot_quest_buried_traverse()
     // Try a player-controlled roof jump first. If no safe landing/takeoff pair
     // exists, the original Trample Steam route below remains available.
     if(self bot_quest_buried_try_roof_jump(target_origin))
+        return;
+
+    // The springpad is a shared launch point, so keep its old follow-mode
+    // behavior leader-only. Every follower already had its own direct-jump try.
+    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow" &&
+       !is_true(quest_leader))
         return;
 
     // The stock Buried springpad launches horizontally, so retain it only for
