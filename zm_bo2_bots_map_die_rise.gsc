@@ -253,6 +253,10 @@ bot_quest_die_rise()
     }
 
     self bot_quest_die_rise_tower();
+
+    // When no quest interaction is active, let the bot use a reachable stock
+    // jump pad. The stock jump-pad script handles the actual launch/landing.
+    self bot_quest_die_rise_traverse();
 }
 
 bot_quest_die_rise_stack_elevators()
@@ -344,4 +348,104 @@ bot_quest_hold_elevator(trigger, flag_name)
     self.bot.is_objective_using = undefined;
     self clearlookat();
     self cancelgoal("bot_die_rise_elevator");
+}
+
+
+// -----------------------------------------------------------------------------
+// Die Rise traversal: route bots onto native jump-pad triggers.
+//
+// Do not simulate flight by teleporting or setting velocity. The stock
+// _zm_jump_pad script owns the launch, trajectory, landing, and POI cleanup.
+// This worker only navigates to a reachable trigger and waits for that system.
+// -----------------------------------------------------------------------------
+bot_quest_die_rise_traverse()
+{
+    if(!isdefined(self.bot) || is_true(self.bot.is_parkour))
+        return false;
+
+    if(is_true(self._padded) || is_true(self.lander))
+        return false;
+
+    if(isdefined(self.bot.parkour_retry) && gettime() < self.bot.parkour_retry)
+        return false;
+
+    // Never replace an active combat escape, revive, purchase, or map objective.
+    if(is_true(self.bot.is_objective_using) || is_true(self.bot.is_building) ||
+       is_true(self.bot.is_crafting) || is_true(self.bot.is_buying) ||
+       is_true(self.bot.is_using_box) || is_true(self.bot.is_reviving) ||
+       is_true(self.bot.is_selfreviving) || self getgoal("flee") || self hasgoal("flee"))
+        return false;
+
+    if(!self isonground() || self isonladder() || self ismantling())
+        return false;
+
+    pads = getentarray("trig_jump_pad", "targetname");
+    if(!isdefined(pads) || pads.size == 0)
+        return false;
+
+    best = undefined;
+    best_distance = 1800 * 1800;
+
+    foreach(pad in pads)
+    {
+        if(!isdefined(pad) || !isdefined(pad.origin))
+            continue;
+
+        dist_sq = distancesquared(self.origin, pad.origin);
+        if(dist_sq < 96 * 96 || dist_sq >= best_distance)
+            continue;
+
+        if(!findpath(self.origin, pad.origin, undefined, 0, 1))
+            continue;
+
+        best = pad;
+        best_distance = dist_sq;
+    }
+
+    if(!isdefined(best))
+    {
+        self.bot.parkour_retry = gettime() + 5000;
+        return false;
+    }
+
+    self.bot.is_parkour = 1;
+    self addgoal(best.origin, 28, 2, "bot_die_rise_parkour");
+
+    // The native trigger launches the bot when it physically reaches the pad.
+    // Give navigation enough time to reach the trigger, but never camp forever.
+    approach_deadline = gettime() + 8000;
+    launched = false;
+
+    while(gettime() < approach_deadline && isalive(self))
+    {
+        if(is_true(self._padded) || is_true(self.lander))
+        {
+            launched = true;
+            break;
+        }
+
+        if(distancesquared(self.origin, best.origin) <= 48 * 48)
+        {
+            // A trigger touch is normally delivered by the game. Do not fake
+            // the event: wait briefly for the stock pad handler to respond.
+            wait 0.2;
+        }
+        else
+            wait 0.15;
+    }
+
+    self cancelgoal("bot_die_rise_parkour");
+
+    if(launched)
+    {
+        // Keep the traversal task reserved until the stock launch has landed.
+        landing_deadline = gettime() + 16000;
+        while(gettime() < landing_deadline && isalive(self) &&
+              (is_true(self._padded) || is_true(self.lander) || !self isonground()))
+            wait 0.1;
+    }
+
+    self.bot.is_parkour = undefined;
+    self.bot.parkour_retry = gettime() + (launched ? 1800 : 6000);
+    return launched;
 }
