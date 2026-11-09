@@ -354,6 +354,33 @@ bot_quest_hold_elevator(trigger, flag_name)
 // Use the live Die Rise elevator system when a quest/follow destination is
 // on another floor and the normal nav graph has no direct route. The stock map
 // controls elevator timing, moving-platform links and floor path activation.
+// Local equivalent of the stock Die Rise moving-platform check. Calling
+// the stock map helper as an external is not supported by all Plutonium
+// script builds, even though the elevator body still exposes is_elevator.
+bot_die_rise_object_is_on_elevator()
+{
+    self.elevator_parent = undefined;
+    ground_ent = self getgroundent();
+
+    for(depth = 0; isdefined(ground_ent) && depth < 2; depth++)
+    {
+        if(isdefined(ground_ent.is_elevator) && ground_ent.is_elevator)
+        {
+            self.elevator_parent = ground_ent;
+            return true;
+        }
+
+        new_ground_ent = ground_ent getgroundent();
+        if(!isdefined(new_ground_ent) || new_ground_ent == ground_ent)
+            break;
+
+        ground_ent = new_ground_ent;
+    }
+
+    return false;
+}
+
+
 bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
 {
     if(!isdefined(target_origin) || getdvar("mapname") != "zm_highrise" ||
@@ -378,7 +405,7 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
     // If the bot is already riding a lift, keep using that lift instead of
     // trying to path to a second platform.
     current_parent = undefined;
-    if(self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+    if(self bot_die_rise_object_is_on_elevator() &&
        isdefined(self.elevator_parent))
         current_parent = self.elevator_parent;
 
@@ -471,7 +498,7 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
 
     self.bot.is_objective_using = 1;
     elevator_body = chosen_elevator.body;
-    boarded = self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+    boarded = self bot_die_rise_object_is_on_elevator() &&
               isdefined(self.elevator_parent) && self.elevator_parent == elevator_body;
 
     if(!boarded)
@@ -484,7 +511,7 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
         next_refresh = 0;
         while(gettime() < board_deadline && isalive(self) && isdefined(elevator_body))
         {
-            if(self maps\mp\zm_highrise_elevators::object_is_on_elevator() &&
+            if(self bot_die_rise_object_is_on_elevator() &&
                isdefined(self.elevator_parent) && self.elevator_parent == elevator_body)
             {
                 boarded = true;
@@ -508,7 +535,7 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
         ride_deadline = gettime() + 75000;
         while(gettime() < ride_deadline && isalive(self) && isdefined(elevator_body))
         {
-            if(!self maps\mp\zm_highrise_elevators::object_is_on_elevator() ||
+            if(!self bot_die_rise_object_is_on_elevator() ||
                !isdefined(self.elevator_parent) || self.elevator_parent != elevator_body)
                 break;
 
@@ -561,7 +588,7 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
         exit_deadline = gettime() + 9000;
         while(gettime() < exit_deadline && isalive(self))
         {
-            if(!self maps\mp\zm_highrise_elevators::object_is_on_elevator() ||
+            if(!self bot_die_rise_object_is_on_elevator() ||
                !isdefined(self.elevator_parent) || self.elevator_parent != elevator_body)
             {
                 exited = true;
