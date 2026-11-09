@@ -2777,7 +2777,9 @@ bot_update_wander()
 							waypoint = self bot_movement_find_waypoint(player.origin, 900);
 							if(isdefined(waypoint))
 							{
-								self.bot.is_following = true;
+								// Keep the intermediate waypoint; the commander goal is
+								// retried after this short detour window.
+								self.bot.is_following = false;
 								self.bot.follow_blocked = current_time + 3000;
 								self cancelgoal("wander");
 								self addgoal(waypoint, 52, 2, "wander");
@@ -4768,6 +4770,64 @@ bot_auto_quest_think()
     }
 }
 
+// Navigate to a destination with a bounded number of alternate nav-node
+// waypoints. Die Rise gets first chance to use its real elevator network.
+bot_quest_navigate_to(target_origin, goal_name, range, max_time)
+{
+    if(!isdefined(target_origin))
+        return false;
+    if(!isdefined(range) || range < 24)
+        range = 72;
+    if(!isdefined(max_time) || max_time < 1000)
+        max_time = 8000;
+
+    if(findpath(self.origin, target_origin, undefined, 0, 1))
+        return true;
+
+    if(getdvar("mapname") == "zm_highrise")
+    {
+        if(self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(
+            target_origin, goal_name + "_elevator", range, max_time + 25000))
+            return true;
+
+        if(findpath(self.origin, target_origin, undefined, 0, 1))
+            return true;
+    }
+
+    was_objective_using = is_true(self.bot.is_objective_using);
+    self.bot.is_objective_using = 1;
+
+    for(attempt = 0; attempt < 3; attempt++)
+    {
+        if(findpath(self.origin, target_origin, undefined, 0, 1))
+        {
+            self.bot.is_objective_using = was_objective_using ? 1 : undefined;
+            return true;
+        }
+
+        waypoint = self bot_movement_find_waypoint(target_origin, 1100);
+        if(!isdefined(waypoint))
+            break;
+
+        self addgoal(waypoint, 48, 2, goal_name + "_route");
+        deadline = gettime() + max_time;
+        while(gettime() < deadline && isalive(self))
+        {
+            if(distancesquared(self.origin, waypoint) <= 48 * 48)
+                break;
+            if(findpath(self.origin, target_origin, undefined, 0, 1))
+                break;
+            wait 0.2;
+        }
+        self cancelgoal(goal_name + "_route");
+    }
+
+    reachable = findpath(self.origin, target_origin, undefined, 0, 1);
+    self cancelgoal(goal_name + "_route");
+    self.bot.is_objective_using = was_objective_using ? 1 : undefined;
+    return reachable;
+}
+
 bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_offset)
 {
     if(!isdefined(target) || !isdefined(target.origin))
@@ -4790,11 +4850,7 @@ bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_
     target.bot_auto_quest_owner = self;
     target.bot_auto_quest_until = gettime() + 12000;
 
-    if(!findpath(self.origin, target.origin, undefined, 0, 1) &&
-       getdvar("mapname") == "zm_highrise")
-        self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(target.origin, goal_name + "_elevator", range, 35000);
-
-    if(!findpath(self.origin, target.origin, undefined, 0, 1))
+    if(!self bot_quest_navigate_to(target.origin, goal_name, range, 10000))
     {
         target.bot_auto_quest_owner = undefined;
         target.bot_auto_quest_until = undefined;
@@ -4891,11 +4947,7 @@ bot_quest_hold_use_target(target, goal_name, range, hold_time)
     target.bot_auto_hold_owner = self;
     target.bot_auto_hold_until = gettime() + 8000;
 
-    if(!findpath(self.origin, target.origin, undefined, 0, 1) &&
-       getdvar("mapname") == "zm_highrise")
-        self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(target.origin, goal_name + "_elevator", range, 35000);
-
-    if(!findpath(self.origin, target.origin, undefined, 0, 1))
+    if(!self bot_quest_navigate_to(target.origin, goal_name, range, 10000))
     {
         target.bot_auto_hold_owner = undefined;
         target.bot_auto_hold_until = undefined;
@@ -4945,20 +4997,14 @@ bot_quest_move_to(origin, goal_name, range, max_time)
     if(!isdefined(max_time))
         max_time = 8000;
 
+    if(!self bot_quest_navigate_to(origin, goal_name, range, max_time))
+        return false;
+
+    if(distancesquared(self.origin, origin) <= range * range)
+        return true;
+
     if(!findpath(self.origin, origin, undefined, 0, 1))
-    {
-        if(getdvar("mapname") != "zm_highrise")
-            return false;
-
-        if(!self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(origin, goal_name + "_elevator", range, max_time + 25000))
-            return false;
-
-        if(distancesquared(self.origin, origin) <= range * range)
-            return true;
-
-        if(!findpath(self.origin, origin, undefined, 0, 1))
-            return false;
-    }
+        return false;
 
     afterlife_objective = self bot_mob_is_afterlife();
     self addgoal(origin, range, 2, goal_name);
