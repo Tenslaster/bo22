@@ -3659,7 +3659,7 @@ bot_find_buildable_task()
 			best_piece = piece;
 			best_stub = stub;
 			best_piece_approach = approach_origin;
-			best_dist_sq = dist_sq;
+			best_dist_sq = piece_score;
 		}
 	}
 
