@@ -393,6 +393,10 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
         if(isdefined(current_parent) && !already_boarded)
             continue;
 
+        if(!flag("power_on") &&
+           !(isdefined(body.perk_type) && body.perk_type == "vending_revive" && flag("solo_game")))
+            continue;
+
         if(!already_boarded)
         {
             if(is_true(body.is_moving))
@@ -416,19 +420,17 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
             if(isdefined(body.current_level) && ("" + body.current_level) == ("" + floor_key))
                 continue;
 
-            exit_node = undefined;
-            exit_score = 999999999;
-
+            // Future-floor path links are disabled until the elevator actually
+            // reaches that floor. Score the floor by its real geometry here;
+            // the live path is verified after the stock elevator enables it.
+            exit_node = floor;
+            exit_score = distancesquared(floor.origin, target_origin);
             if(isdefined(floor.paths) && floor.paths.size > 0)
             {
                 foreach(path_node in floor.paths)
                 {
                     if(!isdefined(path_node) || !isdefined(path_node.origin))
                         continue;
-
-                    if(!findpath(path_node.origin, target_origin, undefined, 0, 1))
-                        continue;
-
                     node_score = distancesquared(path_node.origin, target_origin);
                     if(node_score < exit_score)
                     {
@@ -437,18 +439,6 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
                     }
                 }
             }
-
-            // Some elevator floors expose their entry point directly, without
-            // a separate named floor-path node.
-            if(!isdefined(exit_node) &&
-               findpath(floor.origin, target_origin, undefined, 0, 1))
-            {
-                exit_node = floor;
-                exit_score = distancesquared(floor.origin, target_origin);
-            }
-
-            if(!isdefined(exit_node))
-                continue;
 
             board_distance = 0;
             if(!already_boarded)
@@ -522,12 +512,43 @@ bot_quest_die_rise_elevator_to(target_origin, goal_name, range, max_time)
                !isdefined(self.elevator_parent) || self.elevator_parent != elevator_body)
                 break;
 
-            if(isdefined(elevator_body.current_level) &&
-               ("" + elevator_body.current_level) == chosen_floor_key &&
-               !is_true(elevator_body.is_moving))
+            if(!is_true(elevator_body.is_moving) && isdefined(elevator_body.current_level))
             {
-                reached_floor = true;
-                break;
+                live_floor = chosen_elevator.floors["" + elevator_body.current_level];
+                live_exit = undefined;
+                live_exit_score = 999999999;
+
+                if(isdefined(live_floor) && isdefined(live_floor.paths) && live_floor.paths.size > 0)
+                {
+                    foreach(path_node in live_floor.paths)
+                    {
+                        if(!isdefined(path_node) || !isdefined(path_node.origin) ||
+                           !findpath(path_node.origin, target_origin, undefined, 0, 1))
+                            continue;
+
+                        node_score = distancesquared(path_node.origin, target_origin);
+                        if(node_score < live_exit_score)
+                        {
+                            live_exit_score = node_score;
+                            live_exit = path_node;
+                        }
+                    }
+                }
+
+                if(!isdefined(live_exit) && isdefined(live_floor) &&
+                   isdefined(live_floor.origin) &&
+                   findpath(live_floor.origin, target_origin, undefined, 0, 1))
+                    live_exit = live_floor;
+
+                // Floor path nodes are only trustworthy once the native
+                // elevator has enabled this floor's links.
+                if(isdefined(live_exit) && isdefined(live_exit.origin))
+                {
+                    chosen_exit = live_exit;
+                    chosen_floor_key = "" + elevator_body.current_level;
+                    reached_floor = true;
+                    break;
+                }
             }
             wait 0.2;
         }
