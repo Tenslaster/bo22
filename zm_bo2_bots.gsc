@@ -228,6 +228,7 @@ bot_spawn()
 	self bot_spawn_init();
 	
 	self thread bot_main();
+	self thread bot_movement_recovery_think();
 	self thread bot_shield_sync_think();
 	self thread bot_auto_buildables_think();
 	self thread bot_auto_craftables_think();
@@ -431,6 +432,11 @@ bot_spawn_init()
 	self.bot.craftable_scan_after = undefined;
 	self.bot.quest_scan_after = undefined;
 	self.bot.quest_busy = undefined;
+	self.bot.movement_last_origin = self.origin;
+	self.bot.movement_last_progress = time;
+	self.bot.movement_air_since = undefined;
+	self.bot.movement_fall_pending = undefined;
+	self.bot.movement_recovery_after = undefined;
 	self.bot.update_idle_lookat = time + randomintrange(1000, 3000);
 	self.bot.think_interval = 0.1;
 	self.bot.threat.entity = undefined;
@@ -2768,10 +2774,21 @@ bot_update_wander()
 						self.bot.follow_path_check = current_time + 1000;
 						if(!findpath(self.origin, player.origin, undefined, 0, 1))
 						{
-							self.bot.is_following = false;
-							self.bot.follow_blocked = current_time + 4000;
-							if(self getgoal("wander") || self hasgoal("wander"))
+							waypoint = self bot_movement_find_waypoint(player.origin, 900);
+							if(isdefined(waypoint))
+							{
+								self.bot.is_following = true;
+								self.bot.follow_blocked = current_time + 3000;
 								self cancelgoal("wander");
+								self addgoal(waypoint, 52, 2, "wander");
+							}
+							else
+							{
+								self.bot.is_following = false;
+								self.bot.follow_blocked = current_time + 3500;
+								if(self getgoal("wander") || self hasgoal("wander"))
+									self cancelgoal("wander");
+							}
 						}
 						else
 						{
@@ -2849,6 +2866,160 @@ bot_update_wander()
 			}
 		}
 	}
+}
+
+// Recover only the general movement goal. Objective-specific goals remain owned
+// by their quest/build/revive workers, and native launch/elevator movement is
+// never interrupted while the bot is airborne or attached to a transport.
+bot_movement_recovery_think()
+{
+	self endon("disconnect");
+	self endon("bot_relife");
+	self endon("death");
+	level endon("end_game");
+
+	wait 2;
+	self.bot.movement_last_origin = self.origin;
+	self.bot.movement_last_progress = gettime();
+
+	for(;;)
+	{
+		wait 0.5;
+		now = gettime();
+
+		if(is_true(self.bot.is_objective_using) || is_true(self.bot.is_building) ||
+		   is_true(self.bot.is_crafting) || is_true(self.bot.is_perk_buying) ||
+		   is_true(self.bot.is_buying) || is_true(self.bot.is_using_box) ||
+		   is_true(self.bot.is_reviving) || is_true(self.bot.is_selfreviving) ||
+		   is_true(self.bot.is_parkour) || is_true(self.bot.is_parkouring) ||
+		   is_true(self._padded) || is_true(self.lander))
+		{
+			self.bot.movement_last_origin = self.origin;
+			self.bot.movement_last_progress = now;
+			self.bot.movement_air_since = undefined;
+			continue;
+		}
+
+		// Let the stock jump/landing, fall, ladder and mantle systems finish.
+		// A long unplanned fall is remembered; after landing, the route is rebuilt.
+		if(!self isonground() || self isonladder() || self ismantling())
+		{
+			if(!isdefined(self.bot.movement_air_since))
+				self.bot.movement_air_since = now;
+			else if(now - self.bot.movement_air_since >= 1800)
+				self.bot.movement_fall_pending = 1;
+
+			self.bot.movement_last_origin = self.origin;
+			continue;
+		}
+
+		landed_after_fall = isdefined(self.bot.movement_air_since);
+		if(landed_after_fall)
+		{
+			if(now - self.bot.movement_air_since >= 1800)
+				self.bot.movement_fall_pending = 1;
+			self.bot.movement_air_since = undefined;
+			self.bot.movement_last_origin = self.origin;
+			self.bot.movement_last_progress = now;
+		}
+
+		if(isdefined(self.bot.movement_recovery_after) && now < self.bot.movement_recovery_after)
+			continue;
+
+		if(!self hasgoal("wander"))
+		{
+			self.bot.movement_last_origin = self.origin;
+			self.bot.movement_last_progress = now;
+			self.bot.movement_fall_pending = undefined;
+			continue;
+		}
+
+		goal = self getgoal("wander");
+		if(!isdefined(goal) || distancesquared(self.origin, goal) <= 6400 || self atgoal("wander"))
+		{
+			self.bot.movement_last_origin = self.origin;
+			self.bot.movement_last_progress = now;
+			self.bot.movement_fall_pending = undefined;
+			continue;
+		}
+
+		if(distancesquared(self.origin, self.bot.movement_last_origin) >= 900)
+		{
+			self.bot.movement_last_origin = self.origin;
+			self.bot.movement_last_progress = now;
+			continue;
+		}
+
+		stuck = now - self.bot.movement_last_progress >= 8000;
+		if(!stuck && !is_true(self.bot.movement_fall_pending))
+			continue;
+
+		waypoint = self bot_movement_find_waypoint(goal, 1000);
+		if(isdefined(waypoint))
+		{
+			self cancelgoal("wander");
+			self addgoal(waypoint, 48, 2, "wander");
+			self.bot.movement_recovery_after = now + 3500;
+		}
+		else
+			self.bot.movement_recovery_after = now + 2500;
+
+		self.bot.movement_fall_pending = undefined;
+		self.bot.movement_last_origin = self.origin;
+		self.bot.movement_last_progress = now;
+	}
+}
+
+// Select a reachable navigation node that makes measurable progress toward
+// the final target. This avoids random coordinates and rejects disabled zones.
+bot_movement_find_waypoint(target_origin, search_radius)
+{
+	if(!isdefined(target_origin))
+		return undefined;
+	if(!isdefined(search_radius) || search_radius < 256)
+		search_radius = 800;
+
+	current_target_distance = distancesquared(self.origin, target_origin);
+	nodes = getnodesinradius(self.origin, search_radius, 0, search_radius, "any", 256);
+	if(!isdefined(nodes) || nodes.size == 0)
+		return undefined;
+
+	best = undefined;
+	best_score = 999999999;
+	checks = 0;
+	foreach(node in nodes)
+	{
+		if(checks >= 32)
+			break;
+		if(!isdefined(node) || !isdefined(node.origin))
+			continue;
+		if(!check_point_in_playable_area(node.origin))
+			continue;
+
+		progress_distance = distancesquared(node.origin, target_origin);
+		if(progress_distance >= current_target_distance - 14400)
+			continue;
+
+		if(isdefined(level.zones))
+		{
+			zone = maps\mp\zombies\_zm_zonemgr::get_zone_from_position(node.origin + (0, 0, 32), 1);
+			if(isdefined(zone) && !maps\mp\zombies\_zm_zonemgr::zone_is_enabled(zone))
+				continue;
+		}
+
+		checks++;
+		if(!findpath(self.origin, node.origin, undefined, 0, 1))
+			continue;
+
+		score = progress_distance + distancesquared(self.origin, node.origin) * 0.2;
+		if(score < best_score)
+		{
+			best_score = score;
+			best = node.origin;
+		}
+	}
+
+	return best;
 }
 
 wander_further_get_wander_location(origin, range, player)
@@ -4619,6 +4790,10 @@ bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_
     target.bot_auto_quest_owner = self;
     target.bot_auto_quest_until = gettime() + 12000;
 
+    if(!findpath(self.origin, target.origin, undefined, 0, 1) &&
+       getdvar("mapname") == "zm_highrise")
+        self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(target.origin, goal_name + "_elevator", range, 35000);
+
     if(!findpath(self.origin, target.origin, undefined, 0, 1))
     {
         target.bot_auto_quest_owner = undefined;
@@ -4716,6 +4891,10 @@ bot_quest_hold_use_target(target, goal_name, range, hold_time)
     target.bot_auto_hold_owner = self;
     target.bot_auto_hold_until = gettime() + 8000;
 
+    if(!findpath(self.origin, target.origin, undefined, 0, 1) &&
+       getdvar("mapname") == "zm_highrise")
+        self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(target.origin, goal_name + "_elevator", range, 35000);
+
     if(!findpath(self.origin, target.origin, undefined, 0, 1))
     {
         target.bot_auto_hold_owner = undefined;
@@ -4767,7 +4946,19 @@ bot_quest_move_to(origin, goal_name, range, max_time)
         max_time = 8000;
 
     if(!findpath(self.origin, origin, undefined, 0, 1))
-        return false;
+    {
+        if(getdvar("mapname") != "zm_highrise")
+            return false;
+
+        if(!self scripts\zm\zm_bo2_bots_map_die_rise::bot_quest_die_rise_elevator_to(origin, goal_name + "_elevator", range, max_time + 25000))
+            return false;
+
+        if(distancesquared(self.origin, origin) <= range * range)
+            return true;
+
+        if(!findpath(self.origin, origin, undefined, 0, 1))
+            return false;
+    }
 
     afterlife_objective = self bot_mob_is_afterlife();
     self addgoal(origin, range, 2, goal_name);
