@@ -3476,6 +3476,18 @@ bot_find_buildable_task()
 		   isdefined(stub.buildablezone.buildable_name) &&
 		   stub.buildablezone.buildable_name == "keys_zm")
 			build_score = -50000000 + dist_sq;
+		else if(getdvar("mapname") == "zm_buried" &&
+		        isdefined(level.sloth) && isdefined(level.sloth.state) &&
+		        level.sloth.state == "jail_cower" && !is_true(level.sloth.got_booze) &&
+		        isdefined(stub.buildablezone.buildable_name) &&
+		        stub.buildablezone.buildable_name == "sloth")
+		{
+			held_buildable_piece = self maps\mp\zombies\_zm_buildables::player_get_buildable_piece(
+				stub.buildablezone.buildable_slot);
+			if(isdefined(held_buildable_piece) && isdefined(held_buildable_piece.buildablename) &&
+			   held_buildable_piece.buildablename == "booze")
+				build_score = -40000000 + dist_sq;
+		}
 
 		if(build_score >= best_dist_sq)
 			continue;
@@ -3788,7 +3800,7 @@ bot_take_buildable_piece(piece)
     return isdefined(held_piece) && held_piece == piece;
 }
 
-// _zm_craftables// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
+// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
 // direct file::function reference is resolved at script load and causes
 // "Unresolved external" on every other map, so look the functions up at runtime.
 // getfunction() returns undefined when the file is not loaded.
