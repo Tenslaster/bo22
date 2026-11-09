@@ -25,6 +25,22 @@
 	  - Melee: never starts a knife fight when swarmed (unless insta-kill).
 	  - Dead target no longer freezes the bot for 0.35s, it retargets right away.
 
+	SMART COMBAT v2 (this revision)
+	  - Combat has its own 150ms zombie scan (the shared cache is 1000ms old, which means bots were shooting
+	    at positions zombies left a second ago and not noticing new ones).
+	  - Kiting: with 1-3 slow zombies close and a decent gun, the bot backs away to a nearby node while it keeps
+	    shooting, instead of standing still and trading hits. Not used against sprinters/dogs, shotguns, insta-kill.
+	  - Damage-rate awareness: damage taken over the last couple of seconds feeds the danger value, so a bot
+	    that is bleeding fast leaves earlier than one that is simply near zombies.
+	  - Danger weighting: sprinters/dogs count more, crawlers and zombies chasing someone else count less,
+	    nearby teammates reduce the danger, no ammo anywhere makes the bot far more cautious,
+	    insta-kill makes it bolder.
+	  - Targeting: dogs and sprinters first, zombies hitting a hurt teammate first, small bonus for targets
+	    already in front of the crosshair (faster kill).
+	  - Weapon swap by range: swaps to a clearly better weapon for the current distance (SMG/shotgun close,
+	    rifle far) when nothing is touching the bot.
+	  - Phd Flopper / flak jacket: splash weapons are no longer treated as self-damage.
+
 	All original function names are kept so the main script and map scripts keep working.
 */
 
@@ -61,6 +77,7 @@ bot_combat_think(damage, attacker, direction)
 	if(follow_mode && (self getgoal("flee") || self hasgoal("flee")))
 		self cancelgoal("flee");
 	
+	self bot_track_damage(damage);
 	self bot_update_situation();
 	
 	if(!follow_mode && !self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_flee(damage))
@@ -79,6 +96,10 @@ bot_combat_think(damage, attacker, direction)
 			self bot_flee_goal();
 		}
 	}
+	
+	// Not in flee territory yet, but a zombie is in my face: back up while shooting.
+	if(!follow_mode && !self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_kite())
+		self bot_flee_goal(true);
 	
 	if(self getcurrentweapon() == "none")
 		return;
@@ -122,6 +143,126 @@ bot_health_fraction()
 	return clamp(frac, 0, 1);
 }
 
+bot_get_zombies()
+{
+	// Combat needs fresher data than the 1000ms shared cache. One scan per 150ms is shared by every bot.
+	now = gettime();
+	
+	if(!isdefined(level.bot_combat_zombies) || !isdefined(level.bot_combat_zombies_time) || (now - level.bot_combat_zombies_time) >= 150)
+	{
+		level.bot_combat_zombies = getaispeciesarray(level.zombie_team, "all");
+		level.bot_combat_zombies_time = now;
+	}
+	
+	return level.bot_combat_zombies;
+}
+
+bot_is_dog(zombie)
+{
+	if(isdefined(zombie.animname) && zombie.animname == "zombie_dog")
+		return true;
+	
+	return false;
+}
+
+bot_is_sprinter(zombie)
+{
+	if(isdefined(zombie.zombie_move_speed) && (zombie.zombie_move_speed == "sprint" || zombie.zombie_move_speed == "super_sprint"))
+		return true;
+	
+	return false;
+}
+
+bot_insta_kill_active()
+{
+	if(isdefined(level.zombie_vars) && isdefined(self.team) && isdefined(level.zombie_vars[self.team]) && isdefined(level.zombie_vars[self.team]["zombie_powerup_insta_kill_on"]))
+		return is_true(level.zombie_vars[self.team]["zombie_powerup_insta_kill_on"]);
+	
+	return false;
+}
+
+// Splash weapons only hurt the bot when it doesn't have Phd Flopper.
+bot_splash_hurts_me(weapon)
+{
+	if(!self bot_is_splash_weapon(weapon))
+		return false;
+	
+	if(self hasperk("specialty_flakjacket"))
+		return false;
+	
+	return true;
+}
+
+// Exponentially decaying "damage taken recently" value (hp). Decays 60hp per second.
+bot_track_damage(damage)
+{
+	now = gettime();
+	
+	if(!isdefined(self.bot.dmg_recent) || !isdefined(self.bot.dmg_time))
+	{
+		self.bot.dmg_recent = 0;
+		self.bot.dmg_time = now;
+	}
+	
+	dt = (now - self.bot.dmg_time) / 1000;
+	
+	self.bot.dmg_recent -= dt * 60;
+	
+	if(self.bot.dmg_recent < 0)
+		self.bot.dmg_recent = 0;
+	
+	self.bot.dmg_time = now;
+	
+	if(isdefined(damage) && damage > 0)
+		self.bot.dmg_recent += damage;
+}
+
+bot_total_ammo_empty()
+{
+	primaries = self getweaponslistprimaries();
+	
+	if(!isdefined(primaries) || primaries.size == 0)
+		return true;
+	
+	foreach(weapon in primaries)
+	{
+		if(self getweaponammoclip(weapon) + self getweaponammostock(weapon) > 0)
+			return false;
+	}
+	
+	return true;
+}
+
+bot_get_hurt_allies()
+{
+	result = [];
+	
+	foreach(player in get_players())
+	{
+		if(!isdefined(player) || player == self || !isalive(player))
+			continue;
+		
+		if(player.sessionstate != "playing")
+			continue;
+		
+		// Downed players are handled by the revive logic in target scoring.
+		if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			continue;
+		
+		maxhp = player.maxhealth;
+		
+		if(!isdefined(maxhp) || maxhp <= 0)
+			maxhp = 100;
+		
+		if((player.health / maxhp) > 0.5)
+			continue;
+		
+		result[result.size] = player.origin;
+	}
+	
+	return result;
+}
+
 bot_update_situation()
 {
 	now = gettime();
@@ -132,11 +273,13 @@ bot_update_situation()
 	self.bot.sit_time = now;
 	self.bot.close_count = 0;
 	self.bot.near_count = 0;
+	self.bot.fast_close = 0;
+	self.bot.allies_near = 0;
 	self.bot.nearest_dist = 99999;
 	self.bot.danger = 0;
 	self.bot.boss_near = false;
 	
-	zombies = get_cached_zombies();
+	zombies = bot_get_zombies();
 	
 	if(!isdefined(zombies))
 		return;
@@ -176,20 +319,57 @@ bot_update_situation()
 		
 		self.bot.near_count++;
 		
+		// How scary is this particular zombie?
+		weight = 1.0;
+		
+		if(self bot_is_dog(zombie))
+			weight = 1.4;
+		else if(self bot_is_sprinter(zombie))
+			weight = 1.25;
+		
+		if(isdefined(zombie.has_legs) && !zombie.has_legs)
+			weight *= 0.6;
+		
+		if(isdefined(zombie.favoriteenemy) && zombie.favoriteenemy != self)
+			weight *= 0.7;
+		
 		if(d < 4900)
-			danger += 3;
+			danger += 3 * weight;
 		else if(d < 16900)
-			danger += 2;
+			danger += 2 * weight;
 		else if(d < 40000)
-			danger += 1;
+			danger += 1 * weight;
 		else
-			danger += 0.4;
+			danger += 0.4 * weight;
 		
 		if(d < 16900)
+		{
 			self.bot.close_count++;
+			
+			if(self bot_is_dog(zombie) || self bot_is_sprinter(zombie))
+				self.bot.fast_close++;
+		}
 	}
 	
-	self.bot.danger = danger;
+	// Teammates close by split the pressure and help kill things: up to 30% less danger.
+	foreach(player in get_players())
+	{
+		if(!isdefined(player) || player == self || !isalive(player))
+			continue;
+		
+		if(player.sessionstate != "playing")
+			continue;
+		
+		if(distancesquared(self.origin, player.origin) < 360000)
+			self.bot.allies_near++;
+	}
+	
+	ally_factor = self.bot.allies_near * 0.1;
+	
+	if(ally_factor > 0.3)
+		ally_factor = 0.3;
+	
+	self.bot.danger = danger * (1.0 - ally_factor);
 }
 
 bot_weapon_is_weak()
@@ -221,15 +401,80 @@ bot_should_flee(damage)
 	if(self bot_weapon_is_weak())
 		threshold -= 1.0;
 	
-	if(threshold < 2.0)
-		threshold = 2.0;
+	// Nothing left to shoot anywhere: running is the only plan.
+	if(self bot_total_ammo_empty())
+		threshold -= 2.0;
+	
+	// Insta-kill: every shot kills, stand and fight.
+	if(self bot_insta_kill_active())
+		threshold += 2.0;
+	
+	if(threshold < 1.5)
+		threshold = 1.5;
 	
 	danger = self.bot.danger;
 	
 	if(isdefined(damage))
 		danger += 1.0;
 	
+	// Bleeding fast (several hits in the last couple of seconds) is worse than just standing near zombies.
+	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent > 0)
+	{
+		maxhp = self.maxhealth;
+		
+		if(!isdefined(maxhp) || maxhp <= 0)
+			maxhp = 100;
+		
+		danger += (self.bot.dmg_recent / maxhp) * 6.0;
+	}
+	
 	return danger >= threshold;
+}
+
+// Back up a few steps while shooting. Only worth it against slow zombies, with a gun that works at range.
+bot_should_kite()
+{
+	now = gettime();
+	
+	if(isdefined(self.bot.next_kite) && now < self.bot.next_kite)
+		return false;
+	
+	if(!isdefined(self.bot.close_count) || self.bot.close_count < 1 || self.bot.close_count > 3)
+		return false;
+	
+	if(self.bot.nearest_dist > 190)
+		return false;
+	
+	// Sprinters and dogs outrun us, backing up only wastes shots.
+	if(self.bot.fast_close > 0)
+		return false;
+	
+	if(!self isonground() || self ismantling() || self isonladder())
+		return false;
+	
+	if(is_true(self.bot.is_meleeing) || is_true(self.bot.is_throwing_grenade))
+		return false;
+	
+	if(self bot_insta_kill_active())
+		return false;
+	
+	weapon = self getcurrentweapon();
+	
+	if(weapon == "none" || self bot_weapon_is_weak())
+		return false;
+	
+	// Shotguns want zombies up close.
+	if(weaponclass(weapon) == "spread")
+		return false;
+	
+	// Kiting only buys time when there's someone to help or a reason to. Don't do it when alone against one zombie
+	// that the gun kills in a second anyway.
+	if(self.bot.close_count == 1 && self bot_health_fraction() > 0.8 && self.bot.allies_near == 0)
+		return false;
+	
+	self.bot.next_kite = now + 2500;
+	
+	return true;
 }
 
 bot_flee_blocked()
@@ -254,7 +499,7 @@ bot_get_flee_goal(max_dist)
 {
     candidate = [];
 
-    zombies = get_cached_zombies();
+    zombies = bot_get_zombies();
 
     if(!isdefined(zombies))
         return candidate;
@@ -305,19 +550,25 @@ bot_get_team_center()
 	return sum * (1.0 / count);
 }
 
-bot_flee_goal()
+bot_flee_goal(kite)
 {
     nearest = bot_nearest_node(self.origin);
 
     if(!isdefined(nearest))
         return;
 
-    nodes = getnodesinradiussorted(self.origin, 1024, 640, 512);
+    if(isdefined(kite))
+        nodes = getnodesinradiussorted(self.origin, 650, 220, 256);
+    else
+        nodes = getnodesinradiussorted(self.origin, 1024, 640, 512);
 
     if(!isdefined(nodes) || nodes.size == 0)
         return;
 
-    zombies = self bot_get_flee_goal(1400);
+    if(isdefined(kite))
+        zombies = self bot_get_flee_goal(900);
+    else
+        zombies = self bot_get_flee_goal(1400);
 
     threat_pos = undefined;
 	
@@ -355,7 +606,13 @@ bot_flee_goal()
 
     // Pass 0 only accepts nodes that break line of sight. If the bot is in the open and nothing
     // like that exists, pass 1 accepts visible nodes as long as they are far away from every zombie.
-    for(pass = 0; pass < 2 && cand_nodes.size == 0; pass++)
+    start_pass = 0;
+
+    // Kiting doesn't need to break line of sight, it just needs room to back up.
+    if(isdefined(kite))
+        start_pass = 1;
+
+    for(pass = start_pass; pass < 2 && cand_nodes.size == 0; pass++)
     {
         checked = 0;
 
@@ -376,7 +633,7 @@ bot_flee_goal()
             if(!isdefined(score))
                 continue;
 
-            if(visible)
+            if(visible && !isdefined(kite))
                 score += 120;
 
             cand_nodes[cand_nodes.size] = node;
@@ -386,10 +643,17 @@ bot_flee_goal()
     }
 
     max_score = 400;
+    max_checks = 5;
+
+    if(isdefined(kite))
+    {
+        max_score = 300;
+        max_checks = 3;
+    }
 
     path_checks = 0;
 
-    while(path_checks < 5 && cand_nodes.size > 0)
+    while(path_checks < max_checks && cand_nodes.size > 0)
     {
         best = 0;
 
@@ -413,6 +677,10 @@ bot_flee_goal()
             self addgoal(best_node.origin, 50, 4, "flee");
 
             self.bot.flee_goal_time = gettime();
+
+            // bot_reset_flee_goal() drops flee goals older than 8s: backdate kite goals so they only live ~1.5s.
+            if(isdefined(kite))
+                self.bot.flee_goal_time = gettime() - 6500;
 
             return;
         }
@@ -702,7 +970,7 @@ bot_can_fire_safely(weapon)
 	dist = distance(self.origin, enemy.origin);
 	
 	// Splash weapons (Ray Gun, M32, ...) hurt the bot when used point blank.
-	if(self bot_is_splash_weapon(weapon) && dist < 130)
+	if(self bot_splash_hurts_me(weapon) && dist < 130)
 		return false;
 	
 	// No line of sight = don't burn ammo into a wall, unless the zombie is basically touching us.
@@ -765,6 +1033,8 @@ bot_get_swap_weapon(current, need_clip, avoid_splash, dist)
 		}
 	}
 	
+	self.bot.last_swap_score = best_score;
+	
 	return best;
 }
 
@@ -797,7 +1067,7 @@ bot_combat_try_weapon_swap(weapon)
 		new_weapon = self bot_get_swap_weapon(weapon, true, false, dist);
 	}
 	// 2) Explosive weapon with zombies on top of us: switch to something that doesn't hurt us.
-	else if(self bot_is_splash_weapon(weapon) && dist < 130)
+	else if(self bot_splash_hurts_me(weapon) && dist < 130)
 	{
 		new_weapon = self bot_get_swap_weapon(weapon, true, true, dist);
 	}
@@ -805,6 +1075,21 @@ bot_combat_try_weapon_swap(weapon)
 	else if((clip <= 0 || (self isreloading() && max > 0 && clip < (max * 0.25))) && (dist < 260 || self.bot.close_count > 0))
 	{
 		new_weapon = self bot_get_swap_weapon(weapon, true, self.bot.close_count > 0, dist);
+	}
+	// 4) Nothing touching me and another weapon is clearly better for this distance (SMG/shotgun close, rifle far).
+	else if(self.bot.close_count == 0 && !self isreloading() && clip > 0 && (!isdefined(self.bot.next_range_swap) || now >= self.bot.next_range_swap))
+	{
+		self.bot.next_range_swap = now + 4000;
+		
+		candidate = self bot_get_swap_weapon(weapon, true, false, dist);
+		
+		if(isdefined(candidate) && isdefined(self.bot.last_swap_score))
+		{
+			current_score = self bot_weapon_tactical_score(weapon, dist);
+			
+			if(self.bot.last_swap_score >= current_score + 140)
+				new_weapon = candidate;
+		}
 	}
 	
 	if(!isdefined(new_weapon) || new_weapon == weapon)
@@ -934,7 +1219,7 @@ bot_get_grenade_required_cluster()
 // Finds the densest group of zombies (250 unit blast radius) and returns the point to throw at.
 bot_find_grenade_cluster()
 {
-	zombies = get_cached_zombies();
+	zombies = bot_get_zombies();
 	
 	if(!isdefined(zombies) || zombies.size == 0)
 		return undefined;
@@ -1123,7 +1408,7 @@ bot_get_grenade_cluster_center(threat)
     if(!isdefined(threat) || !isdefined(threat.origin))
         return self.origin;
 
-    zombies = get_cached_zombies();
+    zombies = bot_get_zombies();
 
     if(!isdefined(zombies) || zombies.size == 0)
         return threat.origin;
@@ -1448,7 +1733,7 @@ bot_is_special_zombie(zombie)
 
 bot_best_enemy()
 {
-    enemies = get_cached_zombies();
+    enemies = bot_get_zombies();
 
     if(!isdefined(enemies) || enemies.size == 0)
     {
@@ -1462,6 +1747,8 @@ bot_best_enemy()
 
     if(maps\mp\zombies\_zm_laststand::player_any_player_in_laststand())
         revive_point = self get_active_revive_point();
+
+    hurt_allies = self bot_get_hurt_allies();
 
     weapon = self getcurrentweapon();
     splash = self bot_is_splash_weapon(weapon);
@@ -1595,6 +1882,26 @@ bot_best_enemy()
         // Weak zombies die fast: removing them reduces incoming damage cheaply.
         if(isdefined(zombie.health) && zombie.health <= 150)
             score += 120;
+
+        // Dogs and sprinters close the gap fast, kill them before they arrive.
+        if(self bot_is_dog(zombie))
+            score += 250;
+        else if(self bot_is_sprinter(zombie))
+            score += 80;
+
+        // Protect teammates that are low on health.
+        for(k = 0; k < hurt_allies.size; k++)
+        {
+            if(distancesquared(zombie.origin, hurt_allies[k]) < 22500)
+            {
+                score += 220;
+                break;
+            }
+        }
+
+        // Zombies already near the crosshair die sooner (no turn time).
+        if(dist > 150 && self bot_dot_product(zombie.origin) > 0.8)
+            score += 60;
 
         // Legless crawlers are slow, only worry about them when they are close.
         if(isdefined(zombie.has_legs) && !zombie.has_legs && dist > 200)
