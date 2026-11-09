@@ -3621,12 +3621,16 @@ bot_find_buildable_task()
 
 			path_checks++;
 
-			// Some pickups are suspended over gaps or have a model point that is
-			// not reachable by the nav graph. Try the visual point, then just below it.
-			approach_origin = piece.model.origin;
+			// The visible model can be above the floor. Approach just below it
+			// as Origins does, then fall back to the piece's actual unitrigger
+			// origin if that is the only point reachable by the nav graph.
+			approach_origin = piece.model.origin + (0, 0, -16);
 			if(!findpath(self.origin, approach_origin, undefined, 0, 1))
 			{
-				approach_origin = piece.model.origin + (0, 0, -16);
+				if(!isdefined(piece.unitrigger.origin))
+					continue;
+
+				approach_origin = piece.unitrigger.origin;
 				if(!findpath(self.origin, approach_origin, undefined, 0, 1))
 					continue;
 			}
@@ -3747,23 +3751,23 @@ bot_dispatch_buildable_trigger(stub)
 // clientfields and piece tracking are updated exactly as for a human player.
 bot_take_buildable_piece(piece)
 {
-    if(!isdefined(piece))
+    if(!isdefined(piece) || !isdefined(piece.buildable_slot))
         return false;
 
-    can_take_func = bot_buildables_func("player_can_take_piece");
-    take_piece_func = bot_buildables_func("player_take_piece");
-
-    if(!isdefined(can_take_func) || !isdefined(take_piece_func))
+    if(!self maps\mp\zombies\_zm_buildables::player_can_take_piece(piece))
         return false;
 
-    if(!self [[ can_take_func ]](piece))
-        return false;
+    // The stock player_take_piece() routine contains no waits. Run it
+    // synchronously so callbacks, model unspawn and inventory assignment
+    // finish before this function reports success.
+    slot = piece.buildable_slot;
+    self maps\mp\zombies\_zm_buildables::player_take_piece(piece);
 
-    self thread [[ take_piece_func ]](piece);
-    return true;
+    held_piece = self maps\mp\zombies\_zm_buildables::player_get_buildable_piece(slot);
+    return isdefined(held_piece) && held_piece == piece;
 }
 
-// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
+// _zm_craftables// _zm_craftables only ships on maps that use it (Origins, Mob of the Dead). A
 // direct file::function reference is resolved at script load and causes
 // "Unresolved external" on every other map, so look the functions up at runtime.
 // getfunction() returns undefined when the file is not loaded.
@@ -3924,9 +3928,10 @@ bot_run_buildable_task(task)
 		return;
 	}
 
-	// The stock trigger checks its own bounds. A wide 140-unit bot goal lets
-	// navigation stop outside the actual interaction volume.
-	self addgoal(nav_origin, 24, 2, goal_name);
+	// Give navigation enough room to approach raised part models, but verify
+	// the real per-player trigger volume before interacting.
+	self addgoal(nav_origin, 56, 2, goal_name);
+	unitrigger_trigger_func = getfunction("maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
 
 	deadline = gettime() + 45000;
 	arrived = false;
@@ -3976,12 +3981,29 @@ bot_run_buildable_task(task)
 			task.stub.bot_auto_builder_until = gettime() + 45000;
 		}
 
-		arrival_range_sq = task.kind == "pickup" ? 900 : 2500;
-		if(distancesquared(self.origin, task.origin) <= arrival_range_sq)
-		{
+		// Use the real per-player unitrigger whenever possible. A 3D
+		// distance-to-model check made bots stop underneath raised parts and
+		// stare at them without ever entering the pickup volume.
+		interaction_trigger = undefined;
+		if(task.kind == "pickup" && isdefined(task.piece.unitrigger) &&
+		   isdefined(unitrigger_trigger_func))
+			interaction_trigger = task.piece.unitrigger [[ unitrigger_trigger_func ]](self);
+		else if(isdefined(task.stub) && isdefined(unitrigger_trigger_func))
+			interaction_trigger = task.stub [[ unitrigger_trigger_func ]](self);
+
+		if(isdefined(interaction_trigger) && interaction_trigger istouching(self))
 			arrived = true;
+		else if(task.kind == "pickup" &&
+		        distance2d(self.origin, task.origin) <= 88 &&
+		        abs(self.origin[2] - task.origin[2]) <= 176)
+			arrived = true;
+		else if(task.kind != "pickup" &&
+		        distance2d(self.origin, task.origin) <= 88 &&
+		        abs(self.origin[2] - task.origin[2]) <= 128)
+			arrived = true;
+
+		if(arrived)
 			break;
-		}
 
 		wait 0.25;
 	}
@@ -4038,14 +4060,15 @@ bot_run_buildable_task(task)
 
 			if(task.kind == "pickup")
 			{
-				if(!isdefined(task.piece.bot_auto_take_pending_until) ||
-				   gettime() >= task.piece.bot_auto_take_pending_until)
-				{
-					if(self bot_take_buildable_piece(task.piece))
-						task.piece.bot_auto_take_pending_until = gettime() + 2000;
-					else if(!self bot_dispatch_buildable_trigger(task.piece.unitrigger))
-						self pressusebutton(0.15);
-				}
+				// Pickup is synchronous and verified against the bot's
+				// inventory. If the stock routine refuses it, retry through
+				// the native unitrigger/use path instead of suppressing retries
+				// for two seconds after a thread was merely started.
+				if(self bot_take_buildable_piece(task.piece))
+					break;
+
+				if(!self bot_dispatch_buildable_trigger(task.piece.unitrigger))
+					self pressusebutton(0.15);
 			}
 			else if(task.kind == "build")
 			{
