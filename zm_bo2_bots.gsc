@@ -3509,7 +3509,7 @@ bot_find_buildable_task()
 		best_task.buildable = stub.buildablezone;
 		best_task.slot = stub.buildablezone.buildable_slot;
 		best_dist_sq = build_score;
-		}
+	}
 
 	if(isdefined(best_task))
 	{
