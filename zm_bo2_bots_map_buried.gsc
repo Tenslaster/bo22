@@ -1593,8 +1593,10 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
         coast_time = 0.25;
 
     vertical_velocity = (delta[2] + 0.5 * gravity * coast_time * coast_time) / flight_time;
-    if(vertical_velocity < 100)
-        vertical_velocity = 100;
+    // Downward roof transitions should fall under gravity instead of
+    // receiving an artificial upward impulse that makes them miss the roof.
+    if(vertical_velocity < 0)
+        vertical_velocity = 0;
     if(vertical_velocity > 650)
     {
         self.bot.buried_roof_takeoff_origin = undefined;
@@ -1610,8 +1612,8 @@ bot_quest_buried_try_roof_jump(target_origin, explore_roof)
     wait 0.05;
 
     // Match the native jump-pad movement contract: mark the player as
-    // airborne/landing-owned, stand upright, lift one unit off the floor, and
-    // sustain the launch velocity for half the calculated flight duration.
+    // airborne/landing-owned, stand upright, lift one unit off the floor,
+    // and sustain a short initial impulse while the path controller is paused.
     self._padded = 1;
     self.lander = 1;
     self setstance("stand");
