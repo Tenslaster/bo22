@@ -1666,7 +1666,7 @@ bot_buy_perks()
 			best_machine = machine;
 			best_perk = perk;
 			best_cost = machine.cost;
-			best_dist_sq = dist_sq;
+			best_dist_sq = piece_score;
 		}
 
 		if(!isdefined(best_machine))
@@ -3468,8 +3468,16 @@ bot_find_buildable_task()
 			continue;
 
 		dist_sq = distancesquared(self.origin, stub.origin);
+		build_score = dist_sq;
 
-		if(dist_sq >= best_dist_sq)
+		// Buried's Keys are the native gate for freeing Sloth. When the cell
+		// is still closed, finish that build before optional nearby buildables.
+		if(getdvar("mapname") == "zm_buried" && !is_true(level.cell_open) &&
+		   isdefined(stub.buildablezone.buildable_name) &&
+		   stub.buildablezone.buildable_name == "keys_zm")
+			build_score = -50000000 + dist_sq;
+
+		if(build_score >= best_dist_sq)
 			continue;
 
 		path_checks++;
@@ -3483,8 +3491,8 @@ bot_find_buildable_task()
 		best_task.stub = stub;
 		best_task.buildable = stub.buildablezone;
 		best_task.slot = stub.buildablezone.buildable_slot;
-		best_dist_sq = dist_sq;
-	}
+		best_dist_sq = build_score;
+		}
 
 	if(isdefined(best_task))
 	{
@@ -3615,8 +3623,21 @@ bot_find_buildable_task()
 				continue;
 
 			dist_sq = distancesquared(self.origin, piece.model.origin);
+			piece_score = dist_sq;
 
-			if(dist_sq >= best_dist_sq)
+			// Prioritize the stock Keys piece until Buried's jail cell opens.
+			// Once Sloth is cowering, prioritize booze so the native gift trigger
+			// can make him follow the player and smash the remaining barricades.
+			if(getdvar("mapname") == "zm_buried" && !is_true(level.cell_open) &&
+			   isdefined(piece.buildablename) && piece.buildablename == "keys_zm")
+				piece_score = -50000000 + dist_sq;
+			else if(getdvar("mapname") == "zm_buried" &&
+			        isdefined(level.sloth) && isdefined(level.sloth.state) &&
+			        level.sloth.state == "jail_cower" && !is_true(level.sloth.got_booze) &&
+			        isdefined(piece.buildablename) && piece.buildablename == "booze")
+				piece_score = -40000000 + dist_sq;
+
+			if(piece_score >= best_dist_sq)
 				continue;
 
 			path_checks++;
