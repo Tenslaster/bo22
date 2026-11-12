@@ -50,6 +50,7 @@ bot_combat_think(damage, attacker, direction)
 	// Do not let normal combat AI take over during robot entry or other quests.
 	if(is_true(self.bot.is_objective_using))
 	{
+		self bot_combat_clear_movement();
 		self allowattack(0);
 		self pressads(0);
 		return;
@@ -57,6 +58,7 @@ bot_combat_think(damage, attacker, direction)
 
 	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade))
 	{
+		self bot_combat_clear_movement();
 		self allowattack(0);
 		self pressads(0);
 		
@@ -67,15 +69,23 @@ bot_combat_think(damage, attacker, direction)
 	self pressads(0);
 	
 	if(!bot_can_do_combat())
+	{
+		self bot_combat_clear_movement();
 		return;
+	}
 	
 	if(self atgoal("flee"))
 		self cancelgoal("flee");
 	
 	follow_mode = isdefined(level.bot_command_mode) && level.bot_command_mode == "follow" && isdefined(level.bot_commander);
 	
-	if(follow_mode && (self getgoal("flee") || self hasgoal("flee")))
-		self cancelgoal("flee");
+	if(follow_mode)
+	{
+		if(self getgoal("flee") || self hasgoal("flee"))
+			self cancelgoal("flee");
+
+		self bot_combat_clear_movement();
+	}
 	
 	self bot_track_damage(damage);
 	self bot_update_situation();
@@ -86,12 +96,16 @@ bot_combat_think(damage, attacker, direction)
 		
 		if(!isdefined(self.bot.next_flee_scan) || now > self.bot.next_flee_scan)
 		{
+			// Re-evaluate escape routes quickly when pressure is high. The old
+			// multi-second delay could leave a surrounded bot stationary too long.
 			if(self.bot.danger >= 8)
-				self.bot.next_flee_scan = now + 600;
+				self.bot.next_flee_scan = now + 250;
+			else if(self.bot.danger >= 5)
+				self.bot.next_flee_scan = now + 450;
 			else if(get_players().size > 4)
-				self.bot.next_flee_scan = now + 3000;
+				self.bot.next_flee_scan = now + 1000;
 			else
-				self.bot.next_flee_scan = now + 1500;
+				self.bot.next_flee_scan = now + 750;
 			
 			self bot_flee_goal();
 		}
@@ -108,6 +122,7 @@ bot_combat_think(damage, attacker, direction)
 	
 	if(!sight && !self bot_has_enemy())
 	{
+		self bot_combat_clear_movement();
 		self allowattack(0);
 		self pressads(0);
 		
@@ -119,6 +134,7 @@ bot_combat_think(damage, attacker, direction)
 	
 	if(self threat_dead())
 	{
+		self bot_combat_clear_movement();
 		self bot_combat_dead();
 		
 		return;
@@ -419,40 +435,59 @@ bot_weapon_is_weak()
 bot_should_flee(damage)
 {
 	hp = self bot_health_fraction();
-	
-	// Hurt bots bail out earlier, healthy bots stand their ground against one or two zombies.
-	threshold = 5.0 - ((1.0 - hp) * 3.0);
-	
+
+	maxhp = self.maxhealth;
+	if(!isdefined(maxhp) || maxhp <= 0)
+		maxhp = 100;
+
+	// Absolute emergency rules: never try to orbit while a fast attacker is
+	// already on top of us, or while a low-health bot is being crowded.
+	if(isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 105)
+		return true;
+
+	if(isdefined(self.bot.fast_close) && self.bot.fast_close > 0 &&
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 240)
+		return true;
+
+	if(isdefined(self.bot.close_count) && self.bot.close_count >= 6)
+		return true;
+
+	if(hp <= 0.28 && isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 450)
+		return true;
+
+	if(hp <= 0.42 && isdefined(self.bot.close_count) && self.bot.close_count >= 2)
+		return true;
+
+	// A sudden burst of damage is an emergency even if only one zombie is visible.
+	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent >= maxhp * 0.22 &&
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 350)
+		return true;
+
+	// Lower threshold than before: survival takes priority over holding ground.
+	threshold = 4.5 - ((1.0 - hp) * 3.5);
+
 	if(self bot_weapon_is_weak())
 		threshold -= 1.0;
-	
-	// Nothing left to shoot anywhere: running is the only plan.
+
+	// No usable ammo means avoiding contact is more valuable than fighting.
 	if(self bot_total_ammo_empty())
 		threshold -= 2.0;
-	
-	// Insta-kill: every shot kills, stand and fight.
+
+	// Insta-kill makes fighting safer, but does not override point-blank danger.
 	if(self bot_insta_kill_active())
-		threshold += 2.0;
-	
-	if(threshold < 1.5)
-		threshold = 1.5;
-	
+		threshold += 1.25;
+
+	if(threshold < 1.1)
+		threshold = 1.1;
+
 	danger = self.bot.danger;
-	
+
 	if(isdefined(damage))
 		danger += 1.0;
-	
-	// Bleeding fast (several hits in the last couple of seconds) is worse than just standing near zombies.
+
 	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent > 0)
-	{
-		maxhp = self.maxhealth;
-		
-		if(!isdefined(maxhp) || maxhp <= 0)
-			maxhp = 100;
-		
-		danger += (self.bot.dmg_recent / maxhp) * 6.0;
-	}
-	
+		danger += (self.bot.dmg_recent / maxhp) * 7.0;
+
 	return danger >= threshold;
 }
 
@@ -577,6 +612,9 @@ bot_get_team_center()
 
 bot_flee_goal(kite)
 {
+    // Escape movement has priority over the optional combat orbit.
+    self bot_combat_clear_movement();
+
     nearest = bot_nearest_node(self.origin);
 
     if(!isdefined(nearest))
@@ -853,6 +891,9 @@ bot_flee_goal_unsafe()
 bot_combat_main()
 {
 	self bot_update_situation();
+
+	// Keep moving around the active target while the weapon AI keeps firing.
+	self bot_combat_update_movement();
 	
 	if(self bot_should_melee())
 	{
@@ -984,6 +1025,299 @@ bot_combat_main()
 		
 		return;
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Combat movement: controlled orbiting and collision-aware repositioning
+// ---------------------------------------------------------------------------------------------
+
+bot_combat_clear_movement()
+{
+	if(self getgoal("combat") || self hasgoal("combat"))
+		self cancelgoal("combat");
+
+	self.bot.combat_orbit_target = undefined;
+	self.bot.next_combat_move = 0;
+}
+
+bot_combat_update_movement()
+{
+	now = gettime();
+	threat = self.bot.threat.entity;
+
+	if(!isdefined(threat) || !isalive(threat))
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	// Respect commands, map objectives, build/craft interactions, revives,
+	// generator defense and scripted traversal. These systems own movement.
+	if((isdefined(level.bot_command_mode) &&
+	    (level.bot_command_mode == "follow" || level.bot_command_mode == "stay")) ||
+	   is_true(self.bot.is_objective_using) ||
+	   is_true(self.bot.is_holding_generator) ||
+	   is_true(self.bot.is_parkouring) ||
+	   is_true(self.bot.is_building) ||
+	   is_true(self.bot.is_crafting) ||
+	   is_true(self.bot.is_perk_buying) ||
+	   is_true(self.bot.is_buying) ||
+	   is_true(self.bot.is_using_box) ||
+	   is_true(self.bot.is_grabbing_box) ||
+	   is_true(self.bot.is_reviving) ||
+	   is_true(self.bot.is_selfreviving) ||
+	   is_true(self.bot.is_getting_shield) ||
+	   is_true(self.bot.is_throwing_grenade) ||
+	   self maps\mp\zombies\_zm_laststand::player_is_in_laststand() ||
+	   !self isonground() || self ismantling() || self isonladder())
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	// Do not circle when a higher-priority escape route or interaction is active.
+	if(self getgoal("flee") || self hasgoal("flee") ||
+	   self getgoal("revive") || self hasgoal("revive") ||
+	   self getgoal("selfrevive") || self hasgoal("selfrevive") ||
+	   self getgoal("boxbuy") || self hasgoal("boxbuy") ||
+	   self getgoal("weaponbuy") || self hasgoal("weaponbuy") ||
+	   self getgoal("pap") || self hasgoal("pap") ||
+	   self getgoal("perkbuy") || self hasgoal("perkbuy") ||
+	   self getgoal("powerup") || self hasgoal("powerup") ||
+	   self getgoal("bot_origins_robot_enter") || self hasgoal("bot_origins_robot_enter") ||
+	   self getgoal("bot_mob_final_fight_chase") || self hasgoal("bot_mob_final_fight_chase") ||
+	   self getgoal("bot_die_rise_tower_leg") || self hasgoal("bot_die_rise_tower_leg") ||
+	   self getgoal("bot_die_rise_elevator") || self hasgoal("bot_die_rise_elevator") ||
+	   self getgoal("bot_die_rise_springpad") || self hasgoal("bot_die_rise_springpad") ||
+	   self getgoal("bot_buried_roof_jump_takeoff") || self hasgoal("bot_buried_roof_jump_takeoff") ||
+	   self getgoal("bot_buried_roof_jump_landing") || self hasgoal("bot_buried_roof_jump_landing") ||
+	   self getgoal("bot_buried_springpad") || self hasgoal("bot_buried_springpad") ||
+	   self getgoal("bot_buried_springpad_landing") || self hasgoal("bot_buried_springpad_landing") ||
+	   self getgoal("bot_buried_springpad_target") || self hasgoal("bot_buried_springpad_target"))
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	// Boss encounters use the dedicated danger/flee logic instead of trying
+	// to orbit a boss whose attacks can punish a close circular route.
+	if(is_true(threat.is_mechz) || is_true(threat.is_brutus))
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	target_dist = distance2d(self.origin, threat.origin);
+
+	// Combat orbit is a close-to-midrange behavior, not a replacement for
+	// normal wandering or long-range target acquisition.
+	if(target_dist > 680 ||
+	   (!is_true(self.bot.threat.visible) && target_dist > 260) ||
+	   (isdefined(self.bot.near_count) && self.bot.near_count == 0 && target_dist > 420))
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	if(is_true(self.bot.is_meleeing))
+	{
+		self bot_combat_clear_movement();
+		return;
+	}
+
+	// Randomize orbit direction once per target so the whole squad does not
+	// follow the same circular lane.
+	if(!isdefined(self.bot.combat_orbit_target) || self.bot.combat_orbit_target != threat)
+	{
+		self.bot.combat_orbit_target = threat;
+		self.bot.combat_orbit_sign = randomfloatrange(0, 2) < 1 ? -1 : 1;
+		self.bot.next_combat_move = 0;
+	}
+
+	if(isdefined(self.bot.next_combat_move) && now < self.bot.next_combat_move)
+		return;
+
+	self.bot.next_combat_move = now + 550;
+
+	weapon = self getcurrentweapon();
+	desired_radius = 410;
+
+	if(weapon != "none" && weaponclass(weapon) == "spread")
+		desired_radius = 285;
+	else if(weapon != "none" && weaponclass(weapon) == "pistol")
+		desired_radius = 360;
+
+	// Give damaged or surrounded bots more room; keep a shotgun inside useful range.
+	if(self bot_health_fraction() < 0.55 || self.bot.danger >= 5)
+		desired_radius += 75;
+
+	if(self bot_insta_kill_active())
+		desired_radius -= 45;
+
+	if(desired_radius < 245)
+		desired_radius = 245;
+	if(desired_radius > 520)
+		desired_radius = 520;
+
+	best_node = self bot_combat_find_orbit_node(threat, desired_radius, self.bot.combat_orbit_sign);
+
+	// If the desired side of the orbit has no reachable nodes, reverse direction
+	// rather than standing still or trying to cut directly through the horde.
+	if(!isdefined(best_node))
+	{
+		self.bot.combat_orbit_sign = 0 - self.bot.combat_orbit_sign;
+		best_node = self bot_combat_find_orbit_node(threat, desired_radius, self.bot.combat_orbit_sign);
+	}
+
+	if(!isdefined(best_node))
+	{
+		if(self getgoal("combat") || self hasgoal("combat"))
+			self cancelgoal("combat");
+		return;
+	}
+
+	current_goal = self getgoal("combat");
+
+	if(!isdefined(current_goal) || distancesquared(current_goal, best_node.origin) > 3600)
+	{
+		if(self getgoal("combat") || self hasgoal("combat"))
+			self cancelgoal("combat");
+
+		// The combat goal has wander-level priority. Flee, revive and map
+		// objective goals remain more important and are never replaced here.
+		self addgoal(best_node.origin, 52, 1, "combat");
+	}
+}
+
+bot_combat_find_orbit_node(threat, desired_radius, orbit_sign)
+{
+	if(!isdefined(threat) || !isdefined(threat.origin))
+		return undefined;
+
+	nearest = bot_nearest_node(self.origin);
+	if(!isdefined(nearest))
+		return undefined;
+
+	nodes = getnodesinradiussorted(self.origin, 760, 110, 320);
+	if(!isdefined(nodes) || nodes.size == 0)
+		return undefined;
+
+	radial_vec = (self.origin[0] - threat.origin[0], self.origin[1] - threat.origin[1], 0);
+	if(distance2d(self.origin, threat.origin) < 1)
+		return undefined;
+
+	radial = vectornormalize(radial_vec);
+	tangent = (-radial[1] * orbit_sign, radial[0] * orbit_sign, 0);
+	zombies = self bot_get_zombies();
+
+	candidate_nodes = [];
+	candidate_scores = [];
+
+	foreach(node in nodes)
+	{
+		if(!isdefined(node) || !isdefined(node.origin))
+			continue;
+
+		move_dist = distance2d(self.origin, node.origin);
+		if(move_dist < 95 || move_dist > 740)
+			continue;
+
+		target_gap = distance2d(node.origin, threat.origin);
+		if(target_gap < 190 || target_gap > desired_radius + 340)
+			continue;
+
+		node_radial_vec = (node.origin[0] - threat.origin[0], node.origin[1] - threat.origin[1], 0);
+		node_radial = vectornormalize(node_radial_vec);
+		side_progress = vectordot(node_radial, tangent);
+
+		// Prefer the next safe point along the tangent, but permit a less ideal
+		// point if geometry or pathing blocks the preferred side.
+		score = move_dist * 0.18;
+		score += abs(target_gap - desired_radius) * 0.85;
+		score -= side_progress * 230;
+
+		if(side_progress < -0.2)
+			score += 260;
+
+		route_vec = (node.origin[0] - self.origin[0], node.origin[1] - self.origin[1], 0);
+		route_dir = vectornormalize(route_vec);
+		unsafe = false;
+
+		foreach(zombie in zombies)
+		{
+			if(!isdefined(zombie) || !isalive(zombie) || !isdefined(zombie.origin) ||
+			   is_true(zombie.in_the_ground))
+				continue;
+
+			node_gap = distance2d(zombie.origin, node.origin);
+
+			// Never select a node inside the immediate melee radius of any zombie.
+			if(node_gap < 145)
+			{
+				unsafe = true;
+				break;
+			}
+
+			if(node_gap < 260)
+				score += (260 - node_gap) * 1.1;
+
+			// Reject routes that pass directly through another zombie's body.
+			zombie_vec = (zombie.origin[0] - self.origin[0], zombie.origin[1] - self.origin[1], 0);
+			along = vectordot(route_dir, zombie_vec);
+
+			if(along > 45 && along < move_dist - 35)
+			{
+				zombie_dist = distance2d(self.origin, zombie.origin);
+				lateral_sq = zombie_dist * zombie_dist - along * along;
+
+				if(lateral_sq < 0)
+					lateral_sq = 0;
+
+				lateral = sqrt(lateral_sq);
+
+				if(lateral < 92)
+				{
+					unsafe = true;
+					break;
+				}
+
+				if(lateral < 210)
+					score += (210 - lateral) * 0.45;
+			}
+		}
+
+		if(unsafe)
+			continue;
+
+		candidate_nodes[candidate_nodes.size] = node;
+		candidate_scores[candidate_scores.size] = score;
+	}
+
+	// Path-check only the five best scored candidates to keep the 10 Hz combat
+	// loop inexpensive even on high-round zombie counts.
+	path_checks = 0;
+
+	while(path_checks < 5 && candidate_nodes.size > 0)
+	{
+		best = 0;
+		for(i = 1; i < candidate_nodes.size; i++)
+		{
+			if(candidate_scores[i] < candidate_scores[best])
+				best = i;
+		}
+
+		if(candidate_scores[best] > 900)
+			return undefined;
+
+		best_node = candidate_nodes[best];
+		candidate_scores[best] = 99999;
+		path_checks++;
+
+		if(findpath(self.origin, best_node.origin, undefined, 0, 1))
+			return best_node;
+	}
+
+	return undefined;
 }
 
 bot_reload_is_safe()
