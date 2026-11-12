@@ -428,6 +428,7 @@ bot_spawn_init()
 	self.bot.is_perk_buying = undefined;
 	self.bot.is_objective_using = undefined;
 	self.bot.is_holding_generator = undefined;
+	self.bot.is_origins_soul_holding = undefined;
 	self.bot.buildable_scan_after = undefined;
 	self.bot.craftable_scan_after = undefined;
 	self.bot.quest_scan_after = undefined;
@@ -487,7 +488,8 @@ bot_main()
 
         // Keep generator defenders on the capture objective; they still fight
         // through bot_combat_think above this guard.
-        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using))
+        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using) ||
+           is_true(self.bot.is_origins_soul_holding))
         {
             wait 0.05;
             continue;
@@ -2600,7 +2602,8 @@ bot_update_wander()
 
         // A generator defender must not have its objective goal overwritten by
         // the normal stay/follow/wander controller.
-        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using))
+        if(is_true(self.bot.is_holding_generator) || is_true(self.bot.is_objective_using) ||
+           is_true(self.bot.is_origins_soul_holding))
         {
             if(self getgoal("wander") || self hasgoal("wander"))
                 self cancelgoal("wander");
@@ -3376,6 +3379,9 @@ bot_objective_can_run()
 		return false;
 
 	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		return false;
+
+	if(is_true(self.bot.is_origins_soul_holding))
 		return false;
 
 	if(self bot_mob_is_afterlife())
@@ -4925,6 +4931,15 @@ bot_auto_quest_think()
         // so a dedicated endgame controller is required for bots to finish it.
         if(mapname == "zm_prison" && self bot_mob_final_fight_think())
             continue;
+
+        // The chamber hold blocks generic objective jobs, but its own Origins
+        // controller must keep checking the stock soul-completion flag.
+        if(mapname == "zm_tomb" && is_true(self.bot.is_origins_soul_holding))
+        {
+            self bot_quest_origins_main_steps();
+            if(is_true(self.bot.is_origins_soul_holding))
+                continue;
+        }
 
         if(!self bot_objective_can_run())
             continue;
