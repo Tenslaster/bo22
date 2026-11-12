@@ -2647,6 +2647,17 @@ bot_update_wander()
 			
 			continue;
 		}
+
+		// A combat orbit is a temporary movement destination. Pause the normal
+		// wander/follow controller so it cannot overwrite the strafe waypoint.
+		if(self getgoal("combat") || self hasgoal("combat"))
+		{
+			if(self getgoal("wander") || self hasgoal("wander"))
+				self cancelgoal("wander");
+
+			wait 0.05;
+			continue;
+		}
 		
 		downed = self get_active_revive_point();
 		
