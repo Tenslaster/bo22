@@ -81,16 +81,15 @@ bot_combat_think(damage, attacker, direction)
 	
 	if(follow_mode)
 	{
-		if(self getgoal("flee") || self hasgoal("flee"))
-			self cancelgoal("flee");
-
+		// Keep the commanded follow position when safe, but never cancel an
+		// emergency escape just because follow mode is enabled.
 		self bot_combat_clear_movement();
 	}
 	
 	self bot_track_damage(damage);
 	self bot_update_situation();
 	
-	if(!follow_mode && !self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_flee(damage))
+	if(!self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_flee(damage))
 	{
 		now = gettime();
 		
@@ -112,7 +111,7 @@ bot_combat_think(damage, attacker, direction)
 	}
 	
 	// Not in flee territory yet, but a zombie is in my face: back up while shooting.
-	if(!follow_mode && !self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_kite())
+	if(!self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_kite())
 		self bot_flee_goal(true);
 	
 	if(self getcurrentweapon() == "none")
