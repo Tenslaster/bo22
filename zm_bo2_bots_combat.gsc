@@ -901,6 +901,8 @@ bot_combat_main()
 
 	if(self bot_should_melee())
 	{
+		self bot_combat_clear_movement();
+
 		if(!is_true(self.bot.is_meleeing))
 			self thread bot_combat_melee();
 		
@@ -909,6 +911,8 @@ bot_combat_main()
 	
     if(self bot_should_throw_grenade())
     {
+		self bot_combat_clear_movement();
+
 		if(!is_true(self.bot.is_throwing_grenade))
 			self thread bot_combat_throw_grenade();
         
