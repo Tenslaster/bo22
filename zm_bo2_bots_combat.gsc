@@ -130,7 +130,10 @@ bot_combat_think(damage, attacker, direction)
 	}
 	
 	if(!isdefined(self.bot.threat.entity))
+	{
+		self bot_combat_clear_movement();
 		return;
+	}
 	
 	if(self threat_dead())
 	{
@@ -456,6 +459,10 @@ bot_should_flee(damage)
 		return true;
 
 	if(hp <= 0.42 && isdefined(self.bot.close_count) && self.bot.close_count >= 2)
+		return true;
+
+	// With no usable ammunition, do not circle a horde hoping to reload later.
+	if(self bot_total_ammo_empty() && isdefined(self.bot.near_count) && self.bot.near_count > 0)
 		return true;
 
 	// A sudden burst of damage is an emergency even if only one zombie is visible.
@@ -892,9 +899,6 @@ bot_combat_main()
 {
 	self bot_update_situation();
 
-	// Keep moving around the active target while the weapon AI keeps firing.
-	self bot_combat_update_movement();
-	
 	if(self bot_should_melee())
 	{
 		if(!is_true(self.bot.is_meleeing))
@@ -919,6 +923,9 @@ bot_combat_main()
 	
 	if(self isswitchingweapons())
 		return;
+
+	// Move after melee, grenades and weapon swaps have yielded control.
+	self bot_combat_update_movement();
 	
 	if(self isreloading())
 	{
