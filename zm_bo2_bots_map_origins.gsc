@@ -1074,7 +1074,7 @@ bot_quest_origins_staff_puzzles()
             }
             self scripts\zm\zm_bo2_bots::bot_quest_fire_at(stone.e_model.origin, "staff_water_zm", "bot_origins_ice_freeze", 720, 1, 0.12);
             wait 0.35;
-            primary = self scripts\zm\zm_bo2_bots::bot_quest_primary_weapon();
+            primary = self bot_origins_robot_bullet_weapon();
             if(isdefined(primary) && isdefined(stone.e_model) && isdefined(stone.e_model.origin))
                 self scripts\zm\zm_bo2_bots::bot_quest_fire_at(stone.e_model.origin, primary, "bot_origins_ice_shatter", 720, 7, 0.1);
             did_work = true;
@@ -1172,10 +1172,23 @@ bot_quest_origins_staff_puzzles()
         torches = getstructarray("church_torch_target", "script_noteworthy");
         foreach(torch in torches)
         {
-            if(isdefined(torch) && isdefined(torch.origin) && isdefined(torch.b_correct_torch) && torch.b_correct_torch &&
-               !isdefined(torch.e_fx))
+            if(!isdefined(torch) || !isdefined(torch.origin) ||
+               !isdefined(torch.b_correct_torch) || !torch.b_correct_torch)
+                continue;
+
+            now = gettime();
+            if(isdefined(torch.bot_origins_fire_torch_retry_until) &&
+               now < torch.bot_origins_fire_torch_retry_until)
+                continue;
+
+            fired = self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+                torch.origin, "staff_fire_zm", "bot_origins_fire_torch", 720, 1, 0.12);
+
+            if(fired)
             {
-                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(torch.origin, "staff_fire_zm", "bot_origins_fire_torch", 720, 1, 0.12);
+                // A torch's stock flame expires after 15 seconds; refresh
+                // slightly before that if the puzzle has not completed.
+                torch.bot_origins_fire_torch_retry_until = gettime() + 13000;
                 did_work = true;
                 break;
             }
@@ -1280,7 +1293,7 @@ bot_quest_origins_crypt_gems()
     gem = getent(gem_name, "targetname");
     if(isdefined(gem) && isdefined(gem.origin) && isdefined(gem.script_int))
     {
-        level.bot_origins_crypt_gem_pos[gem_name] = gem.origin;
+        level.bot_origins_crypt_gem_pos[gem_name] = final_pos.origin;
         level.bot_origins_crypt_gem_element[gem_name] = gem.script_int;
         if(distancesquared(self.origin, gem.origin) > 650 * 650)
         {
@@ -1327,11 +1340,18 @@ bot_quest_origins_crypt_gems()
             attempts = 0;
             while(disc.position != wanted && attempts < 4 && isalive(self))
             {
+                // Wait for any previous lever rotation to finish. The stock
+                // callback has a lever animation plus a disc movement delay.
+                rotation_deadline = gettime() + 3000;
+                while(flag("disc_rotation_active") && gettime() < rotation_deadline)
+                    wait 0.1;
+
+                if(flag("disc_rotation_active"))
+                    break;
+
                 before = disc.position;
                 self scripts\zm\zm_bo2_bots::bot_quest_use_target(selected_lever.trigger_stub, "bot_origins_crypt_disc", 40, 1);
-                wait 0.3;
-                if(disc.position == before)
-                    break;
+                wait 1.2;
                 attempts++;
             }
         }
@@ -1365,9 +1385,10 @@ bot_quest_origins_crypt_gems()
     deadline = gettime() + 30000;
     while(!flag(complete_flag) && gettime() < deadline && isalive(self))
     {
-        // Once the aligned orb has descended onto its original chamber plinth,
-        // the stock gem worker waits for damage from the matching staff. Find
-        // that native orb by the saved position + element index and hit it.
+        // The stock worker deletes the moving orb and creates a new model at
+        // the final crypt plinth. Keep ownership alive while that path runs.
+        level.bot_origins_crypt_owner_until = gettime() + 12000;
+
         if(isdefined(level.bot_origins_crypt_gem_pos[gem_name]) &&
            isdefined(level.bot_origins_crypt_gem_element[gem_name]))
         {
@@ -1444,17 +1465,30 @@ bot_quest_origins_punch_souls()
         return true;
     }
 
+    self.bot.origins_punch_last_soul_target = target.origin;
+
     self.bot.is_objective_using = 1;
     self lookat(target.origin + (0, 0, 24));
     self pressmelee();
     wait 0.45;
     self clearlookat();
     self.bot.is_objective_using = undefined;
+
+    if(isdefined(self.n_ee_punch_souls) && self.n_ee_punch_souls >= 20 &&
+       !isdefined(self.bot.origins_punch_tablet_hint))
+        self.bot.origins_punch_tablet_hint = self.bot.origins_punch_last_soul_target;
+
     return true;
 }
 
 bot_quest_origins_main_steps()
 {
+    if(flag("ee_souls_absorbed"))
+    {
+        self.bot.is_origins_soul_holding = undefined;
+        self cancelgoal("bot_origins_soul_chamber_hold");
+    }
+
     // Step 3: activate a real fire-link unitrigger during the three-robot
     // round, then hit the damage target with the Beacon during its window.
     if(flag("three_robot_round") && !flag("ee_mech_zombie_hole_opened"))
@@ -1514,9 +1548,10 @@ bot_quest_origins_main_steps()
         }
     }
 
-    // Step 6: initialize the stock One Inch Punch melee system, collect 20
-    // Crazy Place souls, and physically touch the player-specific tablet.
-    if(!flag("ee_all_players_upgraded_punch"))
+    // Step 6: earn 20 real Crazy Place souls, then touch the tablet
+    // spawned by the stock callback for this specific player.
+    if(!flag("ee_all_players_upgraded_punch") &&
+       (!isdefined(self.b_punch_upgraded) || !self.b_punch_upgraded))
     {
         if(!self hasweapon("one_inch_punch_zm") && !self hasweapon("one_inch_punch_upgraded_zm"))
         {
@@ -1541,40 +1576,72 @@ bot_quest_origins_main_steps()
                     return true;
             }
 
-            // The stock quest requires a tablet pickup for every player,
-            // including the local host. Once this bot earns the real 20-soul
-            // tablet, spawn the same stock pickup for any remaining teammates
-            // at their current positions; the original callback marks each
-            // player upgraded and sets ee_all_players_upgraded_punch itself.
-            if(isdefined(self.n_ee_punch_souls) && self.n_ee_punch_souls >= 20 &&
-               !is_true(level.bot_origins_punch_tablets_given))
+            if(isdefined(self.n_ee_punch_souls) && self.n_ee_punch_souls >= 20)
             {
-                level.bot_origins_punch_tablets_given = 1;
-                all_players = get_players();
-                foreach(punch_player in all_players)
+                if(!isdefined(self.bot.origins_punch_tablet_hint))
                 {
-                    if(!isdefined(punch_player) || punch_player == self ||
-                       (isdefined(punch_player.b_punch_upgraded) && punch_player.b_punch_upgraded))
-                        continue;
-                    level thread bot_origins_spawn_punch_upgrade_tablet(punch_player.origin, punch_player);
+                    if(isdefined(self.bot.origins_punch_last_soul_target))
+                        self.bot.origins_punch_tablet_hint = self.bot.origins_punch_last_soul_target;
+                    else
+                        self.bot.origins_punch_tablet_hint = self.origin;
                 }
-            }
 
-            tablets = getentarray("script_model", "classname");
-            foreach(tablet in tablets)
-            {
-                if(!isdefined(tablet) || !isdefined(tablet.origin))
-                    continue;
-                if((!isdefined(tablet.modelname) || tablet.modelname != "p6_zm_tm_tablet") &&
-                   (!isdefined(tablet.model) || tablet.model != "p6_zm_tm_tablet"))
-                    continue;
-                if(isdefined(tablet.owner) && tablet.owner != self)
-                    continue;
-                if(isdefined(self.n_ee_punch_souls) && self.n_ee_punch_souls >= 20)
+                tablets = getentarray("script_model", "classname");
+                best_tablet = undefined;
+                best_tablet_dist = 999999999;
+
+                foreach(tablet in tablets)
                 {
-                    self scripts\zm\zm_bo2_bots::bot_quest_move_to(tablet.origin, "bot_origins_punch_tablet", 32, 10000);
+                    if(!isdefined(tablet) || !isdefined(tablet.origin))
+                        continue;
+
+                    if((!isdefined(tablet.modelname) || tablet.modelname != "p6_zm_tm_tablet") &&
+                       (!isdefined(tablet.model) || tablet.model != "p6_zm_tm_tablet"))
+                        continue;
+
+                    if(isdefined(tablet.owner) && tablet.owner != self)
+                        continue;
+
+                    if(isdefined(tablet.bot_origins_punch_owner) &&
+                       tablet.bot_origins_punch_owner != self &&
+                       isdefined(tablet.bot_origins_punch_owner_until) &&
+                       gettime() < tablet.bot_origins_punch_owner_until &&
+                       isalive(tablet.bot_origins_punch_owner))
+                        continue;
+
+                    // The native tablet sits 50 units above the zombie that
+                    // gave this player soul number 20. Use a tight 2D match.
+                    d = distance2dsquared(tablet.origin, self.bot.origins_punch_tablet_hint);
+                    if(d > 80 * 80 || d >= best_tablet_dist)
+                        continue;
+
+                    best_tablet = tablet;
+                    best_tablet_dist = d;
+                }
+
+                if(isdefined(best_tablet))
+                {
+                    best_tablet.bot_origins_punch_owner = self;
+                    best_tablet.bot_origins_punch_owner_until = gettime() + 30000;
+                    self.bot.origins_punch_tablet_entity = best_tablet;
+
+                    self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                        best_tablet.origin, "bot_origins_punch_tablet", 8, 12000);
+
+                    if(is_true(self.b_punch_upgraded))
+                    {
+                        best_tablet.bot_origins_punch_owner = undefined;
+                        best_tablet.bot_origins_punch_owner_until = 0;
+                        self.bot.origins_punch_tablet_entity = undefined;
+                        self.bot.origins_punch_tablet_hint = undefined;
+                    }
+
                     return true;
                 }
+
+                // The stock tablet may spawn on the next server frame. Do not
+                // advance the quest or fabricate a tablet while it appears.
+                return true;
             }
         }
     }
@@ -1585,12 +1652,22 @@ bot_quest_origins_main_steps()
     {
         if(!self bot_origins_point_is_in_chamber(self.origin))
         {
+            self.bot.is_origins_soul_holding = undefined;
+            self cancelgoal("bot_origins_soul_chamber_hold");
             self bot_quest_origins_enter_chamber(0);
             return true;
         }
+
         center = getstruct("chamber_center", "targetname");
-        if(isdefined(center) && isdefined(center.origin))
-            self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(center.origin, "bot_origins_soul_chamber", 340, 4.0);
+        if(!isdefined(center) || !isdefined(center.origin))
+            return true;
+
+        // A persistent anchor keeps bots in the kill volume while the stock
+        // step-7 callback counts chamber zombie deaths. Combat remains enabled.
+        self.bot.is_origins_soul_holding = 1;
+        if(!self hasgoal("bot_origins_soul_chamber_hold"))
+            self addgoal(center.origin, 300, 1, "bot_origins_soul_chamber_hold");
+
         return true;
     }
 
@@ -1647,6 +1724,12 @@ bot_origins_shoot_blood_plane(plane, weapon)
 bot_origins_try_deploy_drone()
 {
     if(!self hasweapon("equip_dieseldrone_zm"))
+        return false;
+
+    // Only launch while the stock quest has installed its Panzer-hole or
+    // final-portal flight callback. Between these stages the drone merely
+    // follows its owner and can waste the objective item.
+    if(!isdefined(level.quadrotor_custom_behavior))
         return false;
 
     if(!isdefined(self.bot) || !isdefined(self.bot.threat) ||
@@ -1748,8 +1831,13 @@ bot_origins_robot_bullet_weapon()
         // not open it.
         if(issubstr(weapon, "staff_") || issubstr(weapon, "ray") ||
            issubstr(weapon, "boomhilda") || issubstr(weapon, "mauser_upgraded") ||
-           issubstr(weapon, "mauser_zm_upgraded") ||
+           issubstr(weapon, "mauser_zm_upgraded") || issubstr(weapon, "crossbow_explosive") ||
+           issubstr(weapon, "rpg") || issubstr(weapon, "m32") ||
+           issubstr(weapon, "china_lake") || issubstr(weapon, "ballistic") ||
            weapon == "jetgun_zm" || weapon == "slipgun_zm")
+            continue;
+
+        if(self getweaponammoclip(weapon) + self getweaponammostock(weapon) <= 0)
             continue;
 
         return weapon;
@@ -2080,6 +2168,21 @@ bot_quest_origins()
     if(isdefined(self.in_giant_robot_head))
         return;
 
+    if(flag("ee_souls_absorbed"))
+    {
+        self.bot.is_origins_soul_holding = undefined;
+        self cancelgoal("bot_origins_soul_chamber_hold");
+    }
+
+    // The chamber soul step owns this bot's movement until the native count
+    // completes; do not start individual errands while the bot is anchored.
+    if(is_true(self.bot.is_origins_soul_holding))
+    {
+        self bot_quest_origins_main_steps();
+        if(is_true(self.bot.is_origins_soul_holding))
+            return;
+    }
+
     // Deploy the assembled Maxis drone during combat. Stock quadrotor watchers
     // retain control of its AI, cooldown and return/death lifecycle.
     if(self bot_origins_try_deploy_drone())
@@ -2187,86 +2290,4 @@ bot_quest_origins()
 bot_origins_grant_shield(current_weapon)
 {
 	self scripts\zm\zm_bo2_bots::bot_grant_map_shield("tomb_shield_zm", current_weapon);
-}
-
-// Local equivalent of the stock Origins punch-tablet pickup. Keeping this
-// implementation here avoids linking the Origins-only zm_tomb_ee_main_step_6
-// module while the shared bot scripts are loaded on maps such as TranZit.
-bot_origins_spawn_punch_upgrade_tablet(v_origin, e_player)
-{
-    m_tablet = spawn("script_model", v_origin + vectorscale((0, 0, 1), 50.0));
-    m_tablet setmodel("p6_zm_tm_tablet");
-    m_fx = spawn("script_model", m_tablet.origin);
-    m_fx setmodel("tag_origin");
-    m_fx setinvisibletoall();
-    m_fx setvisibletoplayer(e_player);
-    m_tablet linkto(m_fx);
-    playfxontag(level._effect["special_glow"], m_fx, "tag_origin");
-    m_fx thread bot_origins_rotate_punch_upgrade_tablet();
-    m_tablet playloopsound("zmb_squest_punchtime_tablet_loop", 0.5);
-    m_tablet setinvisibletoall();
-    m_tablet setvisibletoplayer(e_player);
-
-    while(isdefined(e_player) && !e_player istouching(m_tablet))
-        wait 0.05;
-
-    m_tablet delete();
-    m_fx delete();
-    e_player playsound("zmb_squest_punchtime_tablet_pickup");
-
-    if(isdefined(e_player))
-    {
-        e_player thread [[ maps\mp\gametypes_zm\_hud::fadetoblackforxsec ]](0, 0.3, 0.5, 0.5, "white");
-        a_zombies = getaispeciesarray(level.zombie_team, "all");
-        knockdown_func = bot_origins_punch_func("knockdown_zombie_animate");
-
-        foreach(zombie in a_zombies)
-        {
-            if(isdefined(knockdown_func) && distance2dsquared(e_player.origin, zombie.origin) < 65536 &&
-               !is_true(zombie.is_mechz) && is_true(zombie.has_legs) &&
-               is_true(zombie.completed_emerging_into_playable_area))
-            {
-                zombie.v_punched_from = e_player.origin;
-                zombie animcustom(knockdown_func);
-            }
-        }
-
-        wait 1;
-        e_player.b_punch_upgraded = 1;
-
-        if(e_player hasweapon("staff_fire_upgraded_zm"))
-            e_player.str_punch_element = "fire";
-        else if(e_player hasweapon("staff_air_upgraded_zm"))
-            e_player.str_punch_element = "air";
-        else if(e_player hasweapon("staff_lightning_upgraded_zm"))
-            e_player.str_punch_element = "lightning";
-        else if(e_player hasweapon("staff_water_upgraded_zm"))
-            e_player.str_punch_element = "ice";
-        else
-            e_player.str_punch_element = "upgraded";
-
-        punch_attack = bot_origins_punch_func("one_inch_punch_melee_attack");
-        if(isdefined(punch_attack))
-            e_player thread [[ punch_attack ]]();
-        a_players = getplayers();
-
-        foreach(player in a_players)
-        {
-            if(!isdefined(player.b_punch_upgraded) || !player.b_punch_upgraded)
-                return;
-        }
-
-        flag_set("ee_all_players_upgraded_punch");
-    }
-}
-
-bot_origins_rotate_punch_upgrade_tablet()
-{
-    self endon("death");
-
-    while(true)
-    {
-        self rotateyaw(360, 5);
-        self waittill("rotatedone");
-    }
 }
