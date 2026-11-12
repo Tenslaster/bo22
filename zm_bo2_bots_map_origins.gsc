@@ -1177,6 +1177,15 @@ bot_quest_origins_staff_puzzles()
                 continue;
 
             now = gettime();
+
+            // If a human/other bot has already lit this torch, do not hit it
+            // again immediately: the stock flame callback owns a 15s lifetime.
+            if(isdefined(torch.e_fx) && !isdefined(torch.bot_origins_fire_torch_retry_until))
+            {
+                torch.bot_origins_fire_torch_retry_until = now + 16000;
+                continue;
+            }
+
             if(isdefined(torch.bot_origins_fire_torch_retry_until) &&
                now < torch.bot_origins_fire_torch_retry_until)
                 continue;
