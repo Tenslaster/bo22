@@ -1188,7 +1188,7 @@ bot_quest_origins_staff_puzzles()
             {
                 // A torch's stock flame expires after 15 seconds; refresh
                 // slightly before that if the puzzle has not completed.
-                torch.bot_origins_fire_torch_retry_until = gettime() + 13000;
+                torch.bot_origins_fire_torch_retry_until = gettime() + 16000;
                 did_work = true;
                 break;
             }
