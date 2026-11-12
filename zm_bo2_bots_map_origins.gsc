@@ -1845,7 +1845,7 @@ bot_quest_origins_robot_wind_parts()
        level.staff_part_count["elemental_staff_air"] <= 0)
         return false;
 
-    // Once inside, stay put so the generic craftable worker can collect the part.
+    // The stock head pickup/craftable worker owns collection after teleport.
     if(isdefined(self.in_giant_robot_head))
         return true;
 
@@ -1853,7 +1853,8 @@ bot_quest_origins_robot_wind_parts()
        gettime() < self.bot.origins_wind_robot_retry_after)
         return false;
 
-    if(!isdefined(level.a_giant_robots) || level.a_giant_robots.size == 0)
+    if(!isdefined(level.a_giant_robots) || level.a_giant_robots.size == 0 ||
+       !isdefined(level.gr_foot_hatch_closed))
         return false;
 
     best_robot = undefined;
@@ -1872,7 +1873,14 @@ bot_quest_origins_robot_wind_parts()
             continue;
 
         robot_id = robot.giant_robot_id;
-        if(!isdefined(level.gr_foot_hatch_closed[robot_id]))
+
+        // isdefined(false) is still true in GSC. Explicitly require a CLOSED
+        // hatch, otherwise bots waste the walk cycle on an already-open foot.
+        if(!isdefined(level.gr_foot_hatch_closed[robot_id]) ||
+           !level.gr_foot_hatch_closed[robot_id])
+            continue;
+
+        if(robot.hatch_foot != "left" && robot.hatch_foot != "right")
             continue;
 
         if(isdefined(robot.bot_origins_wind_owner) &&
@@ -1883,19 +1891,21 @@ bot_quest_origins_robot_wind_parts()
             continue;
 
         footprint = self bot_origins_robot_footprint(robot);
-        if(!isdefined(footprint))
+        if(!isdefined(footprint) || !isdefined(footprint.origin))
             continue;
 
-        // Stage just outside the stomp zone while shooting the moving sole.
+        // Keep the bot outside the stomp footprint. The previous 128-180 unit
+        // offsets could place it inside the robot's kill trigger while it
+        // approached the sole.
         offsets = [];
-        offsets[0] = (180, 0, 0);
-        offsets[1] = (-180, 0, 0);
-        offsets[2] = (0, 180, 0);
-        offsets[3] = (0, -180, 0);
-        offsets[4] = (128, 128, 0);
-        offsets[5] = (128, -128, 0);
-        offsets[6] = (-128, 128, 0);
-        offsets[7] = (-128, -128, 0);
+        offsets[0] = (360, 0, 0);
+        offsets[1] = (-360, 0, 0);
+        offsets[2] = (0, 360, 0);
+        offsets[3] = (0, -360, 0);
+        offsets[4] = (255, 255, 0);
+        offsets[5] = (255, -255, 0);
+        offsets[6] = (-255, 255, 0);
+        offsets[7] = (-255, -255, 0);
 
         for(offset_index = 0; offset_index < offsets.size; offset_index++)
         {
@@ -1934,13 +1944,18 @@ bot_quest_origins_robot_wind_parts()
         best_stage_origin, "bot_origins_robot_stage", 40, 9000);
 
     entered = false;
+    original_weapon = self getcurrentweapon();
 
-    if(arrived && isalive(self) && !isdefined(self.in_giant_robot_head))
+    if(arrived && isalive(self) && !isdefined(self.in_giant_robot_head) &&
+       isdefined(best_robot.is_walking) && best_robot.is_walking &&
+       isdefined(level.gr_foot_hatch_closed[robot_id]) &&
+       level.gr_foot_hatch_closed[robot_id])
     {
         sole = getent("target_sole_" + robot_id, "targetname");
 
-        if(isdefined(sole) && isdefined(sole.origin) &&
-           level.gr_foot_hatch_closed[robot_id])
+        // Shoot the live sole attached to hatch_foot (left/right), never the
+        // opposite foot or the robot body.
+        if(isdefined(sole) && isdefined(sole.origin))
         {
             bullet_weapon = self bot_origins_robot_bullet_weapon();
 
@@ -1949,16 +1964,30 @@ bot_quest_origins_robot_wind_parts()
                 self switchtoweaponimmediate(bullet_weapon);
                 wait 0.35;
 
-                // Stock only accepts damage after a robot-walk notetrack.
-                // Keep firing at the sole's live origin until the hatch opens.
                 fire_deadline = gettime() + 22000;
                 while(gettime() < fire_deadline &&
+                      isdefined(level.gr_foot_hatch_closed[robot_id]) &&
                       level.gr_foot_hatch_closed[robot_id] &&
                       isdefined(sole) && isdefined(sole.origin) &&
                       isdefined(best_robot.is_walking) && best_robot.is_walking &&
                       !isdefined(self.in_giant_robot_head) &&
                       self scripts\zm\zm_bo2_bots::bot_objective_can_run())
                 {
+                    // If the active foot closes in on the bot, stop firing and
+                    // back out before the next stomp instead of standing under it.
+                    current_footprint = self bot_origins_robot_footprint(best_robot);
+                    if(isdefined(current_footprint) &&
+                       distancesquared(self.origin, current_footprint.origin) < 280 * 280)
+                    {
+                        retreat_dir = vectornormalize(self.origin - current_footprint.origin);
+                        retreat_origin = current_footprint.origin + vectorscale(retreat_dir, 400);
+                        self clearlookat();
+                        self cancelgoal("bot_origins_robot_stage");
+                        self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+                            retreat_origin, "bot_origins_robot_retreat", 48, 4500);
+                        break;
+                    }
+
                     self lookat(sole.origin);
                     self pressattackbutton(0.12);
                     wait 0.16;
@@ -1968,34 +1997,24 @@ bot_quest_origins_robot_wind_parts()
 
         self clearlookat();
 
-        if(!level.gr_foot_hatch_closed[robot_id] &&
-           !isdefined(self.in_giant_robot_head))
+        // Enter through the actual matching stock foot trigger. A generic
+        // footprint-center goal can land beside the trigger and never teleport.
+        if(isdefined(level.gr_foot_hatch_closed[robot_id]) &&
+           !level.gr_foot_hatch_closed[robot_id] &&
+           !isdefined(self.in_giant_robot_head) &&
+           isdefined(best_robot.hatch_foot))
         {
-            // Re-evaluate the closest footprint after the robot has moved.
-            current_footprint = self bot_origins_robot_footprint(best_robot);
-            if(isdefined(current_footprint))
-            {
-                if(current_footprint != best_footprint)
-                {
-                    if(isdefined(best_footprint.bot_origins_wind_owner) &&
-                       best_footprint.bot_origins_wind_owner == self)
-                    {
-                        best_footprint.bot_origins_wind_owner = undefined;
-                        best_footprint.bot_origins_wind_owner_until = 0;
-                    }
-                    best_footprint = current_footprint;
-                    best_footprint.bot_origins_wind_owner = self;
-                    best_footprint.bot_origins_wind_owner_until = gettime() + 30000;
-                }
-            }
+            entry_trigger = getent(
+                "trig_stomp_kill_" + best_robot.hatch_foot + "_" + robot_id,
+                "targetname");
 
-            if(isdefined(best_footprint) &&
-               findpath(self.origin, best_footprint.origin, undefined, 0, 1))
+            if(isdefined(entry_trigger) && isdefined(entry_trigger.origin))
             {
-                self addgoal(best_footprint.origin, 24, 2, "bot_origins_robot_enter");
                 entry_deadline = gettime() + 18000;
+                next_goal_refresh = 0;
 
-                while(gettime() < entry_deadline && isalive(self))
+                while(gettime() < entry_deadline && isalive(self) &&
+                      !isdefined(self.in_giant_robot_head))
                 {
                     if(isdefined(self.in_giant_robot_head) &&
                        self.in_giant_robot_head == robot_id)
@@ -2004,8 +2023,21 @@ bot_quest_origins_robot_wind_parts()
                         break;
                     }
 
-                    if(!isdefined(best_robot.is_walking) || !best_robot.is_walking)
+                    if(!isdefined(best_robot.is_walking) || !best_robot.is_walking ||
+                       !isdefined(level.gr_foot_hatch_closed[robot_id]) ||
+                       level.gr_foot_hatch_closed[robot_id])
                         break;
+
+                    // The trigger is linked to the moving foot. Refresh the
+                    // goal so the bot follows its current position, not an old
+                    // footprint coordinate from before the hatch opened.
+                    if(gettime() >= next_goal_refresh &&
+                       isdefined(entry_trigger.origin))
+                    {
+                        self cancelgoal("bot_origins_robot_enter");
+                        self addgoal(entry_trigger.origin, 8, 2, "bot_origins_robot_enter");
+                        next_goal_refresh = gettime() + 350;
+                    }
 
                     wait 0.1;
                 }
@@ -2013,25 +2045,29 @@ bot_quest_origins_robot_wind_parts()
                 self cancelgoal("bot_origins_robot_enter");
             }
         }
-        else if(isdefined(self.in_giant_robot_head) &&
-                self.in_giant_robot_head == robot_id)
-            entered = true;
     }
 
     self clearlookat();
+    self cancelgoal("bot_origins_robot_stage");
+    self cancelgoal("bot_origins_robot_retreat");
     self.bot.is_objective_using = undefined;
+
+    if(isdefined(original_weapon) && original_weapon != "none" &&
+       self hasweapon(original_weapon) && isalive(self) &&
+       self getcurrentweapon() != original_weapon)
+        self switchtoweaponimmediate(original_weapon);
 
     if(entered || (isdefined(self.in_giant_robot_head) &&
                    self.in_giant_robot_head == robot_id))
     {
-        // Keep this robot reserved during the stock in-head collection/eject.
+        // Hold the claim through the native in-head part pickup/eject sequence.
         self bot_origins_release_robot_wind_claim(best_robot, best_footprint, 1);
         self.bot.origins_wind_robot_retry_after = gettime() + 30000;
         return true;
     }
 
     self bot_origins_release_robot_wind_claim(best_robot, best_footprint, 0);
-    self.bot.origins_wind_robot_retry_after = gettime() + 5000;
+    self.bot.origins_wind_robot_retry_after = gettime() + 2500;
     return false;
 }
 
