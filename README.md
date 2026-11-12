@@ -178,50 +178,62 @@ The shared craftable system and Origins-specific objective code work together to
 - Bots can collect an upgraded staff when its pickup trigger is available.
 - When all upgraded staffs are ready, bots can place the correct staff into its matching robot-head plinth.
 
-### Crazy Place and staff puzzles
+### Crazy Place and elemental staff puzzles
 
-The module handles the shared gramophone/portal sequence and several staff-specific puzzle interactions.
+The Origins worker coordinates the shared gramophone and portal system, then selects the portal required by the unfinished staff objective. It uses the real portal pads and stock quest state rather than treating a successful use-button press as proof that the bot has arrived.
 
-- Find and use the required portal to enter the Crazy Place.
-- Move the gramophone to the correct elemental portal when an unfinished staff puzzle needs the chamber.
-- Use the corresponding elemental staff for its puzzle:
-  - **Wind Staff:** ceiling-ring and detector/smoke-direction steps.
-  - **Ice Staff:** matching ceiling-tile values and the freeze/break stone sequence.
-  - **Lightning Staff:** play the required piano-key chord sequence and route the relay connections.
-  - **Fire Staff:** occupy the sacrifice areas and ignite the correct church torches.
-- The module also handles the crypt gem sequence: shoot the matching gem, rotate the outer discs to the required positions, guide the orb out of the Crazy Place, and charge it at its matching plinth with the correct staff.
+The supported staff puzzle interactions are:
 
-The script checks puzzle flags and current values rather than assuming a puzzle is complete after one interaction.
+| Staff | Puzzle work handled by the bot |
+|---|---|
+| **Wind** | Rotate each ceiling ring to its live target orientation and aim the staff through the smoke detectors toward the destination marker. |
+| **Ice** | Read the current gem value, shoot the matching ceiling tile, then freeze each stone with the Water Staff and shatter it with a normal bullet weapon. |
+| **Lightning** | Play the three piano chords in the stock order, then rotate the relay switches according to the live connection graph. |
+| **Fire** | Keep the chamber sacrifice areas occupied while normal zombie kills feed the stock counter; ignite the correct church torches for the second puzzle. |
 
-### Robot and Wind Staff part
+The crypt sequence is handled separately because its moving orb and rotating discs have their own stock state machine:
 
-For the robot-related Wind Staff part, bots can:
+1. Shoot the gem with its matching elemental staff.
+2. Rotate the outer discs until the live alignment requirement is satisfied.
+3. Look at the correct exit-path start so the stock orb can leave the Crazy Place.
+4. Find the orb model at its final crypt plinth and charge it with the same elemental staff.
 
-1. Identify a walking giant robot with an available foot hatch.
-2. Find a suitable staging point near the matching robot footprint.
-3. Shoot the live sole target with a normal bullet weapon while the robot is in the required walking state.
-4. Wait for the stock hatch state to open.
-5. Move onto the matching footprint so the game's stomp interaction can take the bot into the robot.
-6. Allow the stock in-head part interaction to complete.
+The worker waits for the stock rotation lock and keeps a short-lived ownership claim while the orb sequence is running. It checks the real upgrade flag before releasing the puzzle.
 
-This is a timing-sensitive task. The correct robot, foot, hatch state, and footprint must line up.
+### Giant robots and the Wind Staff part
+
+The robot routine is deliberately conservative because a mistimed approach can put a bot beneath a moving foot.
+
+1. It selects a walking robot whose hatch state is explicitly marked closed and whose matching left/right foot is valid.
+2. It reserves that robot and its matching footprint so multiple bots do not all chase the same entry.
+3. It stages outside the footprint, using a wider approach offset rather than standing directly beside the sole.
+4. It aims at the live sole attached to the robot's actual hatch foot and uses a normal bullet weapon. It does not intentionally shoot the opposite foot or the robot body.
+5. It watches the live hatch state. If the moving footprint gets too close, the bot cancels the approach and retreats.
+6. Once the stock hatch opens, it follows the matching `trig_stomp_kill_<foot>_<robot>` trigger as it moves.
+7. It only considers entry successful after the game reports that the bot has been teleported into that same robot head.
+
+After entry, the stock in-head pickup/craftable logic remains responsible for collecting the Wind Staff part. The robot routine does not manually award the part or fake a quest flag.
+
+**Timing note:** robot walking cycles, hatch state, trigger registration, navigation, and the live foot position all affect this task. The extra spacing and retreat check reduce avoidable stomps; they cannot guarantee survival in every robot cycle.
 
 ### Main Easter Egg progression
 
-The main Origins worker includes several progression tasks:
+The main quest worker contains support for the later Little Lost Girl stages:
 
-- Activate the fire-link interaction during the relevant three-robot round and use the Beacon during its valid window.
-- Engage the Zombie Blood biplane only while the bot has Zombie Blood active. The plane is a moving vehicle, so the worker aims at its live position rather than trying to pathfind to it.
-- Retrieve the Maxis Drone from its actual pickup trigger once the plane event has made it available.
-- Deploy an assembled Maxis Drone during combat when the drone's stock cooldown and watcher conditions allow it.
-- Use the One Inch Punch in the Crazy Place to collect the required souls and handle the player-specific tablet state.
-- Stay in the chamber while the stock soul counter progresses toward the portal requirement.
-- Enter the chamber and use the final portal when the corresponding stock quest state is ready.
+- **Robot-button stage:** use an actual fire-link button during the required three-robot round, then damage the floor target with the Beacon while its stock window is valid.
+- **Zombie Blood plane:** wait until Zombie Blood is active, then shoot the moving biplane using its current position. The bot does not waste shots before the power-up condition is met.
+- **Maxis Drone pickup:** approach the pilot's real quadrotor pickup and let the stock callback set the retrieved state.
+- **Drone flight stages:** deploy only while the map has installed the relevant stock flight callback. The bot moves into the route's launch area before consuming the drone, and the stock drone AI follows the Panzer-hole or final-portal route.
+- **One Inch Punch:** use the base punch against eligible Crazy Place zombies until the bot earns its own 20-soul count. Each player must collect their own stock tablet; the bot code no longer creates substitute tablets for teammates.
+- **Portal souls:** keep the bot anchored inside the Crazy Place while the native step-7 kill callback counts the required zombie deaths. The chamber anchor pauses ordinary wandering and unrelated errands without intentionally turning off the combat worker.
+- **Final release:** once the stock portal and drone conditions are complete, approach and activate the real final portal trigger.
+
+These steps depend on each preceding stock quest stage. The bot worker does not directly set the main Easter Egg completion flags.
 
 ### Shield and map equipment
 
 - The generic buildable/craftable workers handle available parts and crafting stations.
-- Origins has a dedicated shield grant helper that equips the native `tomb_shield_zm` weapon.
+- The map module exposes the native `tomb_shield_zm` shield grant helper.
 - The shared bot system also synchronises shield state and avoids interrupting another task while a bot is acquiring its shield.
 
 ### Origins mod-menu tools
@@ -241,6 +253,19 @@ The Origins menu currently includes:
 - Turn on all generators.
 - Ignore mud slowdown.
 - Host-only Little Lost Girl completion option. **This option can end the match.**
+
+### Recent Origins reliability work
+
+The latest source-level pass concentrated on progression failures that can look like successful actions but leave the stock quest unchanged:
+
+- Explicitly check that a robot hatch is closed before selecting its foot.
+- Refresh the matching moving-foot trigger while the robot walks, and verify the correct robot-head teleport.
+- Use the orb's final plinth position for the crypt charge phase and wait for disc rotation to finish.
+- Avoid repeatedly firing at a church torch that is already lit; retry after the stock flame window.
+- Use an ordinary bullet weapon with available ammunition to break the frozen Ice Staff stones.
+- Wait for the stock drone route callback and correct launch area before deploying the Maxis Drone.
+- Remove the custom tablet-spawning workaround so each player must earn and pick up their own stock One Inch Punch tablet.
+- Keep bots inside the Crazy Place during the portal-soul stage while their normal combat logic remains available.
 
 **Important:** Origins is a multi-stage quest. Some steps require a specific staff, part, round, weather state, robot movement window, Zombie Blood, or stock trigger to be active. Treat the module as automated assistance for supported steps, not as a guarantee of a completely hands-free Easter Egg.
 
@@ -708,9 +733,9 @@ On GitHub, click **Code → Download ZIP** and extract the archive.
 
 Repository: [github.com/Tenslaster/bo22](https://github.com/Tenslaster/bo22)
 
-### Step 3 — Copy all nine GSC files
+### Step 3 — Copy the eight core GSC files and optional menu
 
-Copy the nine files below into the `scripts\zm` directory. Do not rename them.
+Copy the eight core bot files and optional menu shown below into the `scripts\zm` directory. Do not rename them.
 
 ```text
 %localappdata%\
@@ -730,9 +755,9 @@ Copy the nine files below into the `scripts\zm` directory. Do not rename them.
                     └── zm_modmenu.gsc
 ```
 
-**Do not install only `zm_bo2_bots.gsc`.** The main bot script calls the combat and map modules. All companion files must be in the same folder and should come from the same repository revision.
+**Do not install only `zm_bo2_bots.gsc`.** The main bot script depends on the combat file and all six map modules. Those eight core files must be in the same folder and should come from the same repository revision.
 
-`zm_modmenu.gsc` is optional if you only want the bots, but it is required for the in-game menu.
+`zm_modmenu.gsc` is optional for bot-only use and required for the in-game menu.
 
 ### Step 4 — Start the game
 
@@ -799,7 +824,9 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 
 ---
 
-## Known limitations and behaviour notes
+## Validation status and known limitations
+
+The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step.
 
 - Map objectives are conditional. If a required weapon, item, part, trigger, round, weather condition, or quest stage is missing, the bot may wait or skip that objective.
 - A bot may need a reachable navigation path. A task can fail if a player blocks the route, the bot is trapped, or the map geometry prevents pathfinding.
@@ -807,7 +834,9 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 - The host-only menu actions are intentionally unavailable to clients without host permissions.
 - The menu's **Complete Little Lost Girl** option requests the ending sequence and can finish the match.
 - The project uses stock game callbacks where possible. If a stock function is not available in the loaded Plutonium build or map, the compiler can report an unresolved external or the action can be unavailable.
-- GSC gameplay and compilation have to be validated in the actual target game. A GitHub commit alone does not prove that a script compiles or that an objective works in every match.
+- GSC gameplay and compilation have to be validated in the actual target game. Static checks can catch structural problems but cannot prove that every engine call, trigger, animation, or quest stage works at runtime.
+- Origins tasks involving robot feet, moving drone routes, crypt orbs, and player-specific tablets are especially sensitive to live entity timing and should be tested in an actual match.
+- A GitHub commit alone does not prove that a script compiles or that an objective works in every match.
 
 ---
 
@@ -816,7 +845,7 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 ### Bots do not spawn
 
 1. Confirm that `zm_bo2_bots.gsc` is in `storage\t6\scripts\zm\`.
-2. Confirm that the combat file and all six map files are in the same folder.
+2. Confirm that the combat file and all six map files are in the same folder; these eight core files are required.
 3. Check that `zm_bots` is not set to `0`.
 4. Restart the Zombies match after copying the files.
 5. Check the Plutonium console for the first GSC error.
@@ -845,6 +874,20 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 ### I can only see part of the mod menu
 
 The current menu is configured for **eight visible option rows**. Longer submenus still scroll. If the menu only renders fewer rows, confirm that you copied the latest `zm_modmenu.gsc` and restarted the match.
+
+### Origins robot-foot or Wind Staff part does not progress
+
+- Check that a giant robot is walking and has a closed hatch on the matching foot.
+- Confirm that the bot has a normal bullet weapon with ammunition.
+- Watch whether the bot reaches the outer staging area, shoots the sole, retreats, or follows the opened-foot trigger.
+- If the hatch opens but the bot is not teleported into the robot head, capture the robot ID/foot and the bot's position when it misses the trigger.
+
+### Origins crypt orb or staff puzzle does not progress
+
+- Confirm that the corresponding staff is equipped and the correct puzzle stage has started.
+- For crypt gems, report which element is being charged and whether the orb has reached its final plinth.
+- For the Fire Staff torches, check whether the correct torch is already burning or has gone out before the retry.
+- Include the current round and any visible stock quest flag/state if available.
 
 ### A map objective does not progress
 
@@ -888,6 +931,8 @@ To keep the project maintainable:
 - Prefer the stock trigger, callback, and interaction flow over manually setting quest-completion flags.
 - Preserve the existing task workers when changing one objective; avoid broad text replacements that remove unrelated bot behaviour.
 - Test each change on the map that loads the edited module.
+- For Origins, test each stage independently: robot hatch/entry, all four staff puzzles, crypt orb charge, Maxis Drone route, individual punch tablet, chamber soul hold, and final portal.
+- Record compiler output separately from runtime behaviour; a script that parses can still fail when a stock trigger or entity appears in a different state.
 
 ## Reporting a bug
 
