@@ -52,15 +52,6 @@ bot_combat_think(damage, attacker, direction)
 	if(is_true(self.bot.is_objective_using))
 		self bot_combat_clear_movement();
 
-	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade))
-	{
-		self bot_combat_clear_movement();
-		self allowattack(0);
-		self pressads(0);
-		
-		return;
-	}
-	
 	self allowattack(0);
 	self pressads(0);
 	
@@ -84,6 +75,11 @@ bot_combat_think(damage, attacker, direction)
 	
 	self bot_track_damage(damage);
 	self bot_update_situation();
+
+	// A bot must not die trying to revive someone. Abort only under immediate
+	// danger; otherwise it completes the revive normally.
+	if(is_true(self.bot.is_reviving) && self bot_should_abort_revive())
+		self bot_abort_revive();
 	
 	if(!self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_flee(damage))
 	{
@@ -109,6 +105,16 @@ bot_combat_think(damage, attacker, direction)
 	// Not in flee territory yet, but a zombie is in my face: back up while shooting.
 	if(!self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_kite())
 		self bot_flee_goal(true);
+
+	// These actions keep their own input/aim, but emergency threat tracking and
+	// fleeing above remain active while the animation or interaction is running.
+	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade) ||
+	   is_true(self.bot.is_reviving))
+	{
+		self allowattack(0);
+		self pressads(0);
+		return;
+	}
 	
 	if(self getcurrentweapon() == "none")
 		return;
@@ -551,6 +557,57 @@ bot_flee_blocked()
 		return true;
 	
 	return false;
+}
+
+bot_should_abort_revive()
+{
+	hp = self bot_health_fraction();
+	maxhp = self.maxhealth;
+	if(!isdefined(maxhp) || maxhp <= 0)
+		maxhp = 100;
+
+	// Break a revive before it becomes a guaranteed trade: point-blank threats,
+	// a fast attacker, a crowd, or serious damage while zombies are close.
+	if(isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 120)
+		return true;
+
+	if(isdefined(self.bot.fast_close) && self.bot.fast_close > 0 &&
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 220)
+		return true;
+
+	if(isdefined(self.bot.close_count) && self.bot.close_count >= 4)
+		return true;
+
+	if(hp <= 0.40 && isdefined(self.bot.nearest_dist) &&
+	   self.bot.nearest_dist <= 360)
+		return true;
+
+	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent >= maxhp * 0.24 &&
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 360)
+		return true;
+
+	return false;
+}
+
+bot_abort_revive()
+{
+	teammate = self.bot.revive_target;
+
+	if(isdefined(teammate))
+	{
+		teammate.being_revived = false;
+		self.bot.revive_abort_target = teammate;
+		self.bot.revive_abort_until = gettime() + 4000;
+	}
+
+	self.bot.is_reviving = false;
+	self.bot.revive_target = undefined;
+	self.bot.revive_last_dist = undefined;
+	self.bot.revive_claim_blocked_until = gettime() + 1500;
+
+	self cancelgoal("revive");
+	self notify("bot_revive_abort");
+	self clearlookat();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2093,7 +2150,7 @@ bot_can_do_combat()
 		return 0;
 	}
 	
-	if(is_true(self.bot.is_throwing_grenade) || is_true(self.bot.is_getting_shield) || is_true(self.bot.is_grabbing_box) || is_true(self.bot.is_reviving) || is_true(self.bot.is_selfreviving))
+	if(is_true(self.bot.is_grabbing_box) || is_true(self.bot.is_selfreviving))
 	{
 		return 0;
 	}
