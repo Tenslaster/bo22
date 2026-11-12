@@ -1732,9 +1732,23 @@ bot_origins_try_deploy_drone()
     if(!isdefined(level.quadrotor_custom_behavior))
         return false;
 
-    if(!isdefined(self.bot) || !isdefined(self.bot.threat) ||
-       !isdefined(self.bot.threat.entity) || !isalive(self.bot.threat.entity))
+    // The stock behavior starts its route only when the drone is within
+    // 500 units of the route's first node. Bring the bot into that launch
+    // radius before consuming the drone item.
+    route_start = undefined;
+    if(flag("ee_maxis_drone_retrieved"))
+        route_start = getstruct("maxis_portal_path", "targetname");
+    else
+        route_start = getstruct("ee_mech_hole_goal_0", "targetname");
+
+    if(!isdefined(route_start) || !isdefined(route_start.origin))
         return false;
+
+    if(distancesquared(self.origin, route_start.origin) > 360 * 360)
+    {
+        return self scripts\zm\zm_bo2_bots::bot_quest_move_to(
+            route_start.origin, "bot_origins_drone_launch_position", 360, 15000);
+    }
 
     if(!self isonground() || self isonladder() || self ismantling() ||
        self isreloading() || self isswitchingweapons() || self isthrowinggrenade())
