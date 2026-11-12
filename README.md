@@ -36,7 +36,7 @@ A modular **GSC scripting project for Call of Duty: Black Ops II Zombies on Plut
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Repository files](#repository-files)
-- [Known limitations](#known-limitations)
+- [Validation status and known limitations](#validation-status-and-known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Reporting a bug](#reporting-a-bug)
 
