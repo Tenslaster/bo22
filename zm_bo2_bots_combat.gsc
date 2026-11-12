@@ -1067,6 +1067,7 @@ bot_combat_update_movement()
 	    (level.bot_command_mode == "follow" || level.bot_command_mode == "stay")) ||
 	   is_true(self.bot.is_objective_using) ||
 	   is_true(self.bot.is_holding_generator) ||
+	   is_true(self.bot.is_origins_soul_holding) ||
 	   is_true(self.bot.is_parkouring) ||
 	   is_true(self.bot.is_building) ||
 	   is_true(self.bot.is_crafting) ||
