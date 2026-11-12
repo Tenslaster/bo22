@@ -46,15 +46,11 @@
 
 bot_combat_think(damage, attacker, direction)
 {
-	// Map objectives control aim and attack input while this lock is active.
-	// Do not let normal combat AI take over during robot entry or other quests.
+	// Objective movement remains locked, but quest workers must still react to
+	// nearby zombies, update danger, and choose an emergency flee route.
+	// bot_combat_lookat() preserves any aim required by the active interaction.
 	if(is_true(self.bot.is_objective_using))
-	{
 		self bot_combat_clear_movement();
-		self allowattack(0);
-		self pressads(0);
-		return;
-	}
 
 	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade))
 	{
@@ -898,7 +894,11 @@ bot_combat_main()
 {
 	self bot_update_situation();
 
-	if(self bot_should_melee())
+	objective_lock = is_true(self.bot.is_objective_using);
+
+	// Melee, grenades, and weapon swaps can interrupt a scripted quest action
+	// or replace the weapon it needs. Keep those disabled during the interaction.
+	if(!objective_lock && self bot_should_melee())
 	{
 		self bot_combat_clear_movement();
 
@@ -908,7 +908,7 @@ bot_combat_main()
 		return;
 	}
 	
-    if(self bot_should_throw_grenade())
+    if(!objective_lock && self bot_should_throw_grenade())
     {
 		self bot_combat_clear_movement();
 
@@ -921,7 +921,7 @@ bot_combat_main()
 	weapon = self getcurrentweapon();
 	
 	// Never stand around with an empty / dangerous weapon when a better one is in the holster.
-	if(self bot_combat_try_weapon_swap(weapon))
+	if(!objective_lock && self bot_combat_try_weapon_swap(weapon))
 		return;
 	
 	if(self isswitchingweapons())
@@ -2086,9 +2086,8 @@ bot_dot_product(origin)
 
 bot_can_do_combat()
 {
-	if(is_true(self.bot.is_objective_using))
-		return 0;
-
+	// Objective tasks own movement and may own aim, but never disable the
+	// bot's threat tracking, defensive fire, or emergency escape handling.
 	if(self ismantling() || self isonladder())
 	{
 		return 0;
