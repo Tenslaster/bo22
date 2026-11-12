@@ -2087,6 +2087,21 @@ bot_revive_teammates()
         if(!isdefined(teammate))
             return;
 
+        // Do not immediately retry the same teammate after abandoning a revive
+        // to escape a dangerous horde. Other downed teammates remain eligible.
+        if(isdefined(self.bot.revive_abort_target))
+        {
+            if(gettime() < self.bot.revive_abort_until &&
+               self.bot.revive_abort_target == teammate)
+                return;
+
+            if(gettime() >= self.bot.revive_abort_until)
+            {
+                self.bot.revive_abort_target = undefined;
+                self.bot.revive_abort_until = undefined;
+            }
+        }
+
         if(isdefined(self.bot.revive_claim_blocked_until) && gettime() < self.bot.revive_claim_blocked_until)
 		{
 			if(distancesquared(self.origin, teammate.origin) < 160000)
@@ -2195,6 +2210,7 @@ bot_simulate_revive(teammate)
 {
     self endon("disconnect");
 	self endon("death");
+	self endon("bot_revive_abort");
 	
 	level endon("end_game");
     
