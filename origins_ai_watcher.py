@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -640,7 +640,7 @@ GAME_PROCESS_EXACT = {
     "t6rzm.exe",
     "t6rmp.exe",
 }
-GAME_TITLE_HINTS = ("black ops", "blackops", "t6 zombies", "t6zm", "bo2")
+GAME_TITLE_HINTS = ("black ops", "blackops", "t6 zombies", "t6zm")
 
 
 def _is_game_process(process_name: str) -> bool:
@@ -653,7 +653,8 @@ def _is_game_process(process_name: str) -> bool:
 
 def _is_game_title(title: str) -> bool:
     lowered = (title or "").lower()
-    # The watcher window itself contains "BO22"; never capture our own UI.
+    # Do not use the generic text "bo2": GitHub/browser tabs for this repo
+    # contain "bo22" and can otherwise be mistaken for the game window.
     if "origins ai watcher" in lowered:
         return False
     return any(hint in lowered for hint in GAME_TITLE_HINTS)
