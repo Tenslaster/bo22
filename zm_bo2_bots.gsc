@@ -343,11 +343,30 @@ bot_ai_telemetry_tick()
     ee_air_upgrade_unlocked = -1;
     ee_water_upgrade_unlocked = -1;
     ee_lightning_upgrade_unlocked = -1;
+    ee_air_puzzle_1_complete = -1;
+    ee_air_puzzle_2_complete = -1;
+    ee_ice_puzzle_1_complete = -1;
+    ee_ice_puzzle_2_complete = -1;
+    ee_electric_puzzle_1_complete = -1;
+    ee_electric_puzzle_2_complete = -1;
+    ee_fire_puzzle_1_complete = -1;
+    ee_fire_puzzle_2_complete = -1;
+    ee_chamber_entrance_opened = -1;
+    ee_three_robot_round = -1;
+    ee_maxis_drone_retrieved = -1;
+    ee_sam_portal_active = -1;
     has_staff_air = 0;
     has_staff_water = 0;
     has_staff_lightning = 0;
     has_staff_fire = 0;
+    bot_on_tank = 0;
+    tank_moving = -1;
+    tank_cooldown = -1;
+    tank_location = "unknown";
     robot_id = -1;
+
+    if(isdefined(self.b_already_on_tank) && self.b_already_on_tank)
+        bot_on_tank = 1;
     if(isdefined(self.in_giant_robot_head))
         robot_id = self.in_giant_robot_head;
 
@@ -367,6 +386,34 @@ bot_ai_telemetry_tick()
         ee_air_upgrade_unlocked = flag("staff_air_zm_upgrade_unlocked");
         ee_water_upgrade_unlocked = flag("staff_water_zm_upgrade_unlocked");
         ee_lightning_upgrade_unlocked = flag("staff_lightning_zm_upgrade_unlocked");
+        ee_air_puzzle_1_complete = flag("air_puzzle_1_complete");
+        ee_air_puzzle_2_complete = flag("air_puzzle_2_complete");
+        ee_ice_puzzle_1_complete = flag("ice_puzzle_1_complete");
+        ee_ice_puzzle_2_complete = flag("ice_puzzle_2_complete");
+        ee_electric_puzzle_1_complete = flag("electric_puzzle_1_complete");
+        ee_electric_puzzle_2_complete = flag("electric_puzzle_2_complete");
+        ee_fire_puzzle_1_complete = flag("fire_puzzle_1_complete");
+        ee_fire_puzzle_2_complete = flag("fire_puzzle_2_complete");
+        ee_chamber_entrance_opened = flag("chamber_entrance_opened");
+        ee_three_robot_round = flag("three_robot_round");
+        ee_maxis_drone_retrieved = flag("ee_maxis_drone_retrieved");
+        ee_sam_portal_active = flag("ee_sam_portal_active");
+
+        // Stock Origins tank fields are observational only. BO22 does not yet
+        // have a player-side boarding/riding controller for its bot clients.
+        if(isdefined(level.vh_tank))
+        {
+            if(level.vh_tank ent_flag("tank_moving"))
+                tank_moving = 1;
+            else
+                tank_moving = 0;
+            if(level.vh_tank ent_flag("tank_cooldown"))
+                tank_cooldown = 1;
+            else
+                tank_cooldown = 0;
+            if(isdefined(level.vh_tank.str_location_current))
+                tank_location = level.vh_tank.str_location_current;
+        }
     }
 
     is_objective_using = 0;
@@ -407,7 +454,23 @@ bot_ai_telemetry_tick()
         "|has_staff_water=" + has_staff_water +
         "|has_staff_lightning=" + has_staff_lightning +
         "|has_staff_fire=" + has_staff_fire +
+        "|bot_on_tank=" + bot_on_tank +
+        "|tank_moving=" + tank_moving +
+        "|tank_cooldown=" + tank_cooldown +
+        "|tank_location=" + tank_location +
         "|ee_souls_absorbed=" + ee_souls_absorbed +
+        "|ee_air_puzzle_1_complete=" + ee_air_puzzle_1_complete +
+        "|ee_air_puzzle_2_complete=" + ee_air_puzzle_2_complete +
+        "|ee_ice_puzzle_1_complete=" + ee_ice_puzzle_1_complete +
+        "|ee_ice_puzzle_2_complete=" + ee_ice_puzzle_2_complete +
+        "|ee_electric_puzzle_1_complete=" + ee_electric_puzzle_1_complete +
+        "|ee_electric_puzzle_2_complete=" + ee_electric_puzzle_2_complete +
+        "|ee_fire_puzzle_1_complete=" + ee_fire_puzzle_1_complete +
+        "|ee_fire_puzzle_2_complete=" + ee_fire_puzzle_2_complete +
+        "|ee_chamber_entrance_opened=" + ee_chamber_entrance_opened +
+        "|ee_three_robot_round=" + ee_three_robot_round +
+        "|ee_maxis_drone_retrieved=" + ee_maxis_drone_retrieved +
+        "|ee_sam_portal_active=" + ee_sam_portal_active +
         "|ee_air_upgrade_unlocked=" + ee_air_upgrade_unlocked +
         "|ee_water_upgrade_unlocked=" + ee_water_upgrade_unlocked +
         "|ee_lightning_upgrade_unlocked=" + ee_lightning_upgrade_unlocked +
