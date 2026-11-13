@@ -3333,7 +3333,7 @@ MM_OriginsStaffGuideLoop()
         // Keep the 5-line staff overview visible and page the detailed
         // puzzle instructions in short groups. The world markers above are
         // not paged: they remain live and visible on every page.
-        guideLines = strtok(guideText, "\\n");
+        guideLines = strtok(guideText, "\n");
         summaryLineCount = 5;
         detailLinesPerPage = 4;
         detailCount = guideLines.size - summaryLineCount;
@@ -3359,7 +3359,7 @@ MM_OriginsStaffGuideLoop()
         for(lineIndex = 0; lineIndex < summaryLineCount && lineIndex < guideLines.size; lineIndex++)
         {
             if(displayText != "")
-                displayText += "\\n";
+                displayText += "\n";
             displayText += guideLines[lineIndex];
         }
 
@@ -3367,11 +3367,11 @@ MM_OriginsStaffGuideLoop()
         for(lineIndex = pageStart; lineIndex < pageStart + detailLinesPerPage && lineIndex < guideLines.size; lineIndex++)
         {
             if(displayText != "")
-                displayText += "\\n";
+                displayText += "\n";
             displayText += guideLines[lineIndex];
         }
 
-        displayText += "\\n^7[GUIDE " + (pageIndex + 1) + "/" + pageCount + "]";
+        displayText += "\n^7[GUIDE " + (pageIndex + 1) + "/" + pageCount + "]";
         hud setText(displayText);
 
         pageTimer += 0.25;
