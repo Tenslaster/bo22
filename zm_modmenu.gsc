@@ -6,8 +6,6 @@
 //  Controls (menu open)  :  Action Slot 1 / 2 ...... scroll up / down
 //                           JUMP .................... select
 //                           MELEE ................... back / close
-//  Spectator (any time)  :  G (bind g "+actionslot 3" once) enter / leave
-//                           (also in Personal Mods)
 //
 //  Maps: TranZit / Nuketown / Die Rise / Mob of the Dead / Buried / Origins
 //  Perk actions include physical vending machines and each map's registered
@@ -59,7 +57,7 @@ MM_OnPlayerSpawned()
             if(firstSpawn)
             {
                 self iprintlnbold("^2ULTIMATE ZM MENU LOADED");
-                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots | G: spectator");
+                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots");
                 firstSpawn = false;
             }
         }
@@ -423,52 +421,6 @@ MM_InputListener(cmd, action)
     }
 }
 
-MM_SpectatorKeyListener()
-{
-    self endon("disconnect");
-    self endon("stop_menu_input");
-
-    for(;;)
-    {
-        self waittill("mm_spec");
-
-        // Slot 3 is not used by the menu, but ignore it while the menu is open.
-        if(isDefined(self.menuOpen) && self.menuOpen)
-            continue;
-
-        if(self MM_Gate("spec", 500))
-            self thread ToggleSpectator();
-    }
-}
-
-MM_SpectatorMovementInput()
-{
-    self endon("disconnect");
-    self endon("mm_stop_spectate");
-
-    for(;;)
-    {
-        command = self waittill_any_array_return(array("mm_spec_forward_down", "mm_spec_forward_up", "mm_spec_back_down", "mm_spec_back_up", "mm_spec_left_down", "mm_spec_left_up", "mm_spec_right_down", "mm_spec_right_up"));
-
-        if(command == "mm_spec_forward_down")
-            self.mmSpecForward = true;
-        else if(command == "mm_spec_forward_up")
-            self.mmSpecForward = false;
-        else if(command == "mm_spec_back_down")
-            self.mmSpecBack = true;
-        else if(command == "mm_spec_back_up")
-            self.mmSpecBack = false;
-        else if(command == "mm_spec_left_down")
-            self.mmSpecLeft = true;
-        else if(command == "mm_spec_left_up")
-            self.mmSpecLeft = false;
-        else if(command == "mm_spec_right_down")
-            self.mmSpecRight = true;
-        else if(command == "mm_spec_right_up")
-            self.mmSpecRight = false;
-    }
-}
-
 MenuInput()
 {
     self endon("disconnect");
@@ -486,20 +438,6 @@ MenuInput()
     self thread MM_InputListener("mm_down", "down");
     self thread MM_InputListener("mm_select", "select");
     self thread MM_InputListener("mm_back", "back");
-
-    // Spectator hotkey (bind g "+actionslot 3" in the console once).
-    self notifyOnPlayerCommand("mm_spec", "+actionslot 3");
-    self thread MM_SpectatorKeyListener();
-
-    // Track held movement commands so free-camera movement also works with keyboard WASD.
-    self notifyOnPlayerCommand("mm_spec_forward_down", "+forward");
-    self notifyOnPlayerCommand("mm_spec_forward_up", "-forward");
-    self notifyOnPlayerCommand("mm_spec_back_down", "+back");
-    self notifyOnPlayerCommand("mm_spec_back_up", "-back");
-    self notifyOnPlayerCommand("mm_spec_left_down", "+moveleft");
-    self notifyOnPlayerCommand("mm_spec_left_up", "-moveleft");
-    self notifyOnPlayerCommand("mm_spec_right_down", "+moveright");
-    self notifyOnPlayerCommand("mm_spec_right_up", "-moveright");
 
     // The loop below is the fallback (and handles hold-to-repeat scrolling).
     upSince = 0;
@@ -699,8 +637,6 @@ BuildMenuStructure()
     // --- PERSONAL ---
     self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
     self addToggleOpt("personal", "Noclip", ::ToggleNoclip, "noclip");
-    self addToggleOpt("personal", "Spectator Mode (Free Cam)", ::ToggleSpectator, "spectate");
-    self addMenuOpt("personal", "Leave Spectator At Camera", ::SpectatorExitHere);
     self addToggleOpt("personal", "Jetpack (Hold Jump)", ::ToggleJetpack, "jetpack");
     self addToggleOpt("personal", "Super Jump", ::ToggleSuperJump, "superjump");
     self addToggleOpt("personal", "Auto-Bhop", ::ToggleBhop, "bhop");
@@ -1395,7 +1331,6 @@ MM_KillPlayer(p)
         p.mmToggle = [];
     p.mmToggle["god"] = false;
     p.mmToggle["noclip"] = false;
-    p MM_SpectatorExit(true);
 
     p disableInvulnerability();
     p unlink();
@@ -1518,149 +1453,6 @@ MM_NoclipCleanup(obj)
     self waittill_any("disconnect", "mm_stop_noclip");
     if(isDefined(obj))
         obj delete();
-}
-
-// ---- Spectator (free cam) ----
-// Hides you, makes you untouchable and detaches the camera so you can fly
-// anywhere. Leaving puts you back where you started (or at the camera).
-// Fly with the move stick, Jump = up, Frag = down, Attack = fast.
-
-ToggleSpectator()
-{
-    if(self MM_IsOn("spectate"))
-        self MM_SpectatorExit(false);
-    else
-        self MM_SpectatorEnter();
-}
-
-SpectatorExitHere()
-{
-    if(!self MM_IsOn("spectate"))
-    {
-        self iprintln("^3You are not spectating.");
-        return;
-    }
-    self MM_SpectatorExit(true);
-}
-
-MM_SpectatorEnter()
-{
-    if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
-    {
-        self iprintln("^1Cannot spectate while downed.");
-        return;
-    }
-
-    // Noclip and spectator both link the player, so only one at a time.
-    if(self MM_IsOn("noclip"))
-    {
-        self.mmToggle["noclip"] = false;
-        self notify("mm_stop_noclip");
-        self unlink();
-    }
-
-    self.mmToggle["spectate"] = true;
-    self.mmSpecOrigin = self.origin;
-    self.mmSpecAngles = self getPlayerAngles();
-    self thread SpectatorLoop();
-    self iprintln("Spectator ^2ON ^7- WASD/Stick: fly | Jump: up | Frag: down | Attack: fast | G: leave");
-}
-
-SpectatorLoop()
-{
-    self endon("disconnect");
-    self endon("mm_stop_spectate");
-
-    self.mmSpecForward = false;
-    self.mmSpecBack = false;
-    self.mmSpecLeft = false;
-    self.mmSpecRight = false;
-    self thread MM_SpectatorMovementInput();
-
-    obj = spawn("script_origin", self.origin);
-    obj.angles = self.angles;
-    self playerLinkTo(obj);
-    self thread MM_SpectatorCleanup(obj);
-
-    self hide();
-    self.ignoreme = true;
-    self enableInvulnerability();
-    self disableWeapons();
-
-    for(;;)
-    {
-        wait 0.05;
-
-        // Hold still while the menu is open (Jump selects entries there).
-        if(isDefined(self.menuOpen) && self.menuOpen)
-            continue;
-
-        speed = 18;
-        if(self attackButtonPressed())
-            speed = 50;
-
-        ang = self getPlayerAngles();
-        mv = self getNormalizedMovement();
-
-        forwardInput = mv[0];
-        rightInput = mv[1];
-
-        if(self.mmSpecForward && !self.mmSpecBack)
-            forwardInput = 1;
-        else if(self.mmSpecBack && !self.mmSpecForward)
-            forwardInput = -1;
-        else if(self.mmSpecForward && self.mmSpecBack)
-            forwardInput = 0;
-
-        if(self.mmSpecLeft && !self.mmSpecRight)
-            rightInput = -1;
-        else if(self.mmSpecRight && !self.mmSpecLeft)
-            rightInput = 1;
-        else if(self.mmSpecLeft && self.mmSpecRight)
-            rightInput = 0;
-
-        move = (anglesToForward(ang) * (forwardInput * speed)) + (anglesToRight(ang) * (rightInput * speed));
-
-        if(self jumpButtonPressed())
-            move = move + (0, 0, speed);
-        if(self fragButtonPressed())
-            move = move - (0, 0, speed);
-
-        obj.origin = obj.origin + move;
-    }
-}
-
-MM_SpectatorCleanup(obj)
-{
-    self waittill_any("disconnect", "mm_stop_spectate");
-    if(isDefined(obj))
-        obj delete();
-}
-
-MM_SpectatorExit(atCamera)
-{
-    if(!self MM_IsOn("spectate"))
-        return;
-
-    self.mmToggle["spectate"] = false;
-    self unlink();
-    self notify("mm_stop_spectate");
-
-    if(!atCamera && isDefined(self.mmSpecOrigin))
-    {
-        self setOrigin(self.mmSpecOrigin);
-        self setPlayerAngles(self.mmSpecAngles);
-    }
-
-    // Restore anything the other toggles control.
-    if(!self MM_IsOn("invis"))
-        self show();
-    self.ignoreme = self MM_IsOn("ignore");
-    if(!self MM_IsOn("god"))
-        self disableInvulnerability();
-    self enableWeapons();
-
-    self iprintln("Spectator ^1OFF");
 }
 
 ToggleJetpack()      { self MM_Toggle("jetpack", "Jetpack", ::JetpackLoop); }
