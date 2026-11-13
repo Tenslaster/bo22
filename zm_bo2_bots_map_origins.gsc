@@ -2366,6 +2366,7 @@ bot_origins_tank_board_roof(tank)
                 return true;
             }
 
+            level.bot_origins_tank_owner_until = gettime() + 45000;
             wait 0.15;
         }
 
@@ -2479,6 +2480,7 @@ bot_origins_tank_call_station(tank)
     // bot_quest_use_target() owns this flag while pressing use and clears it
     // on return; restore the tank worker's movement lock for the ride.
     self.bot.is_objective_using = 1;
+    level.bot_origins_tank_owner_until = gettime() + 45000;
 
     if(!used)
         return false;
@@ -2672,7 +2674,7 @@ bot_origins_tank_lightning_worker()
     self.bot.origins_tank_worker_running = 1;
     self.bot.is_objective_using = 1;
     tank = level.vh_tank;
-    total_deadline = gettime() + 100000;
+    total_deadline = gettime() + 260000;
 
     for(trip = 0; trip < 3 && gettime() < total_deadline && isalive(self); trip++)
     {
@@ -2680,12 +2682,12 @@ bot_origins_tank_lightning_worker()
             break;
 
         level.bot_origins_tank_owner = self;
-        level.bot_origins_tank_owner_until = gettime() + 12000;
+        level.bot_origins_tank_owner_until = gettime() + 45000;
 
         if(!self bot_origins_tank_sync_rider_state())
         {
             // If the vehicle is currently moving away, wait for its station stop.
-            stop_deadline = gettime() + 42000;
+            stop_deadline = gettime() + 120000;
             while(tank ent_flag("tank_moving") && gettime() < stop_deadline && isalive(self))
             {
                 level.bot_origins_tank_owner_until = gettime() + 12000;
@@ -2700,7 +2702,7 @@ bot_origins_tank_lightning_worker()
             if(distancesquared(self.origin, tank.origin) > 760 * 760 &&
                self bot_origins_tank_call_station(tank))
             {
-                stop_deadline = gettime() + 42000;
+                stop_deadline = gettime() + 120000;
                 while(tank ent_flag("tank_moving") && gettime() < stop_deadline && isalive(self))
                 {
                     level.bot_origins_tank_owner_until = gettime() + 12000;
@@ -2723,10 +2725,13 @@ bot_origins_tank_lightning_worker()
             // stock activation/500-point cost only if stock ignored the bot.
             if(tank ent_flag("tank_cooldown"))
             {
-                cooldown_deadline = gettime() + 16000;
+                cooldown_deadline = gettime() + 125000;
                 while(tank ent_flag("tank_cooldown") &&
                       gettime() < cooldown_deadline && isalive(self))
+                {
+                    level.bot_origins_tank_owner_until = gettime() + 45000;
                     wait 0.25;
+                }
             }
 
             if(!tank ent_flag("tank_moving") &&
@@ -2737,7 +2742,7 @@ bot_origins_tank_lightning_worker()
             }
         }
 
-        ride_deadline = gettime() + 42000;
+        ride_deadline = gettime() + 120000;
         while(tank ent_flag("tank_moving") && gettime() < ride_deadline &&
               isalive(self) && self bot_origins_tank_is_on_roof())
         {
@@ -2808,7 +2813,7 @@ bot_quest_origins_tank_lightning_parts()
         return false;
 
     level.bot_origins_tank_owner = self;
-    level.bot_origins_tank_owner_until = gettime() + 12000;
+    level.bot_origins_tank_owner_until = gettime() + 45000;
     self.bot.origins_tank_worker_running = 1;
     self thread bot_origins_tank_lightning_worker();
     return true;
