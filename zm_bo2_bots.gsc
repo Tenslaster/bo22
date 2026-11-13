@@ -449,7 +449,9 @@ bot_spawn_init()
 	self.bot.threat.position = (0, 0, 0);
 	self.bot.threat.time_first_sight = 0;
 	self.bot.threat.time_recent_sight = 0;
-	self.bot.threat.time_aim_interval = 125;
+	self.bot.threat.time_aim_interval = 350;
+	self.bot.threat.time_last_aim_update = 0;
+	self.bot.threat.fire_until = 0;
 	self.bot.threat.time_aim_correct = 0;
 }
 
