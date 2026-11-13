@@ -3177,7 +3177,7 @@ MM_OriginsStaffGuideLoop()
         {
             if(isDefined(level.a_ceiling_rings))
             {
-                guideText += "\n^3WIND - CEILING RINGS^7 (current -> target position):\n";
+                guideText += "\n^3WIND - RING HIT ESP^7 (ORANGE=shoot, GREEN=aligned):\n";
                 // The ring origin is the hit target used by the stock damage
                 // handler. Put a waypoint directly over each ring, not in a
                 // screen-space list. Orange means it still needs a Wind Staff
