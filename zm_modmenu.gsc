@@ -2892,7 +2892,7 @@ MM_OriginsStaffGuideLoop()
     hud.x = 12;
     hud.y = 76;
     hud.font = "objective";
-    hud.fontScale = 0.40;
+    hud.fontScale = 0.04;
     hud.foreground = true;
     hud.hideWhenInMenu = true;
     hud.sort = 1100;
