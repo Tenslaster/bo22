@@ -253,6 +253,9 @@ bot_set_perks()
 		self setperk("specialty_deadshot");
 		self setperk("specialty_fastreload");
 		self setperk("specialty_flakjacket");
+		// Permanent Juggernog + Stamin-Up: stronger health pool and faster escapes.
+		self setperk("specialty_armorvest");
+		self setperk("specialty_longersprint");
 		
 		self waittill("player_revived");
 	}
