@@ -714,7 +714,7 @@ The menu shows eight rows at once. Use the up/down controls to move the highligh
 
 ### Spectator / Free Camera
 
-Spectator Mode is also available under Personal Mods. The script comment includes an optional `bind g "+actionslot 3"` binding for entering/leaving spectator mode. Be aware that Action Slot 3 is also the bot-teleport command in the bot script; if that binding causes both actions to fire on your setup, use a different key/action binding for spectator mode.
+Spectator Mode is also available under Personal Mods. The script comment includes an optional `bind g "+actionslot 3"` binding for entering/leaving spectator mode. Action Slot 3 now also cycles bot modes, so using that optional G binding will trigger both actions. Avoid that optional binding if you want G to remain separate; spectator mode is still available from Personal Mods.
 
 ---
 
