@@ -37,3 +37,22 @@ The typical local T6 storage root is `%localappdata%\Plutonium\storage\t6`. Depe
 - The Python static scanner is heuristic. It does not compile GSC.
 - This change has **not** been compiled or live-tested in a Plutonium match. Run a private match and verify the log records arrive before relying on its diagnostics.
 - The tank / Electric Staff jump controller is not added by this telemetry change. The source audit still flags that missing route if no implementation exists elsewhere.
+
+## One-click Windows launcher
+
+The matching Python desktop app is stored at the repository root:
+
+- `origins_ai_watcher.py` — watcher application
+- `launch_origins_ai_watcher.bat` — Windows launcher
+- `origins_ai_watcher_requirements.txt` — Python dependencies
+
+To launch:
+
+1. Check out this branch and open the BO22 repository folder in Windows Explorer.
+2. Double-click `launch_origins_ai_watcher.bat`.
+3. On first launch, it creates a local `.venv` folder and installs the listed Python dependencies.
+4. It automatically passes the BO22 repository folder as the source-audit target.
+5. It looks for Plutonium logs under `%LOCALAPPDATA%\\Plutonium\\storage\\t6\\logs`, then `main`, then the T6 storage root. If your log location is different, select it in the app.
+
+Python 3.10+ is required. Screen capture uses `mss`; OCR additionally needs Tesseract installed on Windows and available on PATH. OCR is optional.
+
