@@ -2889,10 +2889,10 @@ MM_OriginsStaffGuideLoop()
     hud.vertAlign = "top";
     hud.alignX = "left";
     hud.alignY = "top";
-    hud.x = 12;
-    hud.y = 76;
+    hud.x = 6;
+    hud.y = 10;
     hud.font = "default";
-    hud.fontScale = 0.35;
+    hud.fontScale = 0.06;
     hud.foreground = true;
     hud.hideWhenInMenu = true;
     hud.sort = 1100;
@@ -2914,7 +2914,7 @@ MM_OriginsStaffGuideLoop()
         }
 
         markers = [];
-        guideText = "^3ORIGINS STAFF GUIDE^7  ^2GREEN=OK^7  ^1ORANGE=ACTION^7\n";
+        guideText = "^3STAFF^7  ^2GREEN=OK^7  ^1ORANGE=ACTION^7\n";
         guideText += self MM_OriginsStaffGuideLine("WIND", "elemental_staff_air", "staff_air_zm", "staff_air_upgraded_zm", "staff_air_zm_upgrade_unlocked", 2) + "\n";
         guideText += self MM_OriginsStaffGuideLine("FIRE", "elemental_staff_fire", "staff_fire_zm", "staff_fire_upgraded_zm", "staff_fire_zm_upgrade_unlocked", 1) + "\n";
         guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
