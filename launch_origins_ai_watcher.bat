@@ -21,6 +21,15 @@ if not exist "%PROJECT_DIR%\zm_bo2_bots.gsc" (
     )
 )
 
+rem If this is a standalone deployment folder, ask the user to locate the BO22 source.
+if exist "%PROJECT_DIR%\zm_bo2_bots.gsc" goto :project_ready
+echo [SETUP] The watcher package is separate from the BO22 source checkout.
+echo         Select the repository root containing zm_bo2_bots.gsc.
+echo.
+for /f "usebackq delims=" %%P in (`powershell.exe -NoProfile -STA -Command "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Select BO22 repository root (contains zm_bo2_bots.gsc)'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }"`) do set "PROJECT_DIR=%%P"
+
+:project_ready
+
 echo.
 echo ============================================================
 echo                  ORIGINS AI WATCHER
@@ -101,9 +110,9 @@ if defined LOCALAPPDATA (
 echo [OK] Watcher folder: "%APP_DIR%"
 echo [OK] BO22 project folder: "%PROJECT_DIR%"
 if not exist "%PROJECT_DIR%\zm_bo2_bots.gsc" (
-    echo [NOTE] The BO22 GSC source was not found in this folder.
-    echo        In the app, click Browse next to BO22 project folder
-    echo        and select your actual Tenslaster\bo22 repository folder.
+    echo [WARNING] BO22 source folder was not selected.
+    echo           In the watcher, click Browse and select the folder
+    echo           containing zm_bo2_bots.gsc.
 )
 if defined LOG_DIR (
     echo [OK] Plutonium logs: "%LOG_DIR%"
