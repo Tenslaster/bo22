@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.7"
+VERSION = "1.3.8"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -674,6 +674,11 @@ def _is_game_window(title: str, process_name: str) -> bool:
     # Plutonium builds can use a generic or non-BO2 title for the game surface.
     if _is_game_process(process):
         return True
+    # Some Plutonium builds expose the game surface as plutonium.exe
+    # rather than the bootstrapper. Accept that owner only when the window
+    # title independently identifies T6 Zombies (not the generic launcher).
+    if process in {"plutonium.exe", "plutonium"}:
+        return _is_game_title(title)
     # Title fallback is only safe when Windows cannot identify the owner.
     return not process and _is_game_title(title)
 
