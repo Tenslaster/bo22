@@ -48,11 +48,12 @@ The matching Python desktop app is stored at the repository root:
 
 To launch:
 
-1. Check out this branch and open the BO22 repository folder in Windows Explorer.
+1. Check out this branch and open the BO22 repository folder in Windows Explorer, or extract the watcher deployment package into its own folder.
 2. Double-click `launch_origins_ai_watcher.bat`.
 3. On first launch, it creates a local `.venv` folder and installs the listed Python dependencies.
-4. It automatically passes the BO22 repository folder as the source-audit target.
-5. It looks for Plutonium logs under `%LOCALAPPDATA%\\Plutonium\\storage\\t6\\logs`, then `main`, then the T6 storage root. If your log location is different, select it in the app.
+4. The launcher canonicalizes its own folder path **without a trailing backslash** before passing it to Python. This avoids Windows command-line parsing treating the closing quote as escaped.
+5. If the watcher was extracted separately from your BO22 checkout, click **Browse** beside the BO22 project folder and select the actual repository root containing `zm_bo2_bots.gsc`.
+6. It looks for Plutonium logs under `%LOCALAPPDATA%\\Plutonium\\storage\\t6\\logs`, then `main`, then the T6 storage root. If your log location is different, select it in the app.
 
 Python 3.10+ is required. Screen capture uses `mss`; OCR additionally needs Tesseract installed on Windows and available on PATH. OCR is optional.
 
