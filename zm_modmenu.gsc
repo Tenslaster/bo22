@@ -3107,7 +3107,7 @@ MM_OriginsStaffGuideLoop()
             {
                 relayNames = array("elec", "ice", "village", "air", "start", "tank_platform", "ruins", "bunker");
                 relayGoals = array(0, 3, 2, 2, 1, 0, 2, -1);
-                guideText += "\n^3LIGHTNING - RELAY SWITCHES^7 (current -> target, positions 0-3):\n";
+                guideText += "\n^3LIGHTNING - RELAY SWITCHES^7: make every active marker GREEN.";
                 for(relayIndex = 0; relayIndex < relayNames.size; relayIndex++)
                 {
                     relayName = relayNames[relayIndex];
@@ -3115,59 +3115,18 @@ MM_OriginsStaffGuideLoop()
                     if(!isDefined(relay) || !isDefined(relay.e_switch) || !isDefined(relay.e_switch.origin))
                         continue;
 
-                    relayColor = (0.55, 0.55, 0.55);
-                    relayColorName = "GRAY";
-                    if(relayIndex == 0)
-                    {
-                        relayColor = (1, 0.12, 0.08);
-                        relayColorName = "RED";
-                    }
-                    else if(relayIndex == 1)
-                    {
-                        relayColor = (0.1, 0.35, 1);
-                        relayColorName = "BLUE";
-                    }
-                    else if(relayIndex == 2)
-                    {
-                        relayColor = (0.8, 0.2, 1);
-                        relayColorName = "PURPLE";
-                    }
-                    else if(relayIndex == 3)
-                    {
-                        relayColor = (0.1, 0.8, 1);
-                        relayColorName = "CYAN";
-                    }
-                    else if(relayIndex == 4)
-                    {
-                        relayColor = (1, 0.9, 0.1);
-                        relayColorName = "YELLOW";
-                    }
-                    else if(relayIndex == 5)
-                    {
-                        relayColor = (1, 0.5, 0.05);
-                        relayColorName = "ORANGE";
-                    }
-                    else if(relayIndex == 6)
-                    {
-                        relayColor = (0.1, 1, 0.2);
-                        relayColorName = "GREEN";
-                    }
-                    markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayColor);
-
+                    // Status is carried by marker color instead of a changing
+                    // multi-switch HUD string, avoiding configstring growth.
+                    relayMarkerColor = (1, 0.35, 0.05);
                     if(relayGoals[relayIndex] < 0)
-                    {
-                        guideText += "^7BUNKER GRAY: unused   ";
-                        continue;
-                    }
+                        relayMarkerColor = (0.55, 0.55, 0.55);
+                    else if(isDefined(relay.position) && relay.position == relayGoals[relayIndex])
+                        relayMarkerColor = (0.1, 1, 0.2);
 
-                    relayStatus = "FIX";
-                    if(isDefined(relay.position) && relay.position == relayGoals[relayIndex])
-                        relayStatus = "OK";
-                    guideText += relayName + " " + relayColorName + " " + relay.position + "->" + relayGoals[relayIndex] + " [" + relayStatus + "]   ";
-                    if(relayIndex == 3)
-                        guideText += "\n";
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayMarkerColor);
                 }
-                guideText += "\nMatch each color-coded switch's current position to its target number. [OK] is already correct.";
+                guideText += "\nTargets (positions 0-3): ELEC 0, ICE 3, VILLAGE 2, AIR 2, START 1, TANK 0, RUINS 2.";
+                guideText += "\n^1ORANGE^7 = wrong, ^2GREEN^7 = correct, ^7GRAY^7 = unused BUNKER switch.";
             }
         }
 
