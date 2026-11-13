@@ -112,7 +112,11 @@ AREAS: dict[str, tuple[str, ...]] = {
     "Generators": ("generator", "capture_zone", "capture_start"),
     "Shovel and dig sites": ("shovel", "dig_site", "digspot", "dig_spot", "excavat"),
     "Staff parts and assembly": ("staff_part", "elemental_staff", "craft_staff", "staff_pickup", "staff_build"),
-    "Wind Staff puzzle": ("wind_staff", "wind_ring", "smoke_detector", "wind_turbine"),
+    "Wind Staff puzzle": (
+        "wind_staff", "wind_ring", "smoke_detector", "wind_turbine",
+        "staff_air_zm", "air_puzzle_1_complete", "air_puzzle_2_complete",
+        "a_ceiling_rings", "puzzle_smoke_origin", "puzzle_smoke_dest",
+    ),
     "Ice Staff puzzle": ("ice_staff", "ice_gem", "tombstone", "ice_stone"),
     "Lightning Staff puzzle": ("lightning_staff", "piano", "relay_switch", "lightning_relay"),
     "Fire Staff puzzle": ("fire_staff", "torch", "soul_chest", "sacrifice"),
@@ -129,8 +133,13 @@ AREAS: dict[str, tuple[str, ...]] = {
 }
 
 
-def strip_gsc_comments_and_strings(source: str) -> str:
-    """Replace comments and quoted strings with spaces while preserving newlines."""
+def strip_gsc_comments_and_strings(source: str, preserve_strings: bool = False) -> str:
+    """Strip comments, optionally retaining quoted strings for GSC evidence search.
+
+    The default form blanks strings so structural parsing ignores braces inside
+    quotes. The evidence form preserves strings because GSC target names,
+    weapon names and quest flags are often stored as string literals.
+    """
     out: list[str] = []
     i = 0
     state = "code"
@@ -144,7 +153,10 @@ def strip_gsc_comments_and_strings(source: str) -> str:
             if ch == "/" and nxt == "*":
                 state = "block_comment"; out.extend("  "); i += 2; continue
             if ch in ("\"", "'"):
-                state = "string"; quote = ch; out.append(" "); i += 1; continue
+                state = "string"; quote = ch
+                out.append(ch if preserve_strings else " ")
+                i += 1
+                continue
             out.append(ch); i += 1
         elif state == "line_comment":
             if ch == "\n":
@@ -158,13 +170,19 @@ def strip_gsc_comments_and_strings(source: str) -> str:
                 out.append("\n" if ch == "\n" else " "); i += 1
         else:  # string
             if ch == "\\" and i + 1 < len(source):
-                out.extend("  "); i += 2
+                if preserve_strings:
+                    out.extend((ch, source[i + 1]))
+                else:
+                    out.extend("  ")
+                i += 2
             elif ch == quote:
-                out.append(" "); i += 1; state = "code"
+                out.append(ch if preserve_strings else " ")
+                i += 1
+                state = "code"
             else:
-                out.append("\n" if ch == "\n" else " "); i += 1
+                out.append(ch if preserve_strings else ("\n" if ch == "\n" else " "))
+                i += 1
     return "".join(out)
-
 
 def extract_functions(path: Path, source: str) -> list[tuple[str, str, int]]:
     clean = strip_gsc_comments_and_strings(source)
@@ -185,7 +203,13 @@ def extract_functions(path: Path, source: str) -> list[tuple[str, str, int]]:
                     break
         if end is not None:
             line = clean.count("\n", 0, match.start()) + 1
-            funcs.append((name, clean[match.start():end], line))
+            # Preserve string literals in the extracted body for evidence
+            # matching while continuing to use the string-blanked copy above
+            # for accurate brace matching.
+            raw_body = strip_gsc_comments_and_strings(
+                source[match.start():end], preserve_strings=True
+            )
+            funcs.append((name, raw_body, line))
     return funcs
 
 
@@ -237,13 +261,27 @@ def audit_project(project: Path) -> AuditReport:
     else:
         findings.append(Finding("warning", "syntax", "Possible delimiter mismatch", "A simple brace/parenthesis/bracket count differs. Inspect the indicated file; comments and strings are excluded, but this is not a compiler diagnostic.", syntax[:12], "medium"))
 
-    by_name: dict[str, list[str]] = collections.defaultdict(list)
+    # GSC functions are namespaced by script file. A common entrypoint such
+    # as init() in zm_bo2_bots.gsc and zm_modmenu.gsc is not a duplicate
+    # definition in the same script. Warn only when one file repeats a name.
+    by_name_and_file: dict[tuple[str, str], list[int]] = collections.defaultdict(list)
     for name, _, rel, line in all_functions:
-        by_name[name].append(f"{rel}:{line}")
-    duplicates = {k: v for k, v in by_name.items() if len(v) > 1}
+        by_name_and_file[(name, rel)].append(line)
+    duplicates = {
+        (name, rel): locations
+        for (name, rel), locations in by_name_and_file.items()
+        if len(locations) > 1
+    }
     if duplicates:
-        sample = [f"{name}: {', '.join(locations[:4])}" for name, locations in list(duplicates.items())[:12]]
-        findings.append(Finding("warning", "functions", "Duplicate function definitions detected", "Duplicate names may be intentional overrides in GSC, but each needs checking against include/replacefunc behavior.", sample, "medium"))
+        sample = [
+            f"{name} in {rel}: lines {', '.join(str(x) for x in locations[:8])}"
+            for (name, rel), locations in list(duplicates.items())[:12]
+        ]
+        findings.append(Finding(
+            "warning", "functions", "Repeated function definition in the same GSC file",
+            "The same function name appears more than once in a single script file. Check whether it is an intentional conditional/generated layout or an accidental duplicate.",
+            sample, "medium"
+        ))
 
     for area, needles in AREAS.items():
         hits: list[str] = []
@@ -258,11 +296,47 @@ def audit_project(project: Path) -> AuditReport:
 
     # Targeted cross-checks for common failure classes.
     origins_files = [p for p in gsc_files if "origins" in p.name.lower() or "tomb" in p.name.lower()]
-    origins_text = "\n".join(safe_read(p, 8_000_000) for p in origins_files).lower()
-    all_text = "\n".join(safe_read(p, 8_000_000) for p in gsc_files).lower()
+    origins_text = "\n".join(
+        strip_gsc_comments_and_strings(safe_read(p, 8_000_000), preserve_strings=True)
+        for p in origins_files
+    ).lower()
+    all_text = "\n".join(
+        strip_gsc_comments_and_strings(safe_read(p, 8_000_000), preserve_strings=True)
+        for p in gsc_files
+    ).lower()
 
-    if origins_files and not any(x in origins_text for x in ("tank_jump", "jump_down", "jump_up", "tank_get_jump_down_offset")):
-        findings.append(Finding("critical", "tank", "No explicit Origins tank-jump routine found", "The Origins-specific source files do not visibly reference the stock tank jump/boarding path. Generic navigation cannot reliably substitute for the tank's scripted jump/attachment behavior. Verify this is implemented elsewhere before expecting automatic Electric Staff tank runs.", [str(p.relative_to(project)) for p in origins_files], "medium"))
+    # Player-side stock tank signals, not just menu labels or zombie AI
+    # animation identifiers such as tank_jump_up / tank_jump_down.
+    tank_player_signals = {
+        "tank use trigger": "trig_use_tank",
+        "tank call-station trigger": "trig_tank_station_call",
+        "player-on-tank state": "b_already_on_tank",
+        "stock roof contact check": "entity_on_tank",
+        "stock moving-roof entity": "vol_on_tank_watch",
+    }
+    tank_route_evidence = [
+        label for label, token in tank_player_signals.items()
+        if token in origins_text or token in all_text
+    ]
+    has_player_tank_route = (
+        ("trig_use_tank" in origins_text or "trig_use_tank" in all_text) and
+        (
+            "entity_on_tank" in origins_text or "entity_on_tank" in all_text or
+            "b_already_on_tank" in origins_text or "b_already_on_tank" in all_text
+        )
+    )
+    if origins_files and not has_player_tank_route:
+        missing = [label for label in tank_player_signals if label not in tank_route_evidence]
+        findings.append(Finding(
+            "critical", "tank", "No player-side Origins tank boarding / riding controller found",
+            "The Origins bot sources contain tank menu/status references, but no visible player boarding and ride-state implementation. The stock tank path uses the moving roof (vol_on_tank_watch), the trig_use_tank trigger, and player state such as b_already_on_tank / entity_on_tank(). Zombie tank_jump_up/down animations are not a substitute for a player bot controller. Generic navigation alone cannot reliably board, ride, and leave the moving tank for the Lightning Staff part route.",
+            [
+                "Detected stock-player signals: " + (", ".join(tank_route_evidence) if tank_route_evidence else "none"),
+                "Missing evidence: " + ", ".join(missing),
+                "Origins source files: " + ", ".join(str(p.relative_to(project)) for p in origins_files),
+            ],
+            "high"
+        ))
 
     # Does quest mode have any observable last-zombie preservation logic?
     quest_hits = [x for x in all_functions if "quest" in x[0].lower() or "quest" in x[1].lower()]
