@@ -3723,7 +3723,8 @@ bot_auto_buildables_think()
 		wait 0.5;
 
 		if(!self bot_objective_can_run() || is_true(self.bot.is_crafting) ||
-		   is_true(self.bot.is_holding_generator))
+		   is_true(self.bot.is_holding_generator) ||
+		   is_true(self.bot.origins_tank_worker_running))
 		{
 			if(self getgoal("bot_buildable") || self hasgoal("bot_buildable"))
 				self cancelgoal("bot_buildable");
@@ -4494,7 +4495,8 @@ bot_auto_craftables_think()
 		wait 0.5;
 
 		if(!self bot_objective_can_run() || is_true(self.bot.is_building) ||
-		   is_true(self.bot.is_holding_generator))
+		   is_true(self.bot.is_holding_generator) ||
+		   is_true(self.bot.origins_tank_worker_running))
 		{
 			if(self getgoal("bot_craftable") || self hasgoal("bot_craftable"))
 				self cancelgoal("bot_craftable");
