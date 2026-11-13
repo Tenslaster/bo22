@@ -64,14 +64,9 @@ bot_combat_think(damage, attacker, direction)
 	if(self atgoal("flee"))
 		self cancelgoal("flee");
 	
-	follow_mode = isdefined(level.bot_command_mode) && level.bot_command_mode == "follow" && isdefined(level.bot_commander);
-	
-	if(follow_mode)
-	{
-		// Keep the commanded follow position when safe, but never cancel an
-		// emergency escape just because follow mode is enabled.
-		self bot_combat_clear_movement();
-	}
+	// Combat orbit is a temporary survival override. The wander controller
+	// pauses while a "combat" goal exists, then resumes stay/follow afterwards.
+	// Do not clear the orbit every 100ms just because a command mode is active.
 	
 	self bot_track_damage(damage);
 	self bot_update_situation();
@@ -446,20 +441,20 @@ bot_should_flee(damage)
 
 	// Absolute emergency rules: never try to orbit while a fast attacker is
 	// already on top of us, or while a low-health bot is being crowded.
-	if(isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 105)
+	if(isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 165)
 		return true;
 
 	if(isdefined(self.bot.fast_close) && self.bot.fast_close > 0 &&
-	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 240)
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist <= 360)
 		return true;
 
-	if(isdefined(self.bot.close_count) && self.bot.close_count >= 6)
+	if(isdefined(self.bot.close_count) && self.bot.close_count >= 4)
 		return true;
 
-	if(hp <= 0.28 && isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 450)
+	if(hp <= 0.42 && isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 520)
 		return true;
 
-	if(hp <= 0.42 && isdefined(self.bot.close_count) && self.bot.close_count >= 2)
+	if(hp <= 0.55 && isdefined(self.bot.close_count) && self.bot.close_count >= 2)
 		return true;
 
 	// With no usable ammunition, do not circle a horde hoping to reload later.
@@ -467,12 +462,13 @@ bot_should_flee(damage)
 		return true;
 
 	// A sudden burst of damage is an emergency even if only one zombie is visible.
-	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent >= maxhp * 0.22 &&
-	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 350)
+	if(isdefined(self.bot.dmg_recent) && self.bot.dmg_recent >= maxhp * 0.18 &&
+	   isdefined(self.bot.nearest_dist) && self.bot.nearest_dist < 425)
 		return true;
 
-	// Lower threshold than before: survival takes priority over holding ground.
-	threshold = 4.5 - ((1.0 - hp) * 3.5);
+	// Survival takes priority over holding ground: react before the bot is
+	// already one or two hits from being downed.
+	threshold = 4.0 - ((1.0 - hp) * 3.2);
 
 	if(self bot_weapon_is_weak())
 		threshold -= 1.0;
@@ -485,8 +481,8 @@ bot_should_flee(damage)
 	if(self bot_insta_kill_active())
 		threshold += 1.25;
 
-	if(threshold < 1.1)
-		threshold = 1.1;
+	if(threshold < 0.9)
+		threshold = 0.9;
 
 	danger = self.bot.danger;
 
@@ -627,7 +623,7 @@ bot_get_flee_goal(max_dist)
 
     foreach(zombie in zombies)
     {
-        if(!isdefined(zombie) || !isalive(zombie))
+        if(!isdefined(zombie) || !isalive(zombie) || is_true(zombie.in_the_ground))
             continue;
 
         if(distancesquared(self.origin, zombie.origin) > max_dist_sq)
@@ -778,6 +774,23 @@ bot_flee_goal(kite)
 
     max_score = 400;
     max_checks = 5;
+
+    // When surrounded or badly hurt, accept a wider range of safe escape
+    // nodes. The node scorer still rejects destinations/paths that cut through
+    // a zombie, so this avoids freezing merely because every route is costly.
+    if(!isdefined(kite))
+    {
+        if(self.bot.danger >= 8 || self bot_health_fraction() <= 0.35)
+        {
+            max_score = 1400;
+            max_checks = 8;
+        }
+        else if(self.bot.danger >= 5 || self bot_health_fraction() <= 0.55)
+        {
+            max_score = 850;
+            max_checks = 6;
+        }
+    }
 
     if(isdefined(kite))
     {
@@ -1118,11 +1131,10 @@ bot_combat_update_movement()
 		return;
 	}
 
-	// Respect commands, map objectives, build/craft interactions, revives,
-	// generator defense and scripted traversal. These systems own movement.
-	if((isdefined(level.bot_command_mode) &&
-	    (level.bot_command_mode == "follow" || level.bot_command_mode == "stay")) ||
-	   is_true(self.bot.is_objective_using) ||
+	// Map objectives, build/craft interactions, revives, generator defense and
+	// scripted traversal own movement. Stay/follow only applies when there is
+	// no active combat waypoint; combat orbit temporarily takes priority.
+	if(is_true(self.bot.is_objective_using) ||
 	   is_true(self.bot.is_holding_generator) ||
 	   is_true(self.bot.is_origins_soul_holding) ||
 	   is_true(self.bot.is_parkouring) ||
