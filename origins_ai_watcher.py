@@ -736,7 +736,7 @@ class ScreenObserver:
 
         if auto_detect:
             # Prefer the actual T6 game process over the launcher window. If
-            # process lookup is blocked, known Plutonium / T6 titles are fallback.
+            # process lookup is blocked, known BO2 / T6 game titles are fallback.
             process_matches = [w for w in windows if _is_game_process(w[3])]
             title_matches = [w for w in windows if _is_game_title(w[1])]
             candidates = process_matches or title_matches
