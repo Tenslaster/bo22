@@ -6007,7 +6007,9 @@ bot_update_lookat()
 		
 		self.bot.update_idle_lookat = gettime() + randomintrange(1500, 3000);
 	}
-	else if(path && self.bot.update_idle_lookat > 0)
+	else if(path &&
+	        (!isdefined(self.bot.threat.entity) || !isalive(self.bot.threat.entity)) &&
+	        self.bot.update_idle_lookat > 0)
 	{
 		self clearlookat();
 		
