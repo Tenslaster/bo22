@@ -339,6 +339,23 @@ bot_ai_telemetry_tick()
     ee_all_staffs_placed = -1;
     ee_quadrotor_disabled = -1;
     ee_samantha_released = -1;
+    ee_fire_upgrade_unlocked = -1;
+    ee_air_upgrade_unlocked = -1;
+    ee_water_upgrade_unlocked = -1;
+    ee_lightning_upgrade_unlocked = -1;
+    has_staff_air = 0;
+    has_staff_water = 0;
+    has_staff_lightning = 0;
+    has_staff_fire = 0;
+    robot_id = -1;
+    if(isdefined(self.in_giant_robot_head))
+        robot_id = self.in_giant_robot_head;
+
+    if(self hasweapon("staff_air_zm")) has_staff_air = 1;
+    if(self hasweapon("staff_water_zm")) has_staff_water = 1;
+    if(self hasweapon("staff_lightning_zm")) has_staff_lightning = 1;
+    if(self hasweapon("staff_fire_zm")) has_staff_fire = 1;
+
     if(mapname == "zm_tomb")
     {
         ee_souls_absorbed = flag("ee_souls_absorbed");
@@ -346,6 +363,10 @@ bot_ai_telemetry_tick()
         ee_all_staffs_placed = flag("ee_all_staffs_placed");
         ee_quadrotor_disabled = flag("ee_quadrotor_disabled");
         ee_samantha_released = flag("ee_samantha_released");
+        ee_fire_upgrade_unlocked = flag("staff_fire_zm_upgrade_unlocked");
+        ee_air_upgrade_unlocked = flag("staff_air_zm_upgrade_unlocked");
+        ee_water_upgrade_unlocked = flag("staff_water_zm_upgrade_unlocked");
+        ee_lightning_upgrade_unlocked = flag("staff_lightning_zm_upgrade_unlocked");
     }
 
     is_objective_using = 0;
@@ -381,11 +402,43 @@ bot_ai_telemetry_tick()
         "|is_origins_soul_holding=" + is_origins_soul_holding +
         "|is_reviving=" + is_reviving +
         "|last_zombie_count=" + alive_zombies +
+        "|robot_id=" + robot_id +
+        "|has_staff_air=" + has_staff_air +
+        "|has_staff_water=" + has_staff_water +
+        "|has_staff_lightning=" + has_staff_lightning +
+        "|has_staff_fire=" + has_staff_fire +
         "|ee_souls_absorbed=" + ee_souls_absorbed +
+        "|ee_air_upgrade_unlocked=" + ee_air_upgrade_unlocked +
+        "|ee_water_upgrade_unlocked=" + ee_water_upgrade_unlocked +
+        "|ee_lightning_upgrade_unlocked=" + ee_lightning_upgrade_unlocked +
+        "|ee_fire_upgrade_unlocked=" + ee_fire_upgrade_unlocked +
         "|ee_all_staffs_upgraded=" + ee_all_staffs_upgraded +
         "|ee_all_staffs_placed=" + ee_all_staffs_placed +
         "|ee_quadrotor_disabled=" + ee_quadrotor_disabled +
         "|ee_samantha_released=" + ee_samantha_released + "\\n");
+}
+
+// Emit a task-selection change from a map worker without flooding the game log.
+// Repeated claims for the same task are suppressed for five seconds.
+bot_ai_telemetry_objective(objective, result)
+{
+    if(!isdefined(self.bot))
+        return;
+
+    now = gettime();
+    if(isdefined(self.bot.ai_last_objective) &&
+       self.bot.ai_last_objective == objective &&
+       isdefined(self.bot.ai_last_objective_time) &&
+       now - self.bot.ai_last_objective_time < 5000)
+        return;
+
+    self.bot.ai_last_objective = objective;
+    self.bot.ai_last_objective_time = now;
+
+    logprint("ORIGINS_AI_EVENT|event=objective_step|bot_id=" + self getentitynumber() +
+        "|map=" + getdvar("mapname") +
+        "|objective=" + objective +
+        "|result=" + result + "\\n");
 }
 
 bot_set_perks()
