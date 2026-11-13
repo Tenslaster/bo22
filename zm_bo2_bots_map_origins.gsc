@@ -2575,6 +2575,8 @@ bot_origins_tank_try_jump_down(tank)
         deadline = gettime() + 9000;
         last_goal_origin = undefined;
         next_goal_refresh = 0;
+        did_impulse = 0;
+        impulse_deadline = 0;
         while(gettime() < deadline && isalive(self) &&
               self bot_origins_tank_is_on_roof())
         {
@@ -2594,19 +2596,23 @@ bot_origins_tank_try_jump_down(tank)
                 next_goal_refresh = gettime() + 700;
             }
 
-            if(distancesquared(self.origin, landing) <= 52 * 52)
+            if(!did_impulse && distancesquared(self.origin, landing) <= 52 * 52)
             {
                 delta = landing - self.origin;
                 direction = vectornormalize((delta[0], delta[1], 0));
                 if(distancesquared(direction, (0, 0, 0)) < 0.001)
                     direction = anglestoforward(tank.angles);
 
-                // setvelocity is also the native tank's player push-off API.
-                // The upward component makes this a physical player jump/fall,
-                // not a setorigin or a zombie tank_jump_down animation.
-                self setvelocity(vectorscale(direction, 190) + (0, 0, 170));
-                wait 0.35;
+                // One controlled player jump impulse per marker. The stock
+                // player push-off is horizontal; the smaller upward component
+                // clears the roof edge without repeatedly launching the bot.
+                self setvelocity(vectorscale(direction, 150) + (0, 0, 110));
+                did_impulse = 1;
+                impulse_deadline = gettime() + 1800;
             }
+
+            if(did_impulse && gettime() >= impulse_deadline)
+                break;
 
             if(!self bot_origins_tank_is_on_roof())
             {
@@ -2633,15 +2639,18 @@ bot_origins_tank_try_jump_down(tank)
             self cancelgoal("bot_origins_tank_rear_exit");
             self addgoal(tread.origin, 20, 2, "bot_origins_tank_rear_exit");
             deadline = gettime() + 5000;
+            did_push_off = 0;
+            push_deadline = 0;
 
             while(gettime() < deadline && isalive(self) &&
                   self bot_origins_tank_is_on_roof())
             {
-                if(distancesquared(self.origin, tread.origin) <= 44 * 44)
+                if(!did_push_off && distancesquared(self.origin, tread.origin) <= 44 * 44)
                 {
-                    push = anglestoforward(tread.angles) * 180;
-                    self setvelocity(push + (0, 0, 150));
-                    wait 0.35;
+                    // Match stock tank_push_player_off_edge() velocity.
+                    self setvelocity(anglestoforward(tread.angles) * 150);
+                    did_push_off = 1;
+                    push_deadline = gettime() + 1500;
                 }
 
                 if(!self bot_origins_tank_is_on_roof())
@@ -2650,6 +2659,9 @@ bot_origins_tank_try_jump_down(tank)
                     self bot_origins_tank_sync_rider_state();
                     return true;
                 }
+
+                if(did_push_off && gettime() >= push_deadline)
+                    break;
 
                 wait 0.2;
             }
@@ -2790,8 +2802,14 @@ bot_origins_tank_lightning_worker()
 // the actual pickup once a jump-down landing makes a piece reachable.
 bot_quest_origins_tank_lightning_parts()
 {
-    if(!self bot_origins_tank_has_missing_lightning_parts() ||
-       !isdefined(level.vh_tank) || !isdefined(self.bot))
+    if(!isdefined(level.vh_tank) || !isdefined(self.bot))
+        return false;
+
+    if(isdefined(self.bot.origins_tank_worker_running) &&
+       self.bot.origins_tank_worker_running)
+        return true;
+
+    if(!self bot_origins_tank_has_missing_lightning_parts())
         return false;
 
     if(self bot_origins_tank_has_reachable_lightning_piece(self.origin))
@@ -2800,10 +2818,6 @@ bot_quest_origins_tank_lightning_parts()
     if(isdefined(self.bot.origins_tank_retry_after) &&
        gettime() < self.bot.origins_tank_retry_after)
         return false;
-
-    if(isdefined(self.bot.origins_tank_worker_running) &&
-       self.bot.origins_tank_worker_running)
-        return true;
 
     if(isdefined(level.bot_origins_tank_owner) &&
        level.bot_origins_tank_owner != self &&
