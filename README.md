@@ -243,7 +243,7 @@ The Origins menu currently includes:
 - Give Shovel, Golden Shovel, and Golden Helmet.
 - Dig Site ESP.
 - Staff Progress Tracker (one-shot status report for all four staffs).
-- **Staff Upgrade Guide ESP** toggle: a live on-screen checklist for Wind, Fire, Lightning, and Ice. It reports whether to find the three parts, craft the staff, pick it up, charge it, collect the upgraded staff, solve its Crazy Place puzzle, or place it in a robot.
+- **Staff Upgrade Guide ESP** toggle: a live checklist plus world waypoints for the four staff puzzles. Green markers identify correct targets; orange markers identify the next required action. Fire marks unfinished Crazy Place soul chests and the four randomized correct church torches (with their number fields when the map exposes them). Lightning marks the three piano keys for the current chord and displays the live chord notes, then marks every relay switch and shows its current `0-3` position versus the required position. Wind shows each randomized ceiling ring as `current -> target` and marks the smoke sources plus their destination. Ice displays the live gem value/ternary code, marks the matching ceiling tile, and marks the active Crazy Place tombstones with the freeze-then-bullet instruction. The guide also retains the overall find parts, craft, charge, upgrade, and robot-placement checklist.
 - **Stage All 4 Staff Crystals in Crazy Place**: signals the four native crystal-plinth teleport events so the four elemental crystal plinths can rise. This does not put four crystal items in one player's inventory.
 - Maxis Drone recall/recovery.
 - Basic, upgraded, and elemental One Inch Punch options.
@@ -630,7 +630,7 @@ Parts ESP reads the live craftable/buildable registries and marks available spaw
 
 ### Origins Tools
 
-Only shown on Origins. See [Origins](#1-origins) for detailed descriptions. Tools include shovel and helmet grants, Dig Site ESP, the live Staff Upgrade Guide ESP, staff crystal staging, drone recovery, One Inch Punch options, robot warnings, tank status/call, Crazy Place and robot-head teleports, shared-part collection, staff upgrades, generator activation, and mud slowdown control. Robot-head teleports require the selected robot's hatch to be open; they do not force a closed hatch.
+Only shown on Origins. See [Origins](#1-origins) for detailed descriptions. Tools include shovel and helmet grants, Dig Site ESP, the live Staff Upgrade Guide ESP with Fire torch, Lightning piano/relay, Wind ring/smoke, and Ice tile/tombstone waypoints, staff crystal staging, drone recovery, One Inch Punch options, robot warnings, tank status/call, Crazy Place and robot-head teleports, shared-part collection, staff upgrades, generator activation, and mud slowdown control. Robot-head teleports require the selected robot's hatch to be open; they do not force a closed hatch.
 
 The host-only **Complete Little Lost Girl** action requests the stock ending sequence and can end the match.
 
