@@ -2410,7 +2410,13 @@ bot_origins_tank_force_activate(tank, from_callbox)
 
 bot_origins_tank_activate_from_roof(tank)
 {
-    if(!isdefined(tank) || !isdefined(tank.t_use))
+    if(!isdefined(tank))
+        return false;
+
+    use_trigger = tank.t_use;
+    if(!isdefined(use_trigger))
+        use_trigger = getent("trig_use_tank", "targetname");
+    if(!isdefined(use_trigger))
         return false;
 
     if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
@@ -2419,9 +2425,9 @@ bot_origins_tank_activate_from_roof(tank)
     if(tank ent_flag("tank_cooldown"))
         return false;
 
-    // This is the real linked trig_use_tank entity. Let the stock watcher act
-    // first (including its score validation); only then provide a bot fallback.
-    tank.t_use useby(self);
+    // Fire the real linked tank-use trigger first. Let the stock watcher act
+    // (including its score validation) before providing a bot-only fallback.
+    use_trigger useby(self);
     wait 0.55;
 
     if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
