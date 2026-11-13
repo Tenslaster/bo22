@@ -4002,7 +4002,11 @@ MM_OriginsTeleportRobot(robotId)
     watchFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_death_watch_on_giant_robot");
     startFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_start");
     finishFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_finish");
-    self thread fadetoblackforxsec(0, 4.0, 0.01, 0.2, "white");
+    // Resolve the HUD fade helper at runtime. A direct call here creates an
+    // unresolved external because this mod-menu script does not include _hud.
+    fadeFunc = getfunction("maps/mp/gametypes_zm/_hud", "fadetoblackforxsec");
+    if(isDefined(fadeFunc))
+        self thread [[ fadeFunc ]](0, 4.0, 0.01, 0.2, "white");
     if(isDefined(watchFunc))
         self thread [[ watchFunc ]]();
     if(isDefined(startFunc))
