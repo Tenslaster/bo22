@@ -478,7 +478,7 @@ bot_ai_telemetry_tick()
         "|ee_all_staffs_upgraded=" + ee_all_staffs_upgraded +
         "|ee_all_staffs_placed=" + ee_all_staffs_placed +
         "|ee_quadrotor_disabled=" + ee_quadrotor_disabled +
-        "|ee_samantha_released=" + ee_samantha_released + "\\n");
+        "|ee_samantha_released=" + ee_samantha_released + "\n");
 }
 
 // Emit a task-selection change from a map worker without flooding the game log.
@@ -501,7 +501,7 @@ bot_ai_telemetry_objective(objective, result)
     logprint("ORIGINS_AI_EVENT|event=objective_step|bot_id=" + self getentitynumber() +
         "|map=" + getdvar("mapname") +
         "|objective=" + objective +
-        "|result=" + result + "\\n");
+        "|result=" + result + "\n");
 }
 
 bot_set_perks()
