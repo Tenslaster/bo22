@@ -847,7 +847,9 @@ The repository includes an external Python diagnostic app for investigating BO22
 2. Open the BO22 repository folder in File Explorer.
 3. Double-click [`launch_origins_ai_watcher.bat`](./launch_origins_ai_watcher.bat).
 4. On first launch, the BAT creates a local `.venv` and installs `origins_ai_watcher_requirements.txt`.
-5. In the app, audit the GSC project, confirm the Plutonium log folder, then start live watching.
+5. The launcher passes a normalized folder path without a trailing backslash to avoid Windows quote parsing issues.
+6. If the watcher is extracted into a separate folder, click **Browse** and select the actual BO22 repository root containing `zm_bo2_bots.gsc`.
+7. Audit the GSC project, confirm the Plutonium log folder, then start live watching.
 
 Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. The screen and log heuristics are diagnostic evidence, not a replacement for testing in a real Plutonium match. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
