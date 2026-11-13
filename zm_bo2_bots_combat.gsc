@@ -1037,22 +1037,33 @@ bot_combat_main()
 		self pressads(0);
 	}
 	
+	aim_due = false;
+
 	if(!isdefined(self.bot.threat.time_aim_correct) ||
 	   self.bot.threat.time_aim_correct <= 0 ||
 	   time >= self.bot.threat.time_aim_correct)
+		aim_due = true;
+
+	// Re-aim early only after a meaningful target displacement, and never
+	// more than once per 250ms. This filters skeletal/velocity micro-jitter.
+	if(!aim_due && isdefined(self.bot.threat.position) &&
+	   distancesquared(self.bot.threat.entity.origin, self.bot.threat.position) > 900 &&
+	   (!isdefined(self.bot.threat.time_last_aim_update) ||
+	    time - self.bot.threat.time_last_aim_update >= 250))
+		aim_due = true;
+
+	if(aim_due)
 	{
-		// Damage can generate extra wakeups between the normal 100ms think
-		// ticks. Never restart lookat on every one of those events: it keeps
-		// resetting the turn controller and makes bots twitch left/right.
 		tdist = distance(self.origin, self.bot.threat.entity.origin);
-		self.bot.threat.time_aim_interval = 125;
+		self.bot.threat.time_aim_interval = 350;
 
 		if(tdist < 250)
-			self.bot.threat.time_aim_interval = 100;
+			self.bot.threat.time_aim_interval = 275;
 		else if(tdist > 800)
-			self.bot.threat.time_aim_interval = 175;
+			self.bot.threat.time_aim_interval = 450;
 
 		self.bot.threat.time_aim_correct = time + self.bot.threat.time_aim_interval;
+		self.bot.threat.time_last_aim_update = time;
 
 		frac = (time - self.bot.threat.time_first_sight) / 50;
 		frac = clamp(frac, 0, 1);
@@ -1060,13 +1071,14 @@ bot_combat_main()
 		if(!self threat_is_player())
 			frac = 1;
 
-		// Short prediction up close, longer prediction at range.
-		frames = 4;
+		// Predict less aggressively for zombies: their pathing/animation
+		// velocity can change every frame and over-leading causes aim snapping.
+		frames = 3;
 
-		if(tdist < 250)
+		if(tdist < 300)
 			frames = 2;
-		else if(tdist > 700)
-			frames = 6;
+		else if(tdist > 800)
+			frames = 4;
 
 		self.bot.threat.aim_target = self bot_update_aim(frames);
 		self.bot.threat.position = self.bot.threat.entity.origin;
@@ -1099,12 +1111,24 @@ bot_combat_main()
 		aim_point = self.bot.threat.entity.origin;
 	}
 	
-	if(self bot_on_target(aim_point, self bot_get_fire_radius(aim_point)) && self bot_can_fire_safely(weapon))
+	fire_safe = self bot_can_fire_safely(weapon);
+	on_target = self bot_on_target(aim_point, self bot_get_fire_radius(aim_point));
+
+	if(fire_safe && on_target)
 	{
+		self.bot.threat.fire_until = gettime() + 180;
+		self allowattack(1);
+	}
+	else if(fire_safe &&
+	        isdefined(self.bot.threat.fire_until) &&
+	        gettime() < self.bot.threat.fire_until)
+	{
+		// Avoid dropping the attack permission for a single noisy aim sample.
 		self allowattack(1);
 	}
 	else
 	{
+		self.bot.threat.fire_until = 0;
 		self allowattack(0);
 	}
 	
@@ -1467,7 +1491,7 @@ bot_can_fire_safely(weapon)
 		return false;
 	
 	// No line of sight = don't burn ammo into a wall, unless the zombie is basically touching us.
-	if(isdefined(self.bot.threat.visible) && !self.bot.threat.visible && dist > 120)
+	if(isdefined(self.bot.threat.visible) && !self.bot.threat.visible && dist > 200)
 		return false;
 	
 	return true;
@@ -2152,32 +2176,25 @@ bot_get_fire_radius(aim_point)
 {
 	dist = distance(self getplayercamerapos(), aim_point);
 
-	radius = dist * 0.05;
-	
-	// Up close a hit anywhere on the body is fine.
-	if(dist < 150)
-		radius += 10;
-
-	return clamp(radius, 18, 44);
+	// Match the original T6 bot's approximately 45-unit hit tolerance,
+	// with a little more room at long range and enough allowance up close.
+	radius = dist * 0.065;
+	return clamp(radius, 40, 65);
 }
 
 bot_on_target(aim_target, radius)
 {
 	angles = self getplayerangles();
-	
 	forward = anglestoforward(angles);
-	
 	origin = self getplayercamerapos();
-	
 	len = distance(aim_target, origin);
-	
 	end = origin + (forward * len);
-	
-	if(distancesquared(aim_target, end) < (radius * radius))
-	{
+
+	// The stock T6 bot uses distance2dsquared here. A full 3D distance
+	// incorrectly rejects shots when the aim point has a vertical offset.
+	if(distance2dsquared(aim_target, end) < (radius * radius))
 		return 1;
-	}
-	
+
 	return 0;
 }
 
@@ -2552,8 +2569,10 @@ bot_best_enemy()
     {
         self.bot.threat.time_first_sight = now;
         self.bot.threat.time_aim_correct = 0;
+        self.bot.threat.time_last_aim_update = 0;
         self.bot.threat.aim_target = undefined;
-        self.bot.threat.target_lock_until = now + 350;
+        self.bot.threat.fire_until = 0;
+        self.bot.threat.target_lock_until = now + 500;
     }
 
     self.bot.threat.entity = best;
@@ -2610,6 +2629,8 @@ bot_clear_enemy()
 	self.bot.threat.visible = undefined;
 	self.bot.threat.aim_target = undefined;
 	self.bot.threat.time_aim_correct = 0;
+	self.bot.threat.time_last_aim_update = 0;
+	self.bot.threat.fire_until = 0;
 	self.bot.threat.target_lock_until = 0;
 }
 
