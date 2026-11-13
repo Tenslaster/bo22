@@ -57,7 +57,7 @@ MM_OnPlayerSpawned()
             if(firstSpawn)
             {
                 self iprintlnbold("^2ULTIMATE ZM MENU LOADED");
-                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | F6: bot mode | F7: teleport bots");
+                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | Slot 3: bot mode | Slot 4: teleport bots");
                 firstSpawn = false;
             }
         }
