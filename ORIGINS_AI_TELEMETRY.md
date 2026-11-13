@@ -57,6 +57,7 @@ To launch:
 2. Double-click `launch_origins_ai_watcher.bat`.
 3. On first launch, it creates a local `.venv` folder and installs the listed Python dependencies.
 4. The launcher canonicalizes its own folder path **without a trailing backslash** before passing it to Python. This avoids Windows command-line parsing treating the closing quote as escaped.
+5. The watcher automatically locates the game window from its owning T6 process (`t6zm.exe`, `t6mp.exe`, and related T6 binaries), prefers the game over the Plutonium launcher, and retries every few seconds if BO2 is not open yet. Leave **Game window (automatic)** set to **Auto-detect**; the title field and refresh list are optional overrides.
 5. If the watcher was extracted separately from your BO22 checkout, click **Browse** beside the BO22 project folder and select the actual repository root containing `zm_bo2_bots.gsc`.
 6. It looks for Plutonium logs under `%LOCALAPPDATA%\\Plutonium\\storage\\t6\\logs`, then `main`, then the T6 storage root. If your log location is different, select it in the app.
 
