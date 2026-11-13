@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -322,12 +322,12 @@ def audit_project(project: Path) -> AuditReport:
         label for label, token in tank_player_signals.items()
         if token in origins_text or token in all_text
     ]
+    # Require the integrated bot controller and each stock player-side
+    # interface in Origins source; stray menu strings alone are not a pass.
     has_player_tank_route = (
-        ("trig_use_tank" in origins_text or "trig_use_tank" in all_text) and
-        (
-            "entity_on_tank" in origins_text or "entity_on_tank" in all_text or
-            "b_already_on_tank" in origins_text or "b_already_on_tank" in all_text
-        )
+        "bot_quest_origins_tank_lightning_parts" in origins_text and
+        "bot_origins_tank_lightning_worker" in origins_text and
+        all(token in origins_text for token in tank_player_signals.values())
     )
     if origins_files and not has_player_tank_route:
         missing = [label for label in tank_player_signals if label not in tank_route_evidence]
