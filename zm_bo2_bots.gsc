@@ -2480,8 +2480,8 @@ manual_bot_teleport_monitor()
     self endon("disconnect");
     level endon("end_game");
 
-    // F7 is bound to Action Slot 3. One press teleports the whole bot group.
-    self notifyonplayercommand("teleport_pressed", "+actionslot 3");
+    // Action Slot 4 remains the group teleport hotkey.
+    self notifyonplayercommand("teleport_pressed", "+actionslot 4");
 
     for(;;)
     {
@@ -2558,8 +2558,9 @@ bot_command_mode_monitor()
     self endon("disconnect");
     level endon("end_game");
 
-    // F6 is bound to Action Slot 4. Slots 1/2 stay exclusive to menu scrolling.
-    self notifyonplayercommand("command_pressed", "+actionslot 4");
+    // Action Slot 3 cycles bot modes. Action Slot 4 remains the group teleport.
+    // Slots 1/2 stay exclusive to menu scrolling.
+    self notifyonplayercommand("command_pressed", "+actionslot 3");
 
     for(;;)
     {
@@ -2580,8 +2581,10 @@ bot_cycle_command_mode()
         level.bot_command_mode = "wander_further";
     else if(level.bot_command_mode == "wander_further")
         level.bot_command_mode = "follow";
-	else
-		level.bot_command_mode = "stay";
+    else if(level.bot_command_mode == "follow")
+        level.bot_command_mode = "quest";
+    else
+        level.bot_command_mode = "stay";
 	
     level.bot_commander = self;
 	
@@ -2598,7 +2601,10 @@ bot_cycle_command_mode()
 	
 	bot_set_dvars();
 	
-    self iprintlnbold("Bots: " + level.bot_command_mode);
+    if(level.bot_command_mode == "quest")
+        self iprintlnbold("Bots: QUEST MODE - collecting parts / doing objectives / preserving 1 zombie");
+    else
+        self iprintlnbold("Bots: " + level.bot_command_mode);
 }
 
 bot_update_wander()
