@@ -2,13 +2,24 @@
 setlocal EnableExtensions
 title Origins AI Watcher Launcher
 
-cd /d "%~dp0"
+rem Resolve the install directory without a trailing backslash.
+rem A quoted Windows argument ending in backslash can escape its closing quote.
+for %%I in ("%~dp0.") do set "APP_DIR=%%~fI"
+cd /d "%APP_DIR%"
 
-set "SCRIPT=%~dp0origins_ai_watcher.py"
-set "REQ=%~dp0origins_ai_watcher_requirements.txt"
-set "VENV_DIR=%~dp0.venv"
+set "SCRIPT=%APP_DIR%\origins_ai_watcher.py"
+set "REQ=%APP_DIR%\origins_ai_watcher_requirements.txt"
+set "VENV_DIR=%APP_DIR%\.venv"
 set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "PROJECT_DIR=%APP_DIR%"
 set "LOG_DIR="
+
+rem If the watcher was extracted next to a folder named bo22, use that checkout.
+if not exist "%PROJECT_DIR%\zm_bo2_bots.gsc" (
+    if exist "%APP_DIR%\..\bo22\zm_bo2_bots.gsc" (
+        for %%I in ("%APP_DIR%\..\bo22") do set "PROJECT_DIR=%%~fI"
+    )
+)
 
 echo.
 echo ============================================================
@@ -18,7 +29,6 @@ echo.
 
 if not exist "%SCRIPT%" (
     echo [ERROR] origins_ai_watcher.py was not found beside this BAT file.
-    echo Put this BAT file and the Python script in the BO22 root folder.
     pause
     exit /b 1
 )
@@ -77,7 +87,7 @@ if errorlevel 1 (
     )
 )
 
-rem Detect common Plutonium T6 log locations. The watcher scans subfolders too.
+rem Detect common Plutonium T6 log locations.
 if defined LOCALAPPDATA (
     if exist "%LOCALAPPDATA%\Plutonium\storage\t6\logs\" (
         set "LOG_DIR=%LOCALAPPDATA%\Plutonium\storage\t6\logs"
@@ -88,7 +98,13 @@ if defined LOCALAPPDATA (
     )
 )
 
-echo [OK] BO22 project: "%~dp0"
+echo [OK] Watcher folder: "%APP_DIR%"
+echo [OK] BO22 project folder: "%PROJECT_DIR%"
+if not exist "%PROJECT_DIR%\zm_bo2_bots.gsc" (
+    echo [NOTE] The BO22 GSC source was not found in this folder.
+    echo        In the app, click Browse next to BO22 project folder
+    echo        and select your actual Tenslaster\bo22 repository folder.
+)
 if defined LOG_DIR (
     echo [OK] Plutonium logs: "%LOG_DIR%"
 ) else (
@@ -101,9 +117,9 @@ echo Keep Plutonium open for screen monitoring.
 echo.
 
 if defined LOG_DIR (
-    "%VENV_PY%" "%SCRIPT%" --project "%~dp0" --logs "%LOG_DIR%"
+    "%VENV_PY%" "%SCRIPT%" --project "%PROJECT_DIR%" --logs "%LOG_DIR%"
 ) else (
-    "%VENV_PY%" "%SCRIPT%" --project "%~dp0"
+    "%VENV_PY%" "%SCRIPT%" --project "%PROJECT_DIR%"
 )
 
 if errorlevel 1 (
