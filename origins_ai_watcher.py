@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -606,6 +606,10 @@ def _window_process_name(hwnd: int) -> str:
     if not handle:
         return ""
 
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
     try:
         query_image = kernel32.QueryFullProcessImageNameW
         query_image.argtypes = [
@@ -621,29 +625,23 @@ def _window_process_name(hwnd: int) -> str:
     except (AttributeError, OSError, ValueError):
         return ""
     finally:
-        kernel32.CloseHandle(handle)
+        close_handle(handle)
 
 
 GAME_PROCESS_EXACT = {
-    "plutonium.exe",
-    "plutonium-bootstrapper-win32.exe",
-    "plutonium-bootstrapper-win64.exe",
     "t6zm.exe",
     "t6mp.exe",
     "t6sp.exe",
-    "blackops2.exe",
-    "blackops2zm.exe",
-    "blackops2mp.exe",
-    "black ops 2.exe",
+    "t6rzm.exe",
+    "t6rmp.exe",
 }
-GAME_TITLE_HINTS = ("plutonium", "black ops", "blackops", "t6 zombies", "t6zm")
+GAME_TITLE_HINTS = ("black ops", "blackops", "t6 zombies", "t6zm", "bo2")
 
 
 def _is_game_process(process_name: str) -> bool:
     name = (process_name or "").lower()
     return (
         name in GAME_PROCESS_EXACT
-        or ("plutonium" in name and "updater" not in name)
         or (name.startswith("t6") and name.endswith(".exe"))
     )
 
@@ -843,7 +841,7 @@ class ScreenObserver:
             while not self.stop_event.is_set():
                 rect = self._choose_rect()
                 if not rect:
-                    self.status_callback("Game window not found. Check the title filter and make sure Plutonium is open.")
+                    self.status_callback("Waiting for the BO2 game window… Auto-detect will attach as soon as T6 starts.")
                     self.stop_event.wait(3.0)
                     continue
                 left, top, right, bottom = rect
@@ -1094,10 +1092,10 @@ class App:
         ttk.Label(config, text="Plutonium / game log folder").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
         ttk.Entry(config, textvariable=self.logs_var).grid(row=1, column=1, sticky="ew", pady=4)
         ttk.Button(config, text="Browse…", command=self._browse_logs).grid(row=1, column=2, padx=(6, 0))
-        ttk.Label(config, text="Game window title contains").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
-        self.window_combo = ttk.Combobox(config, textvariable=self.window_var, values=["Plutonium", "Black Ops", "T6"], width=30)
+        ttk.Label(config, text="Game window (automatic)").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.window_combo = ttk.Combobox(config, textvariable=self.window_var, values=["Auto-detect"], width=34)
         self.window_combo.grid(row=2, column=1, sticky="w", pady=4)
-        ttk.Button(config, text="Find windows", command=self._refresh_windows).grid(row=2, column=2, padx=(6, 0))
+        ttk.Button(config, text="Refresh list", command=self._refresh_windows).grid(row=2, column=2, padx=(6, 0))
         ttk.Label(config, text="Capture interval (seconds)").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=4)
         ttk.Entry(config, textvariable=self.interval_var, width=8).grid(row=3, column=1, sticky="w", pady=4)
 
