@@ -1037,28 +1037,37 @@ bot_combat_main()
 		self pressads(0);
 	}
 	
-	if(time >= self.bot.threat.time_aim_correct)
+	if(!isdefined(self.bot.threat.time_aim_correct) ||
+	   self.bot.threat.time_aim_correct <= 0 ||
+	   time >= self.bot.threat.time_aim_correct)
 	{
-		self.bot.threat.time_aim_correct += self.bot.threat.time_aim_interval;
-		
+		// Damage can generate extra wakeups between the normal 100ms think
+		// ticks. Never restart lookat on every one of those events: it keeps
+		// resetting the turn controller and makes bots twitch left/right.
+		tdist = distance(self.origin, self.bot.threat.entity.origin);
+		self.bot.threat.time_aim_interval = 125;
+
+		if(tdist < 250)
+			self.bot.threat.time_aim_interval = 100;
+		else if(tdist > 800)
+			self.bot.threat.time_aim_interval = 175;
+
+		self.bot.threat.time_aim_correct = time + self.bot.threat.time_aim_interval;
+
 		frac = (time - self.bot.threat.time_first_sight) / 50;
 		frac = clamp(frac, 0, 1);
-		
+
 		if(!self threat_is_player())
-		{
 			frac = 1;
-		}
-		
+
 		// Short prediction up close, longer prediction at range.
-		tdist = distance(self.origin, self.bot.threat.entity.origin);
-		
 		frames = 4;
-		
+
 		if(tdist < 250)
 			frames = 2;
 		else if(tdist > 700)
 			frames = 6;
-		
+
 		self.bot.threat.aim_target = self bot_update_aim(frames);
 		self.bot.threat.position = self.bot.threat.entity.origin;
 		self bot_combat_lookat(self.bot.threat.aim_target, frac);
@@ -1217,7 +1226,7 @@ bot_combat_update_movement()
 	if(isdefined(self.bot.next_combat_move) && now < self.bot.next_combat_move)
 		return;
 
-	self.bot.next_combat_move = now + 550;
+	self.bot.next_combat_move = now + 850;
 
 	weapon = self getcurrentweapon();
 	desired_radius = 410;
@@ -1257,6 +1266,37 @@ bot_combat_update_movement()
 	}
 
 	current_goal = self getgoal("combat");
+
+	// Do not cancel and recreate a route just because another nearby node
+	// scored a little better on the next scan. Keep the current waypoint until
+	// it is reached, becomes unsafe, leaves the engagement band, or is blocked.
+	if(isdefined(current_goal))
+	{
+		current_goal_remaining = distance2d(self.origin, current_goal);
+		current_goal_target_gap = distance2d(current_goal, threat.origin);
+		current_goal_safe = true;
+		zombies = self bot_get_zombies();
+
+		foreach(zombie in zombies)
+		{
+			if(!isdefined(zombie) || !isalive(zombie) ||
+			   is_true(zombie.in_the_ground) || !isdefined(zombie.origin))
+				continue;
+
+			if(distance2d(zombie.origin, current_goal) < 145)
+			{
+				current_goal_safe = false;
+				break;
+			}
+		}
+
+		if(current_goal_remaining > 105 &&
+		   current_goal_target_gap >= 190 &&
+		   current_goal_target_gap <= desired_radius + 340 &&
+		   current_goal_safe &&
+		   findpath(self.origin, current_goal, undefined, 0, 1))
+			return;
+	}
 
 	if(!isdefined(current_goal) || distancesquared(current_goal, best_node.origin) > 3600)
 	{
@@ -2215,7 +2255,7 @@ bot_best_enemy()
     }
 
     wallshoot_range = getdvarfloatdefault("bot_wallshoot_dist", 200);
-    switch_margin = 250;
+    switch_margin = 450;
     revive_point = undefined;
 
     if(maps\mp\zombies\_zm_laststand::player_any_player_in_laststand())
@@ -2486,7 +2526,20 @@ bot_best_enemy()
     if(isdefined(current) && isalive(current) && distance(self.origin, current.origin) < 120)
         switch_margin = 400;
 
-    // Hysteresis prevents the bot from endlessly swapping between equally close targets.
+    // A short lock absorbs score noise while two zombies cross in front of
+    // the bot. A clearly more dangerous target (650+ score advantage) can
+    // still pre-empt the lock immediately.
+    if(isdefined(current_score) && best != current &&
+       isdefined(self.bot.threat.target_lock_until) &&
+       now < self.bot.threat.target_lock_until &&
+       (best_score - current_score) < 650)
+    {
+        best = current;
+        best_visible = current_visible;
+    }
+
+    // Hysteresis prevents the bot from endlessly swapping between similarly
+    // close targets even after the short acquisition lock expires.
     if(isdefined(current_score) && best != current && (best_score - current_score) < switch_margin)
     {
         best = current;
@@ -2494,7 +2547,12 @@ bot_best_enemy()
     }
 
     if(!isdefined(current) || best != current)
+    {
         self.bot.threat.time_first_sight = now;
+        self.bot.threat.time_aim_correct = 0;
+        self.bot.threat.aim_target = undefined;
+        self.bot.threat.target_lock_until = now + 350;
+    }
 
     self.bot.threat.entity = best;
     self.bot.threat.time_recent_sight = now;
@@ -2548,6 +2606,9 @@ bot_clear_enemy()
 	
 	self.bot.threat.entity = undefined;
 	self.bot.threat.visible = undefined;
+	self.bot.threat.aim_target = undefined;
+	self.bot.threat.time_aim_correct = 0;
+	self.bot.threat.target_lock_until = 0;
 }
 
 threat_dead()
