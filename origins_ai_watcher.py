@@ -350,7 +350,16 @@ def audit_project(project: Path) -> AuditReport:
         findings.append(Finding("warning", "quest mode", "Last-zombie protection not clearly coupled to quest mode", "The source scan did not find both a living-zombie count signal and an attack-control signal in quest-related function bodies. The behavior may be implemented in a shared helper; verify in a live round that one zombie is preserved and that bots resume attacking after leaving Quest mode.", [f"Quest-related functions found: {len(quest_hits)}"], "low"))
 
     # Interactions should verify state, not only issue button presses.
-    objective_funcs = [x for x in all_functions if any(t in x[0].lower() for t in ("quest", "robot", "staff", "tank", "generator", "dig", "drone", "portal"))]
+    objective_funcs = [
+        x for x in all_functions
+        if (
+            "origins" in x[2].lower() or "tomb" in x[2].lower() or
+            Path(x[2]).name.lower() == "zm_bo2_bots.gsc"
+        )
+        and any(t in x[0].lower() for t in (
+            "quest", "robot", "staff", "tank", "generator", "dig", "drone", "portal"
+        ))
+    ]
     weak: list[str] = []
     for name, body, rel, line in objective_funcs:
         if len(body) < 120:
