@@ -2960,10 +2960,27 @@ MM_OriginsStaffGuideLoop()
                     continue;
 
                 torchIndex++;
-                markers[markers.size] = self MM_OriginsGuideMakeMarker(torchTarget.origin + (0, 0, 30), (1, 0.12, 0.08));
+                torchColor = (1, 0.12, 0.08);
+                torchColorName = "RED";
+                if(torchIndex == 2)
+                {
+                    torchColor = (1, 0.55, 0.05);
+                    torchColorName = "ORANGE";
+                }
+                else if(torchIndex == 3)
+                {
+                    torchColor = (0.8, 0.2, 1);
+                    torchColorName = "PURPLE";
+                }
+                else if(torchIndex == 4)
+                {
+                    torchColor = (0.1, 0.8, 1);
+                    torchColorName = "CYAN";
+                }
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(torchTarget.origin + (0, 0, 30), torchColor);
                 if(torchValues != "")
                     torchValues += "  ";
-                torchValues += "T" + torchIndex + "=";
+                torchValues += "T" + torchIndex + "(" + torchColorName + ")=";
                 if(isDefined(numberEnt.script_string))
                     torchValues += numberEnt.script_string;
                 else if(isDefined(numberEnt.script_int))
@@ -2971,7 +2988,8 @@ MM_OriginsStaffGuideLoop()
                 else
                     torchValues += torchIndex;
             }
-            guideText += "\n^3FIRE - CHURCH TORCHES^7: shoot ONLY the four red-marked torches.";
+            guideText += "\n^3FIRE - CHURCH TORCHES^7: light all four marked torches; order is not required.";
+            guideText += "\nMarker colors: T1 RED, T2 ORANGE, T3 PURPLE, T4 CYAN.";
             guideText += "\nLive torch markers: " + torchIndex + "/4";
             if(torchValues != "")
                 guideText += "   Numbers: " + torchValues;
@@ -3006,14 +3024,15 @@ MM_OriginsStaffGuideLoop()
                 {
                     if(!isDefined(key) || !isDefined(key.origin) || !isDefined(key.script_string))
                         continue;
-                    keyNeeded = false;
-                    foreach(note in pianoNotes)
-                    {
-                        if(note == key.script_string)
-                            keyNeeded = true;
-                    }
-                    if(keyNeeded)
-                        markers[markers.size] = self MM_OriginsGuideMakeMarker(key.origin + (0, 0, 20), (0.1, 1, 0.2));
+                    keyColor = undefined;
+                    if(key.script_string == pianoNotes[0])
+                        keyColor = (1, 0.12, 0.08);
+                    else if(key.script_string == pianoNotes[1])
+                        keyColor = (0.1, 0.35, 1);
+                    else if(key.script_string == pianoNotes[2])
+                        keyColor = (1, 0.9, 0.1);
+                    if(isDefined(keyColor))
+                        markers[markers.size] = self MM_OriginsGuideMakeMarker(key.origin + (0, 0, 20), keyColor);
                 }
 
                 pianoPlayed = 0;
@@ -3021,8 +3040,9 @@ MM_OriginsStaffGuideLoop()
                     pianoPlayed = level.a_piano_keys_playing.size;
 
                 guideText += "\n^3LIGHTNING - PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
-                guideText += "\nShoot the three GREEN-marked keys with the Lightning Staff:";
-                guideText += "\n" + pianoNotes[0] + " + " + pianoNotes[1] + " + " + pianoNotes[2] + "   (" + pianoPlayed + "/3 keys hit)";
+                guideText += "\nShoot the three marked keys with the Lightning Staff (any order):";
+                guideText += "\nRED=" + pianoNotes[0] + "  BLUE=" + pianoNotes[1] + "  YELLOW=" + pianoNotes[2];
+                guideText += "\n(" + pianoPlayed + "/3 keys hit)";
             }
             else
                 guideText += "\n^3LIGHTNING PIANO^7: waiting for chord data to initialize.";
@@ -3044,22 +3064,59 @@ MM_OriginsStaffGuideLoop()
                     if(!isDefined(relay) || !isDefined(relay.e_switch) || !isDefined(relay.e_switch.origin))
                         continue;
 
+                    relayColor = (0.55, 0.55, 0.55);
+                    relayColorName = "GRAY";
+                    if(relayIndex == 0)
+                    {
+                        relayColor = (1, 0.12, 0.08);
+                        relayColorName = "RED";
+                    }
+                    else if(relayIndex == 1)
+                    {
+                        relayColor = (0.1, 0.35, 1);
+                        relayColorName = "BLUE";
+                    }
+                    else if(relayIndex == 2)
+                    {
+                        relayColor = (0.8, 0.2, 1);
+                        relayColorName = "PURPLE";
+                    }
+                    else if(relayIndex == 3)
+                    {
+                        relayColor = (0.1, 0.8, 1);
+                        relayColorName = "CYAN";
+                    }
+                    else if(relayIndex == 4)
+                    {
+                        relayColor = (1, 0.9, 0.1);
+                        relayColorName = "YELLOW";
+                    }
+                    else if(relayIndex == 5)
+                    {
+                        relayColor = (1, 0.5, 0.05);
+                        relayColorName = "ORANGE";
+                    }
+                    else if(relayIndex == 6)
+                    {
+                        relayColor = (0.1, 1, 0.2);
+                        relayColorName = "GREEN";
+                    }
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayColor);
+
                     if(relayGoals[relayIndex] < 0)
                     {
-                        markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), (0.55, 0.55, 0.55));
-                        guideText += "^7BUNKER: unused   ";
+                        guideText += "^7BUNKER GRAY: unused   ";
                         continue;
                     }
 
-                    relayColor = (1, 0.5, 0.05);
+                    relayStatus = "FIX";
                     if(isDefined(relay.position) && relay.position == relayGoals[relayIndex])
-                        relayColor = (0.1, 1, 0.2);
-                    markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayColor);
-                    guideText += relayName + " " + relay.position + "->" + relayGoals[relayIndex] + "   ";
+                        relayStatus = "OK";
+                    guideText += relayName + " " + relayColorName + " " + relay.position + "->" + relayGoals[relayIndex] + " [" + relayStatus + "]   ";
                     if(relayIndex == 3)
                         guideText += "\n";
                 }
-                guideText += "\nSet every orange switch's current number to its target number.";
+                guideText += "\nMatch each color-coded switch's current position to its target number. [OK] is already correct.";
             }
         }
 
@@ -3076,13 +3133,25 @@ MM_OriginsStaffGuideLoop()
                     if(!isDefined(ring) || !isDefined(ring.origin) || !isDefined(ring.position) || !isDefined(ring.script_int))
                         continue;
                     ringIndex++;
-                    ringColor = (1, 0.5, 0.05);
-                    if(ring.position == ring.script_int)
-                        ringColor = (0.1, 1, 0.2);
+                    ringColor = (1, 0.12, 0.08);
+                    ringColorName = "RED";
+                    if(ringIndex == 2)
+                    {
+                        ringColor = (0.1, 0.35, 1);
+                        ringColorName = "BLUE";
+                    }
+                    else if(ringIndex == 3)
+                    {
+                        ringColor = (0.8, 0.2, 1);
+                        ringColorName = "PURPLE";
+                    }
                     markers[markers.size] = self MM_OriginsGuideMakeMarker(ring.origin + (0, 0, 34), ringColor);
-                    guideText += "R" + ringIndex + " " + ring.position + "->" + ring.script_int + "   ";
+                    ringStatus = "FIX";
+                    if(ring.position == ring.script_int)
+                        ringStatus = "OK";
+                    guideText += "R" + ringIndex + " " + ringColorName + " " + ring.position + "->" + ring.script_int + " [" + ringStatus + "]   ";
                 }
-                guideText += "\nShoot each orange ring with the Wind Staff until its two values match.";
+                guideText += "\nMarker colors: R1 RED, R2 BLUE, R3 PURPLE. Shoot a ring until its current/target values match.";
             }
         }
         else if(self hasweapon("staff_air_zm") && !flag("air_puzzle_2_complete"))
