@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.2"
+VERSION = "1.3.3"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -430,8 +430,10 @@ class LogTailer:
                 first_seen = key not in self.positions
                 old_size, old_mtime_ns = self.positions.get(key, (0, 0))
                 if first_seen:
-                    # Inspect only the latest slice on startup; do not replay huge old logs.
-                    old_size = max(0, stat.st_size - 100_000)
+                    # Start at EOF so historical log records are not mislabeled as
+                    # events from the current watcher session. Fresh telemetry arrives
+                    # on the next bot-state / objective update.
+                    old_size = stat.st_size
                 if stat.st_size < old_size or stat.st_mtime_ns < old_mtime_ns:
                     old_size = 0  # log rotation/truncation
                 if stat.st_size == old_size:
