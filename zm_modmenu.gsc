@@ -1,5 +1,5 @@
 // ============================================================================
-//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v3.6
+//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v3.7
 //  Install: %localappdata%\Plutonium\storage\t6\scripts\zm\zm_modmenu.gsc
 //
 //  Controls (menu closed):  AIM + MELEE ............ open menu
@@ -10,8 +10,8 @@
 //                           (also in Personal Mods)
 //
 //  Maps: TranZit / Nuketown / Die Rise / Mob of the Dead / Buried / Origins
-//  Every weapon / drop / perk entry is checked against what the current map
-//  has loaded, so nothing is given that the map does not know.
+//  Perk actions include physical vending machines and each map's registered
+//  random-perk pool (including Origins Wunderfizz-only perks).
 // ============================================================================
 
 #include maps\mp\_utility;
@@ -772,8 +772,8 @@ BuildMenuStructure()
     self MM_AddWeaponOpt("weapons", "EMP Grenades", "emp_grenade_zm");
     self MM_AddWeaponOpt("weapons", "Zombie Shield", "riotshield_zm");
     self MM_AddWeaponOpt("weapons", "Galvaknuckles", "tazer_knuckles_zm");
-    self addMenuOpt("weapons", "Give All Perks", ::GiveAllPerks);
-    self addMenuOpt("weapons", "Remove All Perks", ::RemoveAllPerks);
+    self addMenuOpt("weapons", "Give All Available Perks", ::GiveAllPerks);
+    self addMenuOpt("weapons", "Remove All Available Perks", ::RemoveAllPerks);
     self addMenuOpt("weapons", "Drop Current Weapon", ::DropWeapon);
 
     // --- LOBBY ---
@@ -2018,38 +2018,134 @@ DropWeapon()
     self iprintln("Weapon dropped");
 }
 
-// Gives every perk that has a machine on the current map.
+// Collect every perk the current map actually registers:
+// - physical vending-machine triggers;
+// - map-specific random-perk pools (Origins Wunderfizz includes perks
+//   that do not have their own permanent vending-machine entity);
+// - registered custom perks supplied by the current map.
+MM_GetAvailablePerks()
+{
+    perks = [];
+
+    machines = getEntArray("zombie_vending", "targetname");
+    if(isDefined(machines))
+    {
+        foreach(machine in machines)
+        {
+            if(!isDefined(machine) || !isDefined(machine.script_noteworthy))
+                continue;
+
+            perk = machine.script_noteworthy;
+            found = false;
+            foreach(existing in perks)
+            {
+                if(existing == perk)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if(!found)
+                perks[perks.size] = perk;
+        }
+    }
+
+    // This is the same map-specific pool the Wunderfizz uses. The values,
+    // rather than array indexes, are the actual specialty_* perk identifiers.
+    if(isDefined(level._random_perk_machine_perk_list))
+    {
+        randomKeys = getArrayKeys(level._random_perk_machine_perk_list);
+        foreach(key in randomKeys)
+        {
+            perk = level._random_perk_machine_perk_list[key];
+            if(!isDefined(perk))
+                continue;
+
+            found = false;
+            foreach(existing in perks)
+            {
+                if(existing == perk)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if(!found)
+                perks[perks.size] = perk;
+        }
+    }
+
+    // Include any other custom perk registered by this map.
+    if(isDefined(level._custom_perks))
+    {
+        customKeys = getArrayKeys(level._custom_perks);
+        foreach(perk in customKeys)
+        {
+            if(!isDefined(perk))
+                continue;
+
+            found = false;
+            foreach(existing in perks)
+            {
+                if(existing == perk)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if(!found)
+                perks[perks.size] = perk;
+        }
+    }
+
+    return perks;
+}
+
+// Gives all available perks, not only perks with a physical vending machine.
 MM_GivePerks()
 {
-    machines = getEntArray("zombie_vending", "targetname");
-    foreach(m in machines)
+    perks = self MM_GetAvailablePerks();
+    given = 0;
+
+    foreach(perk in perks)
     {
-        perk = m.script_noteworthy;
-        if(!isDefined(perk))
+        if(!isDefined(perk) || self hasPerk(perk))
             continue;
-        if(self hasPerk(perk))
-            continue;
+
         self maps\mp\zombies\_zm_perks::give_perk(perk, false);
-        wait 0.25;
+        given++;
+        wait 0.20;
     }
+
+    return given;
 }
 
 GiveAllPerks()
 {
-    self MM_GivePerks();
-    self iprintln("All perks ^2given");
+    perks = self MM_GetAvailablePerks();
+    given = self MM_GivePerks();
+
+    self iprintln("^2Gave " + given + " available perks ^7(" + perks.size + " recognized)");
 }
 
 RemoveAllPerks()
 {
-    machines = getEntArray("zombie_vending", "targetname");
-    foreach(m in machines)
+    perks = self MM_GetAvailablePerks();
+    removed = 0;
+
+    foreach(perk in perks)
     {
-        perk = m.script_noteworthy;
         if(isDefined(perk) && self hasPerk(perk))
+        {
             self notify(perk + "_stop");
+            removed++;
+        }
     }
-    self iprintln("Perks removed");
+
+    self iprintln("^2Removed " + removed + " available perks");
 }
 
 // ============================================================================
