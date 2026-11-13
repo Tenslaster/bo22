@@ -2321,6 +2321,9 @@ bot_origins_tank_board_roof(tank)
 
     targets = [];
 
+    if(isdefined(tank.t_use) && isdefined(tank.t_use.origin))
+        targets[targets.size] = tank.t_use.origin;
+
     if(isdefined(tank.e_roof.origin))
         targets[targets.size] = tank.e_roof.origin;
 
@@ -2393,6 +2396,7 @@ bot_origins_tank_force_activate(tank, from_callbox)
 
     // Mirror the native tank watcher only when its trigger ignored this bot.
     // Never set the rider flag here: roof contact is still independently checked.
+    level.tank_boxes_enabled = 1;
     tank ent_flag_set("tank_activated");
     tank ent_flag_set("tank_moving");
 
@@ -2471,6 +2475,10 @@ bot_origins_tank_call_station(tank)
 
     used = self scripts\zm\zm_bo2_bots::bot_quest_use_target(
         best_box, "bot_origins_tank_call_station", 48, 2);
+
+    // bot_quest_use_target() owns this flag while pressing use and clears it
+    // on return; restore the tank worker's movement lock for the ride.
+    self.bot.is_objective_using = 1;
 
     if(!used)
         return false;
@@ -2563,6 +2571,8 @@ bot_origins_tank_try_jump_down(tank)
     if(isdefined(exit_target))
     {
         deadline = gettime() + 9000;
+        last_goal_origin = undefined;
+        next_goal_refresh = 0;
         while(gettime() < deadline && isalive(self) &&
               self bot_origins_tank_is_on_roof())
         {
@@ -2570,14 +2580,23 @@ bot_origins_tank_try_jump_down(tank)
             if(!isdefined(landing))
                 break;
 
-            self cancelgoal("bot_origins_tank_jump_down");
-            self addgoal(landing, 22, 2, "bot_origins_tank_jump_down");
+            // The jump-down target moves with the vehicle. Refresh it at a
+            // low rate so the navigation goal is not reset every 0.2 seconds.
+            if(!isdefined(last_goal_origin) ||
+               distancesquared(last_goal_origin, landing) > 32 * 32 ||
+               gettime() >= next_goal_refresh)
+            {
+                self cancelgoal("bot_origins_tank_jump_down");
+                self addgoal(landing, 22, 2, "bot_origins_tank_jump_down");
+                last_goal_origin = landing;
+                next_goal_refresh = gettime() + 700;
+            }
 
             if(distancesquared(self.origin, landing) <= 52 * 52)
             {
                 delta = landing - self.origin;
                 direction = vectornormalize((delta[0], delta[1], 0));
-                if(direction == (0, 0, 0))
+                if(distancesquared(direction, (0, 0, 0)) < 0.001)
                     direction = anglestoforward(tank.angles);
 
                 // setvelocity is also the native tank's player push-off API.
