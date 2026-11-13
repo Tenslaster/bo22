@@ -16,6 +16,8 @@ The bot-state record includes:
 - elapsed time since movement progress, flee and wander goal flags
 - current living-zombie count
 - robot-head ID and whether the bot holds each base elemental staff
+- each elemental staff upgrade puzzle stage (Wind rings/smoke, Ice tiles/stones, Lightning piano/relays, Fire sacrifice/torches)
+- whether the bot is registered by the stock tank script as riding the tank, plus tank movement, cooldown, and current station
 - the Little Lost Girl flags and each individual staff-upgrade-unlocked flag
 
 The Python observer parses these events, tracks transitions in staff inventory and quest flags, reports low-health / empty-ammo / apparent task-stall / last-zombie warning conditions, and keeps full snapshots in its JSONL evidence file.
@@ -34,9 +36,9 @@ The typical local T6 storage root is `%localappdata%\Plutonium\storage\t6`. Depe
 - This branch is separate from `main`; it does not merge or overwrite the default branch.
 - The added telemetry calls are intended to be observational only and do not issue movement, weapon, or objective commands.
 - `fire_active` reports that the bot's GSC firing timer is active; it is not proof that a projectile hit.
-- The Python static scanner is heuristic. It does not compile GSC.
+- The Python static scanner is heuristic. It preserves GSC string literals for evidence discovery, and only reports duplicate function definitions repeated within the same file (same-named entrypoints in separate script files are treated as separate namespaces). It does not compile GSC.
 - This change has **not** been compiled or live-tested in a Plutonium match. Run a private match and verify the log records arrive before relying on its diagnostics.
-- The tank / Electric Staff jump controller is not added by this telemetry change. The source audit still flags that missing route if no implementation exists elsewhere.
+- The tank / Electric Staff jump controller is not added by this telemetry change. The source audit checks for player-side tank signals such as `trig_use_tank`, `entity_on_tank`, `b_already_on_tank`, and `vol_on_tank_watch`; it does not treat the mod-menu tank status/call buttons or zombie `tank_jump_up/down` animations as proof that bot riding works. The upstream stock tank implementation is [here](https://github.com/plutoniummod/t6-scripts/blob/main/ZM/Maps/Origins/maps/mp/zm_tomb_tank.gsc).
 
 ## One-click Windows launcher
 
