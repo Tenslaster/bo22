@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.4"
+VERSION = "1.3.5"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -639,6 +639,7 @@ GAME_PROCESS_EXACT = {
     "t6sp.exe",
     "t6rzm.exe",
     "t6rmp.exe",
+    "blackops2.exe",
 }
 GAME_TITLE_HINTS = ("black ops", "blackops", "t6 zombies", "t6zm")
 
@@ -744,17 +745,29 @@ class ScreenObserver:
         auto_detect = not needle or needle in {"auto", "auto-detect", "automatic"}
 
         if auto_detect:
-            # Prefer the actual T6 game process over the launcher window. If
-            # process lookup is blocked, known BO2 / T6 game titles are fallback.
+            # Trust the owning process whenever Windows can identify it.
+            # Never fall back to a matching title owned by Explorer, a browser,
+            # Python/the watcher, or another known non-game process.
             process_matches = [w for w in windows if _is_game_process(w[3])]
-            title_matches = [w for w in windows if _is_game_title(w[1])]
-            candidates = process_matches or title_matches
+            if process_matches:
+                candidates = process_matches
+            else:
+                # A title fallback is safe only when Windows could not resolve
+                # the owner process at all (empty process_name).
+                candidates = [
+                    w for w in windows
+                    if not w[3] and _is_game_title(w[1])
+                ]
             candidates.sort(key=lambda w: (
                 0 if w[3] in {"t6zm.exe", "t6mp.exe", "t6sp.exe", "blackops2.exe"} else 1,
                 -((w[2][2] - w[2][0]) * (w[2][3] - w[2][1])),
             ))
         else:
-            candidates = [w for w in windows if needle in w[1].lower()]
+            candidates = [
+                w for w in windows
+                if needle in w[1].lower()
+                and (not w[3] or _is_game_process(w[3]))
+            ]
             if not candidates:
                 candidates = [w for w in windows if _is_game_process(w[3])]
 
@@ -1157,7 +1170,8 @@ class App:
         options = [
             f"{title}  [{process_name or 'process unknown'}]"
             for _hwnd, title, _rect, process_name in windows
-            if _is_game_process(process_name) or _is_game_title(title)
+            if _is_game_process(process_name)
+            or (not process_name and _is_game_title(title))
         ]
         values = ["Auto-detect"] + options
         self.window_combo.configure(values=values)
