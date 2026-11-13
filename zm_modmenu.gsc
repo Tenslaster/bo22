@@ -3375,10 +3375,11 @@ MM_OriginsTeleportRobot(robotId)
     watchFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_death_watch_on_giant_robot");
     startFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_start");
     finishFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_finish");
+    self thread fadetoblackforxsec(0, 4.0, 0.01, 0.2, "white");
     if(isDefined(watchFunc))
         self thread [[ watchFunc ]]();
     if(isDefined(startFunc))
-        self thread [[ startFunc ]](4.01);
+        self thread [[ startFunc ]](0.01);
     if(isDefined(finishFunc))
         self thread [[ finishFunc ]](4.21);
 
