@@ -846,6 +846,8 @@ BuildMenuStructure()
         self addMenuOpt("origins", "Give Myself Golden Helmet", ::MM_OriginsGiveGoldenHelmet);
         self addToggleOpt("origins", "Dig Site ESP", ::MM_OriginsToggleDigESP, "origdigesp");
         self addMenuOpt("origins", "Staff Progress Tracker", ::MM_OriginsStaffProgress);
+        self addToggleOpt("origins", "Staff Upgrade Guide ESP", ::MM_OriginsToggleStaffGuide, "origstaffguide");
+        self addMenuOpt("origins", "Stage All 4 Staff Crystals in Crazy Place", ::MM_OriginsStageAllCrystals);
         self addMenuOpt("origins", "Maxis Drone: Recall / Recover", ::MM_OriginsRecoverDrone);
         self addSubMenu("origins", "One Inch Punch", "originspunch");
         self addToggleOpt("origins", "Robot Foot Warning", ::MM_OriginsToggleRobotWarning, "origrobotwarn");
@@ -866,6 +868,9 @@ BuildMenuStructure()
         self addMenuOpt("originspunch", "Lightning Elemental Punch", ::MM_OriginsGivePunch, "lightning");
 
         self addMenuOpt("originsteleport", "Teleport to Crazy Place", ::MM_OriginsTeleportCrazyPlace);
+        self addMenuOpt("originsteleport", "Teleport Inside Robot 1", ::MM_OriginsTeleportRobot, 0);
+        self addMenuOpt("originsteleport", "Teleport Inside Robot 2", ::MM_OriginsTeleportRobot, 1);
+        self addMenuOpt("originsteleport", "Teleport Inside Robot 3", ::MM_OriginsTeleportRobot, 2);
         self addMenuOpt("originsteleport", "Return via Fire Portal", ::MM_OriginsTeleportMainMap, 1);
         self addMenuOpt("originsteleport", "Return via Wind Portal", ::MM_OriginsTeleportMainMap, 2);
         self addMenuOpt("originsteleport", "Return via Lightning Portal", ::MM_OriginsTeleportMainMap, 3);
@@ -2852,6 +2857,111 @@ MM_OriginsDigESPLoop()
     self.mmOriginsDigESPActive = false;
 }
 
+
+// Live four-staff checklist. This is a guide/ESP overlay only: it reads the
+// native craftable counts, weapon inventory, charger flags and robot plinths.
+// It never awards parts or changes Easter Egg state.
+MM_OriginsToggleStaffGuide()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Staff Upgrade Guide is only available on Origins.");
+        return;
+    }
+    self scripts\\zm\\zm_modmenu::MM_Toggle("origstaffguide", "Staff Upgrade Guide ESP", ::MM_OriginsStaffGuideLoop);
+}
+
+MM_OriginsStaffGuideLoop()
+{
+    self endon("disconnect");
+    hud = newClientHudElem(self);
+    hud.horzAlign = "left";
+    hud.vertAlign = "top";
+    hud.alignX = "left";
+    hud.alignY = "top";
+    hud.x = 12;
+    hud.y = 90;
+    hud.font = "objective";
+    hud.fontScale = 1.25;
+    hud.foreground = true;
+    hud.hideWhenInMenu = true;
+    hud.sort = 1100;
+    hud.alpha = 1;
+    hud.color = (0.85, 0.95, 1);
+
+    while(self scripts\\zm\\zm_modmenu::MM_IsOn("origstaffguide"))
+    {
+        if(level.script != "zm_tomb")
+        {
+            self.mmToggle["origstaffguide"] = false;
+            break;
+        }
+
+        guideText = "^3ORIGINS STAFF GUIDE^7\n";
+        guideText += self MM_OriginsStaffGuideLine("WIND", "elemental_staff_air", "staff_air_zm", "staff_air_upgraded_zm", "staff_air_zm_upgrade_unlocked", 2) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("FIRE", "elemental_staff_fire", "staff_fire_zm", "staff_fire_upgraded_zm", "staff_fire_zm_upgrade_unlocked", 1) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("ICE", "elemental_staff_water", "staff_water_zm", "staff_water_upgraded_zm", "staff_water_zm_upgrade_unlocked", 4);
+        if(flag("ee_all_staffs_placed"))
+            guideText += "\n^2All four upgraded staffs are in the robots.";
+        hud setText(guideText);
+        wait 0.5;
+    }
+
+    if(isDefined(hud))
+        hud destroy();
+}
+
+MM_OriginsStaffGuideLine(label, craftableName, baseWeapon, upgradedWeapon, upgradeFlag, crystalIndex)
+{
+    parts = 0;
+    if(isDefined(level.num_staffpieces_picked_up) &&
+       isDefined(level.num_staffpieces_picked_up[craftableName]))
+        parts = level.num_staffpieces_picked_up[craftableName];
+
+    built = isDefined(level.craftables_crafted) &&
+            isDefined(level.craftables_crafted[craftableName]) &&
+            level.craftables_crafted[craftableName];
+    upgraded = flag(upgradeFlag);
+    placed = false;
+    if(isDefined(level.a_elemental_staffs_upgraded))
+    {
+        foreach(staff in level.a_elemental_staffs_upgraded)
+        {
+            if(!isDefined(staff) || !isDefined(staff.base_weapname) ||
+               staff.base_weapname != baseWeapon)
+                continue;
+            if(isDefined(staff.ee_in_use) && staff.ee_in_use)
+                placed = true;
+        }
+    }
+
+    step = "^3Find staff parts (" + parts + "/3)";
+    if(parts >= 3 && !built)
+        step = "^3Build it at the excavation table";
+    else if(built && !self hasweapon(baseWeapon) && !upgraded)
+        step = "^3Pick up the base staff";
+    else if(self hasweapon(baseWeapon) && !upgraded)
+        step = "^3Insert in charger; kill zombies until 20 souls";
+    else if(upgraded && !self hasweapon(upgradedWeapon))
+        step = "^3Pick up the upgraded staff";
+    else if(self hasweapon(upgradedWeapon) && !placed)
+    {
+        if(label == "WIND")
+            step = "^3Crazy Place: ceiling rings + smoke targets; charge crypt orb";
+        else if(label == "FIRE")
+            step = "^3Crazy Place: soul chests + church torches; charge crypt orb";
+        else if(label == "LIGHTNING")
+            step = "^3Crazy Place: piano chords + wall switches; charge crypt orb";
+        else
+            step = "^3Crazy Place: match ceiling tiles, freeze + shatter stones";
+    }
+    else if(placed)
+        step = "^2Upgraded staff placed in robot";
+
+    return "^7" + label + ": " + step;
+}
+
 MM_OriginsStaffProgress()
 {
     if(level.script != "zm_tomb")
@@ -3209,6 +3319,72 @@ MM_OriginsTeleportCrazyPlace()
     self iprintln("^1No active Crazy Place portal with a free landing spot was found.");
 }
 
+
+// Enter one of the three giant robots using the map's own head teleport target.
+// The hatch must already be open; this preserves the stock foot/hatch timing.
+MM_OriginsTeleportRobot(robotId)
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Robot teleport is only available on Origins.");
+        return;
+    }
+    if(!isDefined(robotId) || robotId < 0 || robotId > 2)
+        return;
+    if(!isDefined(level.a_giant_robots) || !isDefined(level.a_giant_robots[robotId]))
+    {
+        self iprintln("^1That giant robot is not initialized yet.");
+        return;
+    }
+    if(!isDefined(level.gr_foot_hatch_closed) ||
+       !isDefined(level.gr_foot_hatch_closed[robotId]) ||
+       level.gr_foot_hatch_closed[robotId])
+    {
+        self iprintln("^3Wait for Robot " + (robotId + 1) + "'s hatch to open before entering.");
+        return;
+    }
+
+    robot = level.a_giant_robots[robotId];
+    if(!isDefined(robot) || !isDefined(robot.b_has_hatch) || !robot.b_has_hatch)
+    {
+        self iprintln("^1That robot's hatch is not available.");
+        return;
+    }
+    if(isDefined(self.in_giant_robot_head))
+    {
+        self iprintln("^3You are already inside a giant robot.");
+        return;
+    }
+
+    targetName = "head_" + robotId + "_teleport_player";
+    teleportFunc = MM_OriginsTeleportFunc("stargate_teleport_player");
+    if(!isDefined(teleportFunc) || !MM_OriginsTeleportHasFreeSpot(targetName))
+    {
+        self iprintln("^1The stock robot-head teleport destination is unavailable.");
+        return;
+    }
+
+    self.ignoreme = 1;
+    self.teleport_initial_origin = self.origin;
+    self.in_giant_robot_head = robotId;
+    robot ent_flag_set("robot_head_entered");
+    level thread [[ teleportFunc ]](targetName, self, 4.0, 0);
+
+    // Start the same stock head watchdog and transition workers used by the
+    // foot trigger. Resolve them at runtime to avoid cross-map externals.
+    watchFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_death_watch_on_giant_robot");
+    startFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_start");
+    finishFunc = getfunction("maps/mp/zm_tomb_giant_robot", "player_transition_into_robot_head_finish");
+    if(isDefined(watchFunc))
+        self thread [[ watchFunc ]]();
+    if(isDefined(startFunc))
+        self thread [[ startFunc ]](4.01);
+    if(isDefined(finishFunc))
+        self thread [[ finishFunc ]](4.21);
+
+    self iprintlnbold("^2Entering Robot " + (robotId + 1) + ".");
+}
+
 MM_OriginsTeleportMainMap(portalIndex)
 {
     if(level.script != "zm_tomb")
@@ -3243,6 +3419,46 @@ MM_OriginsTeleportMainMap(portalIndex)
 
     level thread [[ teleportFunc ]](exitTrigger.target, self, 1.5, 1);
     self iprintln("^2Return to the Origins map started.");
+}
+
+
+// Stage the four elemental crystals through the same stock notification that
+// Origins' teleporter sends after a successful portal trip. Each crystal's
+// native staff_crystal_wait_for_teleport thread then raises its own plinth.
+MM_OriginsStageAllCrystals()
+{
+    if(level.script != "zm_tomb")
+    {
+        self iprintln("^1Staff crystals are only available on Origins.");
+        return;
+    }
+    if(!self isHost())
+    {
+        self iprintln("^1Staging all four crystals requires the host.");
+        return;
+    }
+    if(!flag("start_zombie_round_logic"))
+    {
+        self iprintln("^1Start the first round before staging crystals.");
+        return;
+    }
+
+    if(!isDefined(level.a_elemental_staffs) || level.a_elemental_staffs.size < 4)
+    {
+        self iprintln("^1The Origins staff system is not initialized yet.");
+        return;
+    }
+
+    staged = 0;
+    for(element = 1; element <= 4; element++)
+    {
+        level notify("player_teleported", self, element);
+        staged++;
+        wait_network_frame();
+    }
+
+    self iprintlnbold("^2All four native staff-crystal plinths were signalled.");
+    self iprintln("^7This stages the crystals in the Crazy Place; it does not grant four carried inventory items.");
 }
 
 MM_OriginsCollectAllSharedParts()
