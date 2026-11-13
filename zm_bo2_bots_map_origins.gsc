@@ -2493,8 +2493,9 @@ bot_origins_tank_get_jump_down_origin(tank, spot)
     v_fwd = anglestoforward(tank.angles);
     v_right = anglestoright(tank.angles);
     v_up = anglestoup(tank.angles);
-    return tank.origin + spot.tank_offset[0] * v_fwd +
-           spot.tank_offset[1] * v_right + spot.tank_offset[2] * v_up;
+    return tank.origin + vectorscale(v_fwd, spot.tank_offset[0]) +
+           vectorscale(v_right, spot.tank_offset[1]) +
+           vectorscale(v_up, spot.tank_offset[2]);
 }
 
 bot_origins_tank_choose_exit_spot(tank)
@@ -2503,8 +2504,10 @@ bot_origins_tank_choose_exit_spot(tank)
     if(!isdefined(spots) || spots.size == 0)
         return undefined;
 
-    best = undefined;
-    best_cost = 999999999;
+    best_with_part = undefined;
+    best_part_cost = 999999999;
+    fallback = undefined;
+    fallback_cost = 999999999;
 
     foreach(spot in spots)
     {
@@ -2519,26 +2522,32 @@ bot_origins_tank_choose_exit_spot(tank)
         if(isdefined(part))
         {
             cost = distancesquared(landing, part.model.origin);
-            if(cost < best_cost)
+            if(cost < best_part_cost)
             {
-                best = spawnstruct();
-                best.spot = spot;
-                best.origin = landing;
-                best.piece = part;
-                best_cost = cost;
+                best_with_part = spawnstruct();
+                best_with_part.spot = spot;
+                best_with_part.origin = landing;
+                best_with_part.piece = part;
+                best_part_cost = cost;
             }
         }
-        else if(!isdefined(best))
+        else
         {
-            best = spawnstruct();
-            best.spot = spot;
-            best.origin = landing;
-            best.piece = undefined;
-            best_cost = distancesquared(self.origin, landing);
+            cost = distancesquared(self.origin, landing);
+            if(cost < fallback_cost)
+            {
+                fallback = spawnstruct();
+                fallback.spot = spot;
+                fallback.origin = landing;
+                fallback.piece = undefined;
+                fallback_cost = cost;
+            }
         }
     }
 
-    return best;
+    if(isdefined(best_with_part))
+        return best_with_part;
+    return fallback;
 }
 
 bot_origins_tank_try_jump_down(tank)
@@ -2734,8 +2743,10 @@ bot_origins_tank_lightning_worker()
 
     self.bot.is_objective_using = undefined;
     self.bot.origins_tank_worker_running = undefined;
-    self.bot.origins_tank_retry_after = gettime() +
-        (self bot_origins_tank_is_on_roof() ? 3000 : 12000);
+    retry_delay = 12000;
+    if(self bot_origins_tank_is_on_roof())
+        retry_delay = 3000;
+    self.bot.origins_tank_retry_after = gettime() + retry_delay;
 
     if(isdefined(level.bot_origins_tank_owner) && level.bot_origins_tank_owner == self)
     {
