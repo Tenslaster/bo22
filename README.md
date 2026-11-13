@@ -128,8 +128,9 @@ Some objectives require the host or a player to perform an earlier step first. T
 | **Wander** | Move around nearby reachable areas while continuing their normal combat and support logic. |
 | **Wander Further** | Use a wider roaming behaviour to explore farther from their starting position. |
 | **Follow** | Use the player who issued the command as the team leader and move toward that player. |
+| **Quest** | Stop ordinary roaming/following, prioritize the autonomous part, buildable, and map-quest workers, and stop attacking when only one living zombie remains so the round stays open. |
 
-The bot mode is shared by the bot group. When switching back to **Stay**, each bot records a new position for its stay behaviour.
+The bot mode is shared by the bot group. Press **Action Slot 3** to cycle through Stay → Wander → Wander Further → Follow → Quest → Stay. **Action Slot 4** remains the group teleport command. In Quest mode, bots stop normal roaming and let their autonomous collection and map-objective workers choose movement goals. They stop firing when one living zombie remains; that last zombie is preserved until you switch to another mode.
 
 ---
 
