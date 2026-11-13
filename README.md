@@ -669,30 +669,36 @@ Use player-management actions only in a session where you have permission to man
 
 ### Bot controls
 
-These are the **number-row keys**, not F6/F7:
+These are the **number-row keys**:
 
 | Keyboard key | Action |
 |---|---|
-| **3** | Teleport the whole bot group to your position. |
-| **4** | Cycle the bot command mode. |
+| **3** | Cycle the bot command mode. |
+| **4** | Teleport the whole bot group to your position. |
 
-**Key 3 — Teleport bots**
+**Key 3 — Change bot mode**
+
+Each press cycles through:
+
+```text
+Stay → Wander → Wander Further → Follow → Quest → Stay
+```
+
+The current mode is printed on screen. The mode applies to the whole bot group.
+
+**Quest Mode**
+- Stops ordinary Stay/Follow/Wander movement so the bots' autonomous collection, buildable, craftable, and map-quest workers can choose their own destinations.
+- Keeps the normal survival/combat logic active while more than one zombie remains.
+- Stops the bots from attacking when only one living zombie remains, preserving that zombie while the bots work on parts and quest objectives.
+- Switch back to any other mode to resume normal zombie targeting.
+
+**Key 4 — Teleport bots**
 
 - Moves the bot group near your current position using small offsets so they do not all occupy exactly the same point.
 - You must be standing on the ground when you press it.
 - If you are airborne, the script prints a warning and does not teleport the group.
 
-**Key 4 — Change bot mode**
-
-Each press cycles through:
-
-```text
-Stay → Wander → Wander Further → Follow → Stay
-```
-
-The current mode is printed on screen. The mode applies to the bot group, not just one bot.
-
-> The script listens for Action Slot 3 for teleport and Action Slot 4 for mode cycling. In the documented setup those are mapped to the keyboard number keys **3** and **4**. If your own key bindings have been changed, bind those Action Slot commands to the same number keys.
+> The script listens for Action Slot 3 to cycle modes and Action Slot 4 to teleport. In the documented setup those are mapped to the keyboard number-row keys **3** and **4**. If your bindings differ, bind those Action Slot commands to the same number keys.
 
 ### Mod-menu controls
 
@@ -856,7 +862,7 @@ The latest Origins changes have received a source-level review against the stock
 
 ### Bots spawn but stand still
 
-- Press **4** to cycle from Stay to Wander or Follow.
+- Press **3** to cycle bot modes; use **4** for group teleport.
 - Check whether a bot is already assigned to a revive, build, craft, generator, or map objective.
 - Check whether the bot can find a navigation path to its current destination.
 - On Origins, a generator defender may intentionally remain in the capture zone while fighting.
@@ -864,7 +870,7 @@ The latest Origins changes have received a source-level review against the stock
 ### Number keys 3 and 4 do nothing
 
 - Confirm that your keyboard number-row **3** is bound to Action Slot 3 and **4** to Action Slot 4.
-- Key 3 is the teleport command; key 4 changes the bot mode.
+- Key 3 changes the bot mode; key 4 teleports the group.
 - Stand on the ground before using key 3.
 - Avoid testing both keys while another menu or binding is intercepting the same action slot.
 
@@ -945,7 +951,7 @@ A useful report should include:
 1. The map and current quest stage.
 2. Whether you are host.
 3. How many bots are in the match.
-4. The bot mode (Stay, Wander, Wander Further, or Follow).
+4. The bot mode (Stay, Wander, Wander Further, Follow, or Quest).
 5. The exact action you expected the bot to take.
 6. What the bot actually did.
 7. The full Plutonium compiler/console error, if one appeared.
