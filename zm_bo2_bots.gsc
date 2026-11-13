@@ -449,7 +449,7 @@ bot_spawn_init()
 	self.bot.threat.position = (0, 0, 0);
 	self.bot.threat.time_first_sight = 0;
 	self.bot.threat.time_recent_sight = 0;
-	self.bot.threat.time_aim_interval = 0;
+	self.bot.threat.time_aim_interval = 125;
 	self.bot.threat.time_aim_correct = 0;
 }
 
@@ -5992,7 +5992,9 @@ bot_update_lookat()
 		path = 1;
 	}
 	
-	if(!path && gettime() > self.bot.update_idle_lookat)
+	if(!path &&
+	   (!isdefined(self.bot.threat.entity) || !isalive(self.bot.threat.entity)) &&
+	   gettime() > self.bot.update_idle_lookat)
 	{
 		origin = bot_get_look_at();
 		
