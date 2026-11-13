@@ -52,11 +52,10 @@ bot_combat_think(damage, attacker, direction)
 	if(is_true(self.bot.is_objective_using))
 		self bot_combat_clear_movement();
 
-	self allowattack(0);
-	self pressads(0);
-	
 	if(!bot_can_do_combat())
 	{
+		self allowattack(0);
+		self pressads(0);
 		self bot_combat_clear_movement();
 		return;
 	}
@@ -112,7 +111,11 @@ bot_combat_think(damage, attacker, direction)
 	}
 	
 	if(self getcurrentweapon() == "none")
+	{
+		self allowattack(0);
+		self pressads(0);
 		return;
+	}
 	
 	sight = self bot_best_enemy();
 	
@@ -127,12 +130,15 @@ bot_combat_think(damage, attacker, direction)
 	
 	if(!isdefined(self.bot.threat.entity))
 	{
+		self allowattack(0);
+		self pressads(0);
 		self bot_combat_clear_movement();
 		return;
 	}
 	
 	if(self threat_dead())
 	{
+		self allowattack(0);
 		self bot_combat_clear_movement();
 		self bot_combat_dead();
 		
@@ -995,7 +1001,11 @@ bot_combat_main()
 		return;
 	
 	if(self isswitchingweapons())
+	{
+		self allowattack(0);
+		self pressads(0);
 		return;
+	}
 
 	// Move after melee, grenades and weapon swaps have yielded control.
 	self bot_combat_update_movement();
@@ -1016,6 +1026,7 @@ bot_combat_main()
 	
 	if(!currentammo)
 	{
+		self allowattack(0);
 		return;
 	}
 	
@@ -1113,6 +1124,10 @@ bot_combat_main()
 	
 	fire_safe = self bot_can_fire_safely(weapon);
 	on_target = self bot_on_target(aim_point, self bot_get_fire_radius(aim_point));
+
+	if(!on_target && isdefined(self.bot.threat.entity) &&
+	   isalive(self.bot.threat.entity))
+		on_target = self bot_on_target(self.bot.threat.entity.origin, 80);
 
 	if(fire_safe && on_target)
 	{
@@ -1491,7 +1506,7 @@ bot_can_fire_safely(weapon)
 		return false;
 	
 	// No line of sight = don't burn ammo into a wall, unless the zombie is basically touching us.
-	if(isdefined(self.bot.threat.visible) && !self.bot.threat.visible && dist > 200)
+	if(isdefined(self.bot.threat.visible) && !self.bot.threat.visible && dist > 320)
 		return false;
 	
 	return true;
@@ -2110,7 +2125,13 @@ bot_update_aim(frames)
 
 	dist = distance(self.origin, ent.origin);
 
-	prediction = self predictposition(ent, frames);
+	// Player targets need lead prediction. Zombies change path/turn direction
+	// abruptly, so predictposition can alternate between stale left/right
+	// velocities. Track their live origin instead for a stable firing solution.
+	if(self threat_is_player())
+		prediction = self predictposition(ent, frames);
+	else
+		prediction = ent.origin;
 	
 	if(!self threat_is_player())
 	{
@@ -2178,8 +2199,8 @@ bot_get_fire_radius(aim_point)
 
 	// Match the original T6 bot's approximately 45-unit hit tolerance,
 	// with a little more room at long range and enough allowance up close.
-	radius = dist * 0.065;
-	return clamp(radius, 40, 65);
+	radius = dist * 0.075;
+	return clamp(radius, 55, 80);
 }
 
 bot_on_target(aim_target, radius)
@@ -2419,8 +2440,9 @@ bot_best_enemy()
 
         // Very close threats are actionable without spending a trace on each one.
         if(dist > 100)
-            // MP bot sight helper is unavailable in the Zombies script VM.
-            visible = sighttracepassed(eye, zombie.origin + (0, 0, 32), 0, self);
+            // Match the point the combat aimer actually tracks; a low origin+32
+            // trace can report false while the upper body is clearly exposed.
+            visible = sighttracepassed(eye, zombie getcentroid(), 0, self);
 
         // Allow a very small wall-shoot buffer, but strongly prefer actual line of sight.
         if(!visible && dist > wallshoot_range)
