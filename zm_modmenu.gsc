@@ -2055,7 +2055,7 @@ MM_GetAvailablePerks()
     // rather than array indexes, are the actual specialty_* perk identifiers.
     if(isDefined(level._random_perk_machine_perk_list))
     {
-        randomKeys = getArrayKeys(level._random_perk_machine_perk_list);
+        randomKeys = getarraykeys(level._random_perk_machine_perk_list);
         foreach(key in randomKeys)
         {
             perk = level._random_perk_machine_perk_list[key];
@@ -2080,7 +2080,7 @@ MM_GetAvailablePerks()
     // Include any other custom perk registered by this map.
     if(isDefined(level._custom_perks))
     {
-        customKeys = getArrayKeys(level._custom_perks);
+        customKeys = getarraykeys(level._custom_perks);
         foreach(perk in customKeys)
         {
             if(!isDefined(perk))
