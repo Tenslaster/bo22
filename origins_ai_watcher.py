@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.5"
+VERSION = "1.3.6"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -641,7 +641,7 @@ GAME_PROCESS_EXACT = {
     "t6rmp.exe",
     "blackops2.exe",
 }
-GAME_TITLE_HINTS = ("black ops", "blackops", "t6 zombies", "t6zm")
+GAME_TITLE_HINTS = ("t6 zombies", "t6zm", "black ops ii", "black ops 2")
 
 
 def _is_game_process(process_name: str) -> bool:
@@ -654,11 +654,28 @@ def _is_game_process(process_name: str) -> bool:
 
 def _is_game_title(title: str) -> bool:
     lowered = (title or "").lower()
-    # Do not use the generic text "bo2": GitHub/browser tabs for this repo
-    # contain "bo22" and can otherwise be mistaken for the game window.
+    # Do not use generic "bo2" or the watcher title: repository/browser windows
+    # can contain those strings without being the game.
     if "origins ai watcher" in lowered:
         return False
     return any(hint in lowered for hint in GAME_TITLE_HINTS)
+
+
+PLUTONIUM_BOOTSTRAPPER_PROCESS = "plutonium-bootstrapper-win32.exe"
+
+
+def _is_game_window(title: str, process_name: str) -> bool:
+    """Recognize BO2 T6 windows, including Plutonium's documented capture host."""
+    process = (process_name or "").lower()
+    if _is_game_process(process):
+        return True
+    # Plutonium documents its game-capture window as
+    # "plutonium-bootstrapper-win32.exe Game Title". Require a BO2/T6 title too,
+    # so another Plutonium game or launcher window is not selected by process alone.
+    if process == PLUTONIUM_BOOTSTRAPPER_PROCESS:
+        return _is_game_title(title)
+    # Title fallback is only safe when Windows cannot identify the owner.
+    return not process and _is_game_title(title)
 
 
 def list_windows() -> list[tuple[int, str, tuple[int, int, int, int], str]]:
@@ -745,31 +762,21 @@ class ScreenObserver:
         auto_detect = not needle or needle in {"auto", "auto-detect", "automatic"}
 
         if auto_detect:
-            # Trust the owning process whenever Windows can identify it.
-            # Never fall back to a matching title owned by Explorer, a browser,
-            # Python/the watcher, or another known non-game process.
-            process_matches = [w for w in windows if _is_game_process(w[3])]
-            if process_matches:
-                candidates = process_matches
-            else:
-                # A title fallback is safe only when Windows could not resolve
-                # the owner process at all (empty process_name).
-                candidates = [
-                    w for w in windows
-                    if not w[3] and _is_game_title(w[1])
-                ]
+            candidates = [
+                w for w in windows if _is_game_window(w[1], w[3])
+            ]
             candidates.sort(key=lambda w: (
-                0 if w[3] in {"t6zm.exe", "t6mp.exe", "t6sp.exe", "blackops2.exe"} else 1,
+                0 if _is_game_process(w[3]) else 1,
                 -((w[2][2] - w[2][0]) * (w[2][3] - w[2][1])),
             ))
         else:
             candidates = [
                 w for w in windows
                 if needle in w[1].lower()
-                and (not w[3] or _is_game_process(w[3]))
+                and _is_game_window(w[1], w[3])
             ]
             if not candidates:
-                candidates = [w for w in windows if _is_game_process(w[3])]
+                candidates = [w for w in windows if _is_game_window(w[1], w[3])]
 
         if not candidates:
             self.last_window_label = ""
@@ -1170,8 +1177,7 @@ class App:
         options = [
             f"{title}  [{process_name or 'process unknown'}]"
             for _hwnd, title, _rect, process_name in windows
-            if _is_game_process(process_name)
-            or (not process_name and _is_game_title(title))
+            if _is_game_window(title, process_name)
         ]
         values = ["Auto-detect"] + options
         self.window_combo.configure(values=values)
