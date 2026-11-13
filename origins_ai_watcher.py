@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.6"
+VERSION = "1.3.7"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -640,6 +640,8 @@ GAME_PROCESS_EXACT = {
     "t6rzm.exe",
     "t6rmp.exe",
     "blackops2.exe",
+    # Plutonium can own the active T6 game window through its bootstrapper.
+    "plutonium-bootstrapper-win32.exe",
 }
 GAME_TITLE_HINTS = ("t6 zombies", "t6zm", "black ops ii", "black ops 2")
 
@@ -665,15 +667,13 @@ PLUTONIUM_BOOTSTRAPPER_PROCESS = "plutonium-bootstrapper-win32.exe"
 
 
 def _is_game_window(title: str, process_name: str) -> bool:
-    """Recognize BO2 T6 windows, including Plutonium's documented capture host."""
+    """Recognize BO2 T6 windows using the owning executable where available."""
     process = (process_name or "").lower()
+    # The exact Plutonium bootstrapper executable is the process owner reported
+    # by Windows for this user's live BO2 window. Do not require a title hint:
+    # Plutonium builds can use a generic or non-BO2 title for the game surface.
     if _is_game_process(process):
         return True
-    # Plutonium documents its game-capture window as
-    # "plutonium-bootstrapper-win32.exe Game Title". Require a BO2/T6 title too,
-    # so another Plutonium game or launcher window is not selected by process alone.
-    if process == PLUTONIUM_BOOTSTRAPPER_PROCESS:
-        return _is_game_title(title)
     # Title fallback is only safe when Windows cannot identify the owner.
     return not process and _is_game_title(title)
 
