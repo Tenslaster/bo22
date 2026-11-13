@@ -2868,7 +2868,7 @@ MM_OriginsToggleStaffGuide()
         self iprintln("^1Staff Upgrade Guide is only available on Origins.");
         return;
     }
-    self scripts\\zm\\zm_modmenu::MM_Toggle("origstaffguide", "Staff Upgrade Guide ESP", ::MM_OriginsStaffGuideLoop);
+    self scripts\zm\zm_modmenu::MM_Toggle("origstaffguide", "Staff Upgrade Guide ESP", ::MM_OriginsStaffGuideLoop);
 }
 
 MM_OriginsStaffGuideLoop()
@@ -2889,7 +2889,7 @@ MM_OriginsStaffGuideLoop()
     hud.alpha = 1;
     hud.color = (0.85, 0.95, 1);
 
-    while(self scripts\\zm\\zm_modmenu::MM_IsOn("origstaffguide"))
+    while(self scripts\zm\zm_modmenu::MM_IsOn("origstaffguide"))
     {
         if(level.script != "zm_tomb")
         {
