@@ -2182,6 +2182,140 @@ bot_quest_origins_robot_wind_parts()
     return false;
 }
 
+
+// Check the stock upgraded-staff entity, not just the bot's inventory.
+bot_origins_staff_is_placed(weapon_name)
+{
+    if(!isdefined(level.a_elemental_staffs_upgraded))
+        return false;
+
+    foreach(staff in level.a_elemental_staffs_upgraded)
+    {
+        if(!isdefined(staff) || !isdefined(staff.weapname) ||
+           staff.weapname != weapon_name)
+            continue;
+
+        return isdefined(staff.ee_in_use) && staff.ee_in_use;
+    }
+
+    return false;
+}
+
+// Place one carried upgraded staff through the real robot-head unitrigger.
+// The native callback consumes the weapon, marks ee_in_use and links its
+// model to the plinth; this helper only navigates and dispatches that trigger.
+bot_origins_place_staff_in_robot(head, weapon_name)
+{
+    if(!isdefined(head) || !isdefined(head.origin) ||
+       !isdefined(head.script_noteworthy) || !isdefined(head.m_plinth) ||
+       !isdefined(weapon_name) || !self hasweapon(weapon_name))
+        return false;
+
+    if(self bot_origins_staff_is_placed(weapon_name))
+        return true;
+
+    if(isdefined(head.bot_origins_staff_owner) &&
+       head.bot_origins_staff_owner != self &&
+       isdefined(head.bot_origins_staff_owner_until) &&
+       gettime() < head.bot_origins_staff_owner_until &&
+       isalive(head.bot_origins_staff_owner))
+        return false;
+
+    if(isdefined(head.bot_origins_staff_retry_until) &&
+       gettime() < head.bot_origins_staff_retry_until)
+        return false;
+
+    head.bot_origins_staff_owner = self;
+    head.bot_origins_staff_owner_until = gettime() + 18000;
+
+    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+        head.origin, "bot_origins_staff_plinth", 40, 10000);
+
+    if(!arrived || !isalive(self) || !self hasweapon(weapon_name))
+    {
+        head.bot_origins_staff_owner = undefined;
+        head.bot_origins_staff_owner_until = 0;
+        head.bot_origins_staff_retry_until = gettime() + 2500;
+        return false;
+    }
+
+    self.bot.is_objective_using = 1;
+    self lookat(head.origin + (0, 0, 24));
+
+    unitrigger_func = getfunction(
+        "maps/mp/zombies/_zm_unitrigger", "unitrigger_trigger");
+
+    placed = false;
+    for(attempt = 0; attempt < 14; attempt++)
+    {
+        if(!isalive(self) || !self hasweapon(weapon_name))
+            break;
+
+        if(self bot_origins_staff_is_placed(weapon_name))
+        {
+            placed = true;
+            break;
+        }
+
+        if(!self isonground() || self isonladder() || self ismantling())
+        {
+            wait 0.1;
+            continue;
+        }
+
+        player_trigger = undefined;
+        if(isdefined(unitrigger_func))
+            player_trigger = head [[ unitrigger_func ]](self);
+
+        if(isdefined(player_trigger) &&
+           isdefined(player_trigger.thread_running) &&
+           player_trigger.thread_running &&
+           isdefined(player_trigger.parent_player) &&
+           player_trigger.parent_player == self)
+        {
+            // robot_head_trigger_think waits for this exact stock event.
+            player_trigger notify("trigger", self);
+        }
+        else
+        {
+            // Fallback when the per-player unitrigger is not ready this frame.
+            self pressusebutton(0.15);
+        }
+
+        wait 0.2;
+    }
+
+    // Allow the stock place_staff() worker to finish linking the staff model.
+    for(check = 0; check < 8; check++)
+    {
+        if(self bot_origins_staff_is_placed(weapon_name))
+        {
+            placed = true;
+            break;
+        }
+
+        if(self hasweapon(weapon_name))
+            wait 0.1;
+        else
+            wait 0.15;
+    }
+
+    self.bot.is_objective_using = undefined;
+    self clearlookat();
+
+    head.bot_origins_staff_owner = undefined;
+    head.bot_origins_staff_owner_until = 0;
+
+    if(placed)
+    {
+        head.bot_origins_staff_retry_until = undefined;
+        return true;
+    }
+
+    head.bot_origins_staff_retry_until = gettime() + 3000;
+    return false;
+}
+
 bot_quest_origins()
 {
     // Hard runtime gate: never run Origins objectives on TranZit or any other map.
@@ -2271,20 +2405,25 @@ bot_quest_origins()
     }
 
     // Step two of Little Lost Girl: put each upgraded staff into its matching
-    // robot-head plinth. The stock trigger checks the actual weapon name.
+    // Step two of Little Girl Lost: place each upgraded staff in the
+    // matching robot-head plinth. Use native trigger labels, not guessed IDs.
     if(flag("ee_all_staffs_upgraded") && !flag("ee_all_staffs_placed"))
     {
         head_stubs = getstructarray("robot_head_staff", "targetname");
         foreach(head in head_stubs)
         {
-            if(!isdefined(head) || !isdefined(head.script_noteworthy) || !isdefined(head.m_plinth))
+            if(!isdefined(head) || !isdefined(head.script_noteworthy) ||
+               !isdefined(head.origin) || !isdefined(head.m_plinth))
                 continue;
 
+            // Stock labels: air (Wind), fire, lightning and water (Ice).
             weapon_name = "staff_" + head.script_noteworthy + "_upgraded_zm";
             if(self hasweapon(weapon_name) &&
-               (!isdefined(head.m_plinth.m_staff) || !isdefined(head.m_plinth.m_staff.origin)))
+               !self bot_origins_staff_is_placed(weapon_name) &&
+               (!isdefined(head.m_plinth.m_staff) ||
+                !isdefined(head.m_plinth.m_staff.origin)))
             {
-                self scripts\zm\zm_bo2_bots::bot_quest_use_target(head, "bot_origins_staff_plinth", 40, 5);
+                self bot_origins_place_staff_in_robot(head, weapon_name);
                 return;
             }
         }
