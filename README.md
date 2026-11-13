@@ -863,9 +863,9 @@ The repository includes an external Python diagnostic app for investigating BO22
 6. If the watcher is extracted into a separate folder, the launcher opens a Windows folder picker. Select the actual BO22 repository root containing `zm_bo2_bots.gsc` and `zm_bo2_bots_map_origins.gsc`.
 7. If you do not have the source checkout yet, download the [`origins-ai-telemetry` branch ZIP](https://github.com/Tenslaster/bo22/archive/refs/heads/origins-ai-telemetry.zip), extract it, then select the extracted repository folder.
 8. The app also prompts for the repository folder when **Audit GSC project** is clicked and the current selection has no `.gsc` files.
-9. Confirm the Plutonium log folder, audit the source, then start live watching.
+9. Confirm the Plutonium log folder, audit the source, then start live watching. The screen observer auto-detects the BO2 T6 game window by its owning process (`t6zm.exe` / `t6mp.exe`) and keeps retrying if the game has not opened yet; you do not need to enter a window title or use Find windows.
 
-Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. Watcher 1.2.0 checks that the integrated Lightning Staff tank worker and all five stock player-side tank signals are present. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The audit is source evidence only; the new boarding / jump-down controller still needs a live Plutonium match test. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
+Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. Watcher 1.3.1 automatically identifies the BO2 game window from its T6 process, preferring the game executable over the Plutonium launcher, and retries while the game starts. It also checks that the integrated Lightning Staff tank worker and all five stock player-side tank signals are present. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The audit is source evidence only; the new boarding / jump-down controller still needs a live Plutonium match test. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
 ---
 
