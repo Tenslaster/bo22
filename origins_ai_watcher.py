@@ -471,14 +471,22 @@ def list_windows() -> list[tuple[int, str, tuple[int, int, int, int]]]:
     from ctypes import wintypes
     user32 = ctypes.windll.user32
     results: list[tuple[int, str, tuple[int, int, int, int]]] = []
+    # WNDENUMPROC is not exported by ctypes.wintypes on all supported
+    # Python/Windows versions (including standard CPython 3.11 builds).
+    # Define the Win32 callback signature explicitly instead.
+    WNDENUMPROC = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+    )
+
     EnumWindows = user32.EnumWindows
-    EnumWindows.argtypes = [wintypes.WNDENUMPROC, wintypes.LPARAM]
+    EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+    EnumWindows.restype = wintypes.BOOL
     GetWindowTextLengthW = user32.GetWindowTextLengthW
     GetWindowTextW = user32.GetWindowTextW
     IsWindowVisible = user32.IsWindowVisible
     GetWindowRect = user32.GetWindowRect
 
-    @wintypes.WNDENUMPROC
+    @WNDENUMPROC
     def callback(hwnd: int, lparam: int) -> bool:
         if IsWindowVisible(hwnd):
             n = GetWindowTextLengthW(hwnd)
