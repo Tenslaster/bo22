@@ -296,7 +296,7 @@ bot_ai_telemetry_tick()
     task = "idle";
     if(self hasgoal("flee"))
         task = "flee";
-    if(is_true(self.bot.is_holding_generator))
+    else if(is_true(self.bot.is_holding_generator))
         task = "generator_capture";
     else if(is_true(self.bot.is_origins_soul_holding))
         task = "crazy_place_souls";
