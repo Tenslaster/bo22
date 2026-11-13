@@ -2209,29 +2209,56 @@ bot_quest_origins()
     // Deploy the assembled Maxis drone during combat. Stock quadrotor watchers
     // retain control of its AI, cooldown and return/death lifecycle.
     if(self bot_origins_try_deploy_drone())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("maxis_drone_deploy", "active");
         return;
+    }
 
     // An active generator capture is the squad's highest-priority objective.
     // Reinforce it before individual shovel, dig, or staff errands can pull
     // otherwise-idle bots away from the capture volume.
     if(flag("zone_capture_in_progress") && self bot_quest_origins_generators())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("generator_capture_reinforce", "active");
         return;
+    }
 
     // Opening priorities when no generator capture is active.
     if(self bot_quest_origins_shovel())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("shovel_pickup", "active");
         return;
+    }
     if(self bot_quest_origins_generators())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("generator_capture", "active");
         return;
+    }
     if(self bot_quest_origins_dig_ice_staff_parts())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("ice_staff_dig_parts", "active");
         return;
+    }
     if(self bot_quest_origins_robot_wind_parts())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("wind_staff_robot_part", "active");
         return;
+    }
     if(self bot_quest_origins_chamber_door())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("crazy_place_chamber_door", "active");
         return;
+    }
     if(self bot_quest_origins_staff_puzzles())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("elemental_staff_puzzles", "active");
         return;
+    }
     if(self bot_quest_origins_crypt_gems())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("crypt_orb_and_discs", "active");
         return;
+    }
 
     // Insert carried elemental staffs into their native charge triggers. Stock
     // quest code counts the nearby zombie kills and creates the upgraded pickup.
@@ -2247,6 +2274,7 @@ bot_quest_origins()
 
             if(isdefined(staff.charge_trigger) && isdefined(staff.charge_trigger.origin))
             {
+                self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("staff_charging", "active");
                 self scripts\zm\zm_bo2_bots::bot_quest_use_target(staff.charge_trigger, "bot_origins_staff_charge", 48, 4);
                 return;
             }
@@ -2264,6 +2292,7 @@ bot_quest_origins()
 
             if(isdefined(staff_upgraded.trigger) && isdefined(staff_upgraded.trigger.origin))
             {
+                self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("upgraded_staff_pickup", "active");
                 self scripts\zm\zm_bo2_bots::bot_quest_use_target(staff_upgraded.trigger, "bot_origins_staff_pickup", 40, 4);
                 return;
             }
@@ -2284,6 +2313,7 @@ bot_quest_origins()
             if(self hasweapon(weapon_name) &&
                (!isdefined(head.m_plinth.m_staff) || !isdefined(head.m_plinth.m_staff.origin)))
             {
+                self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("matching_robot_staff_placement", "active");
                 self scripts\zm\zm_bo2_bots::bot_quest_use_target(head, "bot_origins_staff_plinth", 40, 5);
                 return;
             }
@@ -2291,7 +2321,10 @@ bot_quest_origins()
     }
 
     if(self bot_quest_origins_main_steps())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("little_lost_girl_main_steps", "active");
         return;
+    }
 
     // Last step: use the real portal trigger once the map has activated it.
     if(flag("ee_souls_absorbed") && flag("ee_quadrotor_disabled") && !flag("ee_samantha_released"))
@@ -2306,6 +2339,7 @@ bot_quest_origins()
         {
             point = spawnstruct();
             point.origin = final_portal.origin;
+            self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("little_lost_girl_final_portal", "active");
             self scripts\zm\zm_bo2_bots::bot_quest_use_target(point, "bot_origins_final_portal", 80, 5);
         }
     }
