@@ -235,6 +235,157 @@ bot_spawn()
 	self thread bot_auto_quest_think();
 	self thread bot_weapon_switch_think();
 	self thread bot_weapon_failsafe_monitor();
+	self thread bot_ai_telemetry_worker();
+}
+
+// Low-rate diagnostic telemetry for the external Python Origins AI Watcher.
+// logprint() is the stock GSC log channel used by Plutonium's game scripts.
+// One compact record per bot every two seconds; it does not change bot behavior.
+bot_ai_telemetry_worker()
+{
+    self endon("disconnect");
+    self endon("bot_relife");
+    self endon("death");
+    level endon("end_game");
+
+    for(;;)
+    {
+        self bot_ai_telemetry_tick();
+        wait 2;
+    }
+}
+
+bot_ai_telemetry_tick()
+{
+    if(!isdefined(self.bot) || !isdefined(self.bot.threat))
+        return;
+
+    now = gettime();
+    mode = "unknown";
+    if(isdefined(level.bot_command_mode))
+        mode = level.bot_command_mode;
+
+    current_weapon = self getcurrentweapon();
+    ammo_clip = -1;
+    ammo_stock = -1;
+    if(isdefined(current_weapon) && current_weapon != "none")
+    {
+        ammo_clip = self getweaponammoclip(current_weapon);
+        ammo_stock = self getweaponammostock(current_weapon);
+    }
+
+    danger = -1;
+    nearest_dist = -1;
+    near_count = -1;
+    close_count = -1;
+    fast_close = -1;
+    if(isdefined(self.bot.danger)) danger = self.bot.danger;
+    if(isdefined(self.bot.nearest_dist)) nearest_dist = self.bot.nearest_dist;
+    if(isdefined(self.bot.near_count)) near_count = self.bot.near_count;
+    if(isdefined(self.bot.close_count)) close_count = self.bot.close_count;
+    if(isdefined(self.bot.fast_close)) fast_close = self.bot.fast_close;
+
+    target_id = -1;
+    if(isdefined(self.bot.threat.entity))
+        target_id = self.bot.threat.entity getentitynumber();
+
+    movement_idle_ms = -1;
+    if(isdefined(self.bot.movement_last_progress))
+        movement_idle_ms = now - self.bot.movement_last_progress;
+
+    task = "idle";
+    if(self hasgoal("flee"))
+        task = "flee";
+    if(is_true(self.bot.is_holding_generator))
+        task = "generator_capture";
+    else if(is_true(self.bot.is_origins_soul_holding))
+        task = "crazy_place_souls";
+    else if(is_true(self.bot.is_objective_using))
+        task = "objective_interaction";
+    else if(is_true(self.bot.is_building))
+        task = "building";
+    else if(is_true(self.bot.is_crafting))
+        task = "crafting";
+    else if(is_true(self.bot.is_reviving))
+        task = "reviving";
+    else if(is_true(self.bot.quest_busy))
+        task = "quest_busy";
+    else if(mode == "quest")
+        task = "quest_dispatch";
+
+    is_firing = 0;
+    if(isdefined(self.bot.threat.fire_until) && self.bot.threat.fire_until > now)
+        is_firing = 1;
+
+    has_flee_goal = 0;
+    has_wander_goal = 0;
+    if(self hasgoal("flee")) has_flee_goal = 1;
+    if(self hasgoal("wander")) has_wander_goal = 1;
+
+    alive_zombies = 0;
+    zombies = getaispeciesarray(level.zombie_team, "all");
+    if(isdefined(zombies))
+    {
+        foreach(zombie in zombies)
+        {
+            if(isdefined(zombie) && isalive(zombie) && !is_true(zombie.in_the_ground))
+                alive_zombies++;
+        }
+    }
+
+    mapname = getdvar("mapname");
+    ee_souls_absorbed = -1;
+    ee_all_staffs_upgraded = -1;
+    ee_all_staffs_placed = -1;
+    ee_quadrotor_disabled = -1;
+    ee_samantha_released = -1;
+    if(mapname == "zm_tomb")
+    {
+        ee_souls_absorbed = flag("ee_souls_absorbed");
+        ee_all_staffs_upgraded = flag("ee_all_staffs_upgraded");
+        ee_all_staffs_placed = flag("ee_all_staffs_placed");
+        ee_quadrotor_disabled = flag("ee_quadrotor_disabled");
+        ee_samantha_released = flag("ee_samantha_released");
+    }
+
+    is_objective_using = 0;
+    is_holding_generator = 0;
+    is_origins_soul_holding = 0;
+    is_reviving = 0;
+    if(is_true(self.bot.is_objective_using)) is_objective_using = 1;
+    if(is_true(self.bot.is_holding_generator)) is_holding_generator = 1;
+    if(is_true(self.bot.is_origins_soul_holding)) is_origins_soul_holding = 1;
+    if(is_true(self.bot.is_reviving)) is_reviving = 1;
+
+    logprint("ORIGINS_AI_EVENT|event=bot_state|bot_id=" + self getentitynumber() +
+        "|mode=" + mode +
+        "|map=" + mapname +
+        "|task=" + task +
+        "|health=" + self.health +
+        "|max_health=" + self.maxhealth +
+        "|weapon=" + current_weapon +
+        "|ammo_clip=" + ammo_clip +
+        "|ammo_stock=" + ammo_stock +
+        "|danger=" + danger +
+        "|nearest_dist=" + nearest_dist +
+        "|near_count=" + near_count +
+        "|close_count=" + close_count +
+        "|fast_close=" + fast_close +
+        "|target_id=" + target_id +
+        "|fire_active=" + is_firing +
+        "|movement_idle_ms=" + movement_idle_ms +
+        "|has_flee_goal=" + has_flee_goal +
+        "|has_wander_goal=" + has_wander_goal +
+        "|is_objective_using=" + is_objective_using +
+        "|is_holding_generator=" + is_holding_generator +
+        "|is_origins_soul_holding=" + is_origins_soul_holding +
+        "|is_reviving=" + is_reviving +
+        "|last_zombie_count=" + alive_zombies +
+        "|ee_souls_absorbed=" + ee_souls_absorbed +
+        "|ee_all_staffs_upgraded=" + ee_all_staffs_upgraded +
+        "|ee_all_staffs_placed=" + ee_all_staffs_placed +
+        "|ee_quadrotor_disabled=" + ee_quadrotor_disabled +
+        "|ee_samantha_released=" + ee_samantha_released + "\\n");
 }
 
 bot_set_perks()
