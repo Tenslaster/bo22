@@ -36,6 +36,7 @@ A modular **GSC scripting project for Call of Duty: Black Ops II Zombies on Plut
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Repository files](#repository-files)
+- [Origins AI Watcher](#origins-ai-watcher)
 - [Validation status and known limitations](#validation-status-and-known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Reporting a bug](#reporting-a-bug)
@@ -831,6 +832,24 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 | [`zm_bo2_bots_map_buried.gsc`](./zm_bo2_bots_map_buried.gsc) | Buried tunnel signs, amplifiers, lantern, Wisp/Time Bomb, TPO, Inverted Pyramid puzzle and Fountain target tasks. |
 | [`zm_bo2_bots_map_nuketown.gsc`](./zm_bo2_bots_map_nuketown.gsc) | Nuketown meteor counter, clock power-up positioning and mannequin interactions. |
 | [`zm_modmenu.gsc`](./zm_modmenu.gsc) | Optional in-game mod menu, general player/weapon/lobby/zombie tools, ESP and map-specific host utilities. |
+| [`origins_ai_watcher.py`](./origins_ai_watcher.py) | Python desktop diagnostic tool for GSC source audits, Plutonium logs, screen evidence and structured Origins bot telemetry. |
+| [`launch_origins_ai_watcher.bat`](./launch_origins_ai_watcher.bat) | Windows one-click launcher; creates a local virtual environment and starts the watcher. |
+| [`origins_ai_watcher_requirements.txt`](./origins_ai_watcher_requirements.txt) | Python packages used by screen capture and optional HUD OCR. |
+
+
+## Origins AI Watcher
+
+The repository includes an external Python diagnostic app for investigating BO22 bot behaviour during Origins matches. It audits the GSC source, monitors Plutonium log files, captures visual evidence, and reads the structured bot telemetry emitted by the `origins-ai-telemetry` branch.
+
+**Windows quick start:**
+
+1. Check out the `origins-ai-telemetry` branch.
+2. Open the BO22 repository folder in File Explorer.
+3. Double-click [`launch_origins_ai_watcher.bat`](./launch_origins_ai_watcher.bat).
+4. On first launch, the BAT creates a local `.venv` and installs `origins_ai_watcher_requirements.txt`.
+5. In the app, audit the GSC project, confirm the Plutonium log folder, then start live watching.
+
+Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. The screen and log heuristics are diagnostic evidence, not a replacement for testing in a real Plutonium match. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
 ---
 
