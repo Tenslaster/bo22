@@ -2485,7 +2485,10 @@ bot_origins_tank_call_station(tank)
     if(!used)
         return false;
 
-    wait 0.55;
+    // Stock rotates the call switch down and back before invoking trig_use_tank.
+    // Allow that complete sequence to reach tank_watch_use() before fallback,
+    // or a valid scripted player could otherwise pay twice.
+    wait 1.25;
     if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
         return true;
 
