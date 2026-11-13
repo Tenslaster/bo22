@@ -180,6 +180,18 @@ The shared craftable system and Origins-specific objective code work together to
 - Bots can collect an upgraded staff when its pickup trigger is available.
 - When all upgraded staffs are ready, bots can place the correct staff into its matching robot-head plinth.
 
+### Lightning Staff tank route
+
+When one of the three physical Lightning Staff pieces is still missing and no remaining piece is reachable from the bot's current position, the Origins quest worker can start a dedicated tank route:
+
+- It approaches the linked roof and only considers the bot aboard after the stock entity_on_tank() contact check confirms that it is touching vol_on_tank_watch / the linked roof trigger.
+- It uses the real trig_use_tank control and, when available from the other station, the trig_tank_station_call trigger. If the stock tank watcher ignores a scripted bot, a narrow fallback mirrors the stock activation flags and 500-point cost.
+- Bots excluded by the stock is_player_valid() rider loop get their b_already_on_tank and n_players_on state synchronised while they physically touch the roof.
+- The worker tries the stock tank_jump_down_spots and rear-tread push-off points to leave the moving tank. It uses player velocity for the physical exit; it does not teleport the bot or play zombie tank-jump animations.
+- Once a landing makes a staff part reachable, the existing shared craftable worker performs the normal pickup and updates the stock part counter.
+
+This is a first implementation of the traversal. Roof navigation and jump-down landing still require a live Origins test; the source audit cannot prove that every tank cycle is traversable.
+
 ### Crazy Place and elemental staff puzzles
 
 The Origins worker coordinates the shared gramophone and portal system, then selects the portal required by the unfinished staff objective. It uses the real portal pads and stock quest state rather than treating a successful use-button press as proof that the bot has arrived.
@@ -853,13 +865,13 @@ The repository includes an external Python diagnostic app for investigating BO22
 8. The app also prompts for the repository folder when **Audit GSC project** is clicked and the current selection has no `.gsc` files.
 9. Confirm the Plutonium log folder, audit the source, then start live watching.
 
-Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. The source auditor preserves GSC string-based weapon/flag identifiers and ignores same-named entrypoints across separate script files when checking for duplicates. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The screen and log heuristics are diagnostic evidence, not a replacement for testing in a real Plutonium match. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
+Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. Watcher 1.2.0 checks that the integrated Lightning Staff tank worker and all five stock player-side tank signals are present. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The audit is source evidence only; the new boarding / jump-down controller still needs a live Plutonium match test. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
 ---
 
 ## Validation status and known limitations
 
-The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step.
+The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step. The Lightning Staff tank controller is a first implementation: actual roof boarding, ride-state tracking, and jump-down landings remain runtime checks.
 
 - Map objectives are conditional. If a required weapon, item, part, trigger, round, weather condition, or quest stage is missing, the bot may wait or skip that objective.
 - A bot may need a reachable navigation path. A task can fail if a player blocks the route, the bot is trapped, or the map geometry prevents pathfinding.
