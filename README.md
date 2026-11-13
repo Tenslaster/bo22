@@ -36,7 +36,6 @@ A modular **GSC scripting project for Call of Duty: Black Ops II Zombies on Plut
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Repository files](#repository-files)
-- [Origins AI Watcher](#origins-ai-watcher)
 - [Validation status and known limitations](#validation-status-and-known-limitations)
 - [Troubleshooting](#troubleshooting)
 - [Reporting a bug](#reporting-a-bug)
@@ -179,18 +178,6 @@ The shared craftable system and Origins-specific objective code work together to
 - The charging process relies on the game's normal nearby-zombie kill counter.
 - Bots can collect an upgraded staff when its pickup trigger is available.
 - When all upgraded staffs are ready, bots can place the correct staff into its matching robot-head plinth.
-
-### Lightning Staff tank route
-
-When one of the three physical Lightning Staff pieces is still missing and no remaining piece is reachable from the bot's current position, the Origins quest worker can start a dedicated tank route:
-
-- It approaches the linked roof and only considers the bot aboard after the stock entity_on_tank() contact check confirms that it is touching vol_on_tank_watch / the linked roof trigger.
-- It uses the real trig_use_tank control and, when available from the other station, the trig_tank_station_call trigger. If the stock tank watcher ignores a scripted bot, a narrow fallback mirrors the stock activation flags and 500-point cost.
-- Bots excluded by the stock is_player_valid() rider loop get their b_already_on_tank and n_players_on state synchronised while they physically touch the roof.
-- The worker tries the stock tank_jump_down_spots and rear-tread push-off points to leave the moving tank. It uses player velocity for the physical exit; it does not teleport the bot or play zombie tank-jump animations.
-- Once a landing makes a staff part reachable, the existing shared craftable worker performs the normal pickup and updates the stock part counter.
-
-This is a first implementation of the traversal. Roof navigation and jump-down landing still require a live Origins test; the source audit cannot prove that every tank cycle is traversable.
 
 ### Crazy Place and elemental staff puzzles
 
@@ -844,34 +831,12 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 | [`zm_bo2_bots_map_buried.gsc`](./zm_bo2_bots_map_buried.gsc) | Buried tunnel signs, amplifiers, lantern, Wisp/Time Bomb, TPO, Inverted Pyramid puzzle and Fountain target tasks. |
 | [`zm_bo2_bots_map_nuketown.gsc`](./zm_bo2_bots_map_nuketown.gsc) | Nuketown meteor counter, clock power-up positioning and mannequin interactions. |
 | [`zm_modmenu.gsc`](./zm_modmenu.gsc) | Optional in-game mod menu, general player/weapon/lobby/zombie tools, ESP and map-specific host utilities. |
-| [`origins_ai_watcher.py`](./origins_ai_watcher.py) | Python desktop diagnostic tool for GSC source audits, Plutonium logs, screen evidence and structured Origins bot telemetry. |
-| [`launch_origins_ai_watcher.bat`](./launch_origins_ai_watcher.bat) | Windows one-click launcher; creates a local virtual environment and starts the watcher. |
-| [`origins_ai_watcher_requirements.txt`](./origins_ai_watcher_requirements.txt) | Python packages used by screen capture and optional HUD OCR. |
-
-
-## Origins AI Watcher
-
-The repository includes an external Python diagnostic app for investigating BO22 bot behaviour during Origins matches. It audits the GSC source, monitors Plutonium log files, captures visual evidence, and reads the structured bot telemetry emitted by the `origins-ai-telemetry` branch.
-
-**Windows quick start:**
-
-1. Check out the `origins-ai-telemetry` branch.
-2. Open the BO22 repository folder in File Explorer.
-3. Double-click [`launch_origins_ai_watcher.bat`](./launch_origins_ai_watcher.bat).
-4. On first launch, the BAT creates a local `.venv` and installs `origins_ai_watcher_requirements.txt`.
-5. The launcher passes a normalized folder path without a trailing backslash to avoid Windows quote parsing issues.
-6. If the watcher is extracted into a separate folder, the launcher opens a Windows folder picker. Select the actual BO22 repository root containing `zm_bo2_bots.gsc` and `zm_bo2_bots_map_origins.gsc`.
-7. If you do not have the source checkout yet, download the [`origins-ai-telemetry` branch ZIP](https://github.com/Tenslaster/bo22/archive/refs/heads/origins-ai-telemetry.zip), extract it, then select the extracted repository folder.
-8. The app also prompts for the repository folder when **Audit GSC project** is clicked and the current selection has no `.gsc` files.
-9. Confirm the Plutonium log folder, audit the source, then start live watching. The screen observer auto-detects the BO2 T6 game window by its owning process (`t6zm.exe` / `t6mp.exe`) and keeps retrying if the game has not opened yet; you do not need to enter a window title or use Find windows.
-
-Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. Watcher 1.3.1 automatically identifies the BO2 game window from its T6 process, preferring the game executable over the Plutonium launcher, and retries while the game starts. It also checks that the integrated Lightning Staff tank worker and all five stock player-side tank signals are present. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The audit is source evidence only; the new boarding / jump-down controller still needs a live Plutonium match test. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
 ---
 
 ## Validation status and known limitations
 
-The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step. The Lightning Staff tank controller is a first implementation: actual roof boarding, ride-state tracking, and jump-down landings remain runtime checks.
+The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step.
 
 - Map objectives are conditional. If a required weapon, item, part, trigger, round, weather condition, or quest stage is missing, the bot may wait or skip that objective.
 - A bot may need a reachable navigation path. A task can fail if a player blocks the route, the bot is trapped, or the map geometry prevents pathfinding.
