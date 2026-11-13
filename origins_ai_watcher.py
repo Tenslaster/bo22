@@ -394,7 +394,7 @@ LOG_RULES: list[tuple[str, str, str, re.Pattern[str]]] = [
     ("warning", "Script asset loading", "Script parse-tree asset could not be loaded", re.compile(r"could not load scriptparsetree", re.I)),
     ("warning", "Entity / trigger", "Missing entity or trigger reference", re.compile(r"undefined is not an entity|entity .* not found|could not find.*trigger|invalid entity", re.I)),
     # Match concrete disconnect/death records, not cvar names such as player_lastStandBleedoutTime.
-    ("warning", "Bot lifecycle", "Bot/client disconnect or death record", re.compile(r"dropping client num \\d+|client \\d+ (?:dropped|disconnected)|(?:bot|player) \\d+.*(?:died|downed)|sv_shutdown:.*exe_disconnected", re.I)),
+    ("warning", "Bot lifecycle", "Bot/client disconnect or death record", re.compile(r"dropping client num \d+|client \d+ (?:dropped|disconnected)|(?:bot|player) \d+.*(?:died|downed)|sv_shutdown:.*exe_disconnected", re.I)),
     ("warning", "Navigation", "Navigation or goal failure signature", re.compile(r"no path|path blocked|goal failed|navigation failed|could not reach", re.I)),
     # Quest state is reported by structured GSC telemetry; avoid matching unrelated cvar dumps here.
 ]
