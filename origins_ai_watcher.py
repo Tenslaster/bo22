@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -121,7 +121,11 @@ AREAS: dict[str, tuple[str, ...]] = {
     "Lightning Staff puzzle": ("lightning_staff", "piano", "relay_switch", "lightning_relay"),
     "Fire Staff puzzle": ("fire_staff", "torch", "soul_chest", "sacrifice"),
     "Giant robots": ("robot", "hatch_foot", "trig_stomp", "robot_head"),
-    "Tank and tank jumps": ("tank", "tank_jump", "jump_down", "jump_up", "tank_get_jump"),
+    "Tank and tank jumps": (
+        "trig_use_tank", "trig_tank_station_call", "b_already_on_tank",
+        "entity_on_tank", "vol_on_tank_watch", "tank_board", "tank_ride",
+        "tank_station", "tank_exit", "tank_jump_down_spots",
+    ),
     "Crazy Place and portals": ("crazy_place", "crazyplace", "portal", "gramophone"),
     "Crypt orb and discs": ("crypt", "orb", "disc_rotation", "disc"),
     "Maxis Drone and main quest": ("maxis_drone", "maxisdrone", "drone", "little_lost_girl"),
