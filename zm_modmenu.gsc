@@ -3459,7 +3459,7 @@ MM_OriginsBuildCryptGuide(gemName, plinthName)
     if(isDefined(level.gem_start_pos) && isDefined(level.gem_start_pos[gemName]))
     {
         mainDisc = getent("crypt_puzzle_disc_main", "targetname");
-        if(isDefined(mainDisc) && isDefined(mainDisc.position))
+        if(isDefined(mainDisc) && isDefined(mainDisc.position) && isDefined(mainDisc.origin))
         {
             targetPosition = (mainDisc.position + level.gem_start_pos[gemName]) % 4;
             data.markers[data.markers.size] = self MM_OriginsGuideMakeMarker(mainDisc.origin + (0, 0, 34), (1, 1, 1));
