@@ -10,11 +10,12 @@
 
 bot_quest_buried()
 {
-    // Keep Easter-egg trigger ownership single-leader, but let every bot
-    // navigate its own roof jump. Temporary takeoff reservations prevent the
-    // whole follow squad from trying to occupy the same launch point.
+    // Keep Easter-egg trigger ownership single-leader. In wander mode each bot
+    // may solve its own Trample Steam gap; in follow mode only the leader
+    // deploys a pad so the whole squad does not stack on the same launch point.
     quest_leader = self bot_buried_claim_quest_lead();
-    self bot_quest_buried_traverse(quest_leader);
+    if(!isdefined(level.bot_command_mode) || level.bot_command_mode != "follow" || quest_leader)
+        self bot_quest_buried_traverse();
 
     if(!quest_leader)
         return;
@@ -1404,286 +1405,7 @@ bot_buried_claim_quest_lead()
 }
 
 
-// Find a connected takeoff node and a disconnected landing node across a
-// short Buried roof gap. The launch uses the same native player setvelocity
-// method used by Treyarch's jump-pad traversal code.
-bot_quest_buried_try_roof_jump(target_origin, explore_roof)
-{
-    if(!is_true(explore_roof) &&
-       (!isdefined(target_origin) ||
-        findpath(self.origin, target_origin, undefined, 0, 1)))
-        return false;
-
-    if(is_true(explore_roof))
-        landing_nodes = getnodesinradius(self.origin, 1450, -260, 360, "any", 128);
-    else
-        landing_nodes = getnodesinradius(target_origin, 760, -260, 420, "any", 128);
-    takeoff_nodes = getnodesinradius(self.origin, 360, -160, 220, "any", 64);
-
-    if(!isdefined(landing_nodes) || landing_nodes.size == 0 ||
-       !isdefined(takeoff_nodes) || takeoff_nodes.size == 0)
-        return false;
-
-    current_target_dist = 999999999;
-    if(isdefined(target_origin))
-        current_target_dist = distancesquared(self.origin, target_origin);
-
-    best_takeoff = undefined;
-    best_landing = undefined;
-    best_score = 999999999;
-
-    foreach(landing_node in landing_nodes)
-    {
-        if(!isdefined(landing_node) || !isdefined(landing_node.origin))
-            continue;
-
-        if(isdefined(target_origin) &&
-           distancesquared(landing_node.origin, target_origin) >= current_target_dist - 22500)
-            continue;
-
-        if(!check_point_in_playable_area(landing_node.origin))
-            continue;
-
-        if(isdefined(target_origin) &&
-           !findpath(landing_node.origin, target_origin, undefined, 0, 1))
-            continue;
-
-        if(findpath(self.origin, landing_node.origin, undefined, 0, 1))
-            continue;
-
-        foreach(takeoff_node in takeoff_nodes)
-        {
-            if(!isdefined(takeoff_node) || !isdefined(takeoff_node.origin))
-                continue;
-
-            if(distancesquared(self.origin, takeoff_node.origin) > 340 * 340 ||
-               !findpath(self.origin, takeoff_node.origin, undefined, 0, 1) ||
-               findpath(takeoff_node.origin, landing_node.origin, undefined, 0, 1))
-                continue;
-
-            takeoff_reserved = false;
-            foreach(other_player in get_players())
-            {
-                if(!isdefined(other_player) || other_player == self ||
-                   !isdefined(other_player.bot) ||
-                   !isdefined(other_player.bot.buried_roof_takeoff_until) ||
-                   gettime() >= other_player.bot.buried_roof_takeoff_until ||
-                   !isdefined(other_player.bot.buried_roof_takeoff_origin))
-                    continue;
-
-                if(distancesquared(other_player.bot.buried_roof_takeoff_origin,
-                                   takeoff_node.origin) < 80 * 80)
-                {
-                    takeoff_reserved = true;
-                    break;
-                }
-            }
-
-            if(takeoff_reserved)
-                continue;
-
-            delta = landing_node.origin - takeoff_node.origin;
-            horizontal_sq = delta[0] * delta[0] + delta[1] * delta[1];
-            if(horizontal_sq < 180 * 180 || horizontal_sq > 680 * 680)
-                continue;
-
-            if(delta[2] > 220 || delta[2] < -240)
-                continue;
-
-            score = distancesquared(self.origin, takeoff_node.origin) +
-                    horizontal_sq * 0.25;
-
-            if(isdefined(target_origin))
-                score += distancesquared(landing_node.origin, target_origin) * 0.5;
-
-            if(is_true(explore_roof) && isdefined(self.bot.wander_visited))
-            {
-                foreach(visited in self.bot.wander_visited)
-                {
-                    if(isdefined(visited) && isdefined(visited.origin) &&
-                       distancesquared(visited.origin, landing_node.origin) < 120 * 120)
-                        score += 500000;
-                }
-            }
-
-            if(score < best_score)
-            {
-                best_score = score;
-                best_takeoff = takeoff_node;
-                best_landing = landing_node;
-            }
-        }
-    }
-
-    if(!isdefined(best_takeoff) || !isdefined(best_landing))
-        return false;
-
-    takeoff_origin = best_takeoff.origin;
-    landing_origin = best_landing.origin;
-    self.bot.is_parkouring = 1;
-    self.bot.buried_roof_takeoff_origin = takeoff_origin;
-    self.bot.buried_roof_takeoff_until = gettime() + 25000;
-    self.bot.buried_parkour_retry = gettime() + 18000;
-
-    // Move to the last reachable node at the edge of the disconnected route.
-    if(distancesquared(self.origin, takeoff_origin) > 48 * 48)
-    {
-        self addgoal(takeoff_origin, 40, 2, "bot_buried_roof_jump_takeoff");
-        move_deadline = gettime() + 7000;
-        while(gettime() < move_deadline && isalive(self) &&
-              distancesquared(self.origin, takeoff_origin) > 48 * 48)
-            wait 0.1;
-        self cancelgoal("bot_buried_roof_jump_takeoff");
-    }
-
-    if(!isalive(self) || distancesquared(self.origin, takeoff_origin) > 104 * 104)
-    {
-        self cancelgoal("bot_buried_roof_jump_takeoff");
-        self.bot.buried_roof_takeoff_origin = undefined;
-        self.bot.buried_roof_takeoff_until = 0;
-        self.bot.is_parkouring = undefined;
-        self.bot.buried_parkour_retry = gettime() + 8000;
-        return true;
-    }
-
-    // Compute a ballistic launch to the landing node. Buried's stock Sloth
-    // traversal data includes climbs and drops around 154-240 units; keep the bot
-    // within a conservative player-sized vertical envelope.
-    delta = landing_origin - self.origin;
-    horizontal_dist = sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
-    if(horizontal_dist < 160 || horizontal_dist > 680 ||
-       delta[2] > 220 || delta[2] < -240)
-    {
-        self.bot.buried_roof_takeoff_origin = undefined;
-        self.bot.buried_roof_takeoff_until = 0;
-        self.bot.is_parkouring = undefined;
-        self.bot.buried_parkour_retry = gettime() + 8000;
-        return true;
-    }
-
-    gravity = getdvarint("bg_gravity");
-    if(!isdefined(gravity) || gravity < 400 || gravity > 1200)
-        gravity = 800;
-
-    flight_time = horizontal_dist / 650.0;
-    if(flight_time < 0.72)
-        flight_time = 0.72;
-
-    if(delta[2] < 0)
-    {
-        fall_time = sqrt((-2 * delta[2]) / gravity);
-        if(flight_time < fall_time + 0.12)
-            flight_time = fall_time + 0.12;
-    }
-
-    if(flight_time > 1.25)
-    {
-        self.bot.buried_roof_takeoff_origin = undefined;
-        self.bot.buried_roof_takeoff_until = 0;
-        self.bot.is_parkouring = undefined;
-        self.bot.buried_parkour_retry = gettime() + 8000;
-        return true;
-    }
-
-    // A short sustained impulse is used below to keep the bot's path AI from
-    // cancelling the launch. Account for that hold time in the ballistic arc.
-    launch_hold_time = 0.12;
-    coast_time = flight_time - launch_hold_time;
-    if(coast_time < 0.25)
-        coast_time = 0.25;
-
-    vertical_velocity = (delta[2] + 0.5 * gravity * coast_time * coast_time) / flight_time;
-    // Downward roof transitions should fall under gravity instead of
-    // receiving an artificial upward impulse that makes them miss the roof.
-    if(vertical_velocity < 0)
-        vertical_velocity = 0;
-    if(vertical_velocity > 650)
-    {
-        self.bot.buried_roof_takeoff_origin = undefined;
-        self.bot.buried_roof_takeoff_until = 0;
-        self.bot.is_parkouring = undefined;
-        self.bot.buried_parkour_retry = gettime() + 8000;
-        return true;
-    }
-
-    launch_velocity = (delta[0] / flight_time, delta[1] / flight_time, vertical_velocity);
-    jump_angles = vectortoangles((delta[0], delta[1], 0));
-    self setplayerangles((0, jump_angles[1], 0));
-    wait 0.05;
-
-    // Match the native jump-pad movement contract: mark the player as
-    // airborne/landing-owned, stand upright, lift one unit off the floor,
-    // and sustain a short initial impulse while the path controller is paused.
-    self._padded = 1;
-    self.lander = 1;
-    self setstance("stand");
-    wait 0.1;
-
-    jump_start_origin = self.origin;
-    self setorigin(self.origin + (0, 0, 1));
-
-    launch_duration = int(launch_hold_time * 1000);
-    launch_start = gettime();
-    while(gettime() - launch_start < launch_duration && isalive(self))
-    {
-        self setvelocity(launch_velocity);
-        wait 0.05;
-    }
-
-    // The +1 unit stock lift by itself is not counted as a successful jump.
-    launched = !self isonground() &&
-               distancesquared(self.origin, jump_start_origin) > 24 * 24;
-    if(launched)
-    {
-        land_deadline = gettime() + 5000;
-        while(gettime() < land_deadline && isalive(self) && !self isonground())
-            wait 0.05;
-    }
-
-    self._padded = 0;
-    self.lander = 0;
-
-    if(!launched || !isalive(self) || !self isonground())
-    {
-        self.bot.buried_roof_takeoff_origin = undefined;
-        self.bot.buried_roof_takeoff_until = 0;
-        self.bot.is_parkouring = undefined;
-        self.bot.buried_parkour_retry = gettime() + 9000;
-        return true;
-    }
-
-    if(isalive(self) && self isonground() &&
-       findpath(self.origin, landing_origin, undefined, 0, 1))
-    {
-        self addgoal(landing_origin, 56, 2, "bot_buried_roof_jump_landing");
-        land_move_deadline = gettime() + 5500;
-        while(gettime() < land_move_deadline && isalive(self) &&
-              distancesquared(self.origin, landing_origin) > 56 * 56)
-            wait 0.15;
-        self cancelgoal("bot_buried_roof_jump_landing");
-    }
-
-    if(is_true(explore_roof) && isalive(self) && self isonground() &&
-       distancesquared(self.origin, landing_origin) < 180 * 180 &&
-       findpath(self.origin, landing_origin, undefined, 0, 1))
-    {
-        self cancelgoal("wander");
-        self addgoal(landing_origin, 72, 1, "wander");
-        self.bot.last_wander_pos = self.origin;
-        self.bot.wander_stay_time = gettime();
-    }
-
-    self cancelgoal("bot_buried_roof_jump_takeoff");
-    self cancelgoal("bot_buried_roof_jump_landing");
-    self.bot.buried_roof_takeoff_origin = undefined;
-    self.bot.buried_roof_takeoff_until = 0;
-    self.bot.is_parkouring = undefined;
-    self.bot.buried_parkour_retry = gettime() + 14000;
-    return true;
-}
-
-
-bot_quest_buried_traverse(quest_leader)
+bot_quest_buried_traverse()
 {
     self endon("disconnect");
     self endon("death");
@@ -1699,27 +1421,13 @@ bot_quest_buried_traverse(quest_leader)
     if(isdefined(self.bot.buried_parkour_retry) && gettime() < self.bot.buried_parkour_retry)
         return;
 
-    // Keep player movement grounded before choosing a roof route. A bot may
-    // cross a normal roof gap with a controlled jump even without Trample Steam.
-    if(!self isonground() || self isonladder() || self ismantling())
+    // Buried's Trample Steam launches horizontally. It is not a vertical
+    // elevator, so only use it for a same-height gap with a real route beyond.
+    if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
+       !self isonground() || self isonladder() || self ismantling())
         return;
 
     target_origin = undefined;
-    explore_roof = 0;
-
-    if(isdefined(level.bot_command_mode) &&
-       (level.bot_command_mode == "wander" || level.bot_command_mode == "wander_further"))
-    {
-        explore_roof = 1;
-        if(self bot_quest_buried_try_roof_jump(undefined, 1))
-            return;
-
-        // No jumpable roof island was found. Retry after a short delay rather
-        // than rescanning hundreds of nodes on every objective tick.
-        self.bot.buried_parkour_retry = gettime() + 8000;
-        return;
-    }
-
     if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow")
     {
         commander = level.bot_commander;
@@ -1744,30 +1452,11 @@ bot_quest_buried_traverse(quest_leader)
         target_origin = self getgoal("wander");
 
     if(!isdefined(target_origin) ||
-       distancesquared(self.origin, target_origin) < 220 * 220 ||
+       abs(target_origin[2] - self.origin[2]) > 96 ||
+       distancesquared(self.origin, target_origin) < 260 * 260 ||
        findpath(self.origin, target_origin, undefined, 0, 1))
     {
         self.bot.buried_parkour_retry = gettime() + 5000;
-        return;
-    }
-
-    // Try a player-controlled roof jump first. If no safe landing/takeoff pair
-    // exists, the original Trample Steam route below remains available.
-    if(self bot_quest_buried_try_roof_jump(target_origin, 0))
-        return;
-
-    // The springpad is a shared launch point, so keep its old follow-mode
-    // behavior leader-only. Every follower already had its own direct-jump try.
-    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "follow" &&
-       !is_true(quest_leader))
-        return;
-
-    // The stock Buried springpad launches horizontally, so retain it only for
-    // same-height gaps and only when the bot actually carries that equipment.
-    if(!isdefined(self.current_equipment) || self.current_equipment != "equip_springpad_zm" ||
-       abs(target_origin[2] - self.origin[2]) > 96)
-    {
-        self.bot.buried_parkour_retry = gettime() + 7000;
         return;
     }
 
