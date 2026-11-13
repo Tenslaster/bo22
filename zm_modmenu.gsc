@@ -2921,6 +2921,48 @@ MM_OriginsStaffGuideLoop()
         guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
         guideText += self MM_OriginsStaffGuideLine("ICE", "elemental_staff_water", "staff_water_zm", "staff_water_upgraded_zm", "staff_water_zm_upgrade_unlocked", 4);
 
+        // Once a staff's puzzle/crypt unlock flag is set, mark the next physical
+        // interaction: its charger until 20 souls, then its upgraded pickup.
+        chargeStaffs = array(
+            "staff_air_zm",
+            "staff_fire_zm",
+            "staff_lightning_zm",
+            "staff_water_zm"
+        );
+        chargeFlags = array(
+            "staff_air_zm_upgrade_unlocked",
+            "staff_fire_zm_upgrade_unlocked",
+            "staff_lightning_zm_upgrade_unlocked",
+            "staff_water_zm_upgrade_unlocked"
+        );
+        foreach(chargeWeapon in chargeStaffs)
+        {
+            chargeIndex = 0;
+            foreach(testWeapon in chargeStaffs)
+            {
+                if(testWeapon == chargeWeapon)
+                    break;
+                chargeIndex++;
+            }
+
+            if(!flag(chargeFlags[chargeIndex]))
+                continue;
+
+            chargeCount = self MM_OriginsStaffChargeProgress(chargeWeapon);
+            if(chargeCount < 20)
+            {
+                chargerEnt = self MM_OriginsGetStaffCharger(chargeWeapon);
+                if(isDefined(chargerEnt) && isDefined(chargerEnt.origin))
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(chargerEnt.origin + (0, 0, 32), (1, 0.5, 0.05));
+            }
+            else if(!self hasweapon("staff_air_upgraded_zm") || chargeWeapon != "staff_air_zm")
+            {
+                upgradeEnt = self MM_OriginsGetStaffUpgradeEntity(chargeWeapon);
+                if(isDefined(upgradeEnt) && isDefined(upgradeEnt.origin))
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(upgradeEnt.origin + (0, 0, 32), (0.1, 1, 0.2));
+            }
+        }
+
         // FIRE: mark unfinished Crazy Place soul chests, then the four exact
         // church torches selected by the live stock puzzle script.
         if(self hasweapon("staff_fire_zm") && !flag("fire_puzzle_1_complete"))
@@ -3411,6 +3453,35 @@ MM_OriginsStaffGuideLine(label, craftableName, baseWeapon, upgradedWeapon, upgra
         step = "^3Find staff parts (" + parts + "/3)";
 
     return "^7" + label + ": " + step;
+}
+
+MM_OriginsGetStaffCharger(baseWeapon)
+{
+    if(!isDefined(level.a_elemental_staffs))
+        return undefined;
+
+    foreach(staff in level.a_elemental_staffs)
+    {
+        if(!isDefined(staff) || !isDefined(staff.weapname) || staff.weapname != baseWeapon)
+            continue;
+        if(isDefined(staff.charger))
+            return staff.charger;
+    }
+    return undefined;
+}
+
+MM_OriginsGetStaffUpgradeEntity(baseWeapon)
+{
+    if(!isDefined(level.a_elemental_staffs_upgraded))
+        return undefined;
+
+    foreach(staff in level.a_elemental_staffs_upgraded)
+    {
+        if(!isDefined(staff) || !isDefined(staff.base_weapname) || staff.base_weapname != baseWeapon)
+            continue;
+        return staff;
+    }
+    return undefined;
 }
 
 MM_OriginsStaffChargeProgress(baseWeapon)
