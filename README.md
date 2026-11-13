@@ -853,7 +853,7 @@ The repository includes an external Python diagnostic app for investigating BO22
 8. The app also prompts for the repository folder when **Audit GSC project** is clicked and the current selection has no `.gsc` files.
 9. Confirm the Plutonium log folder, audit the source, then start live watching.
 
-Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. The screen and log heuristics are diagnostic evidence, not a replacement for testing in a real Plutonium match. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
+Python 3.10 or newer is required. Tesseract OCR is optional and must be installed separately for HUD text recognition. The source auditor preserves GSC string-based weapon/flag identifiers and ignores same-named entrypoints across separate script files when checking for duplicates. Live telemetry includes each staff-puzzle stage and the stock bot-on-tank state. The screen and log heuristics are diagnostic evidence, not a replacement for testing in a real Plutonium match. See [the telemetry setup guide](./ORIGINS_AI_TELEMETRY.md) for details.
 
 ---
 
