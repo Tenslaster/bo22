@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -389,11 +389,14 @@ def audit_project(project: Path) -> AuditReport:
 LOG_RULES: list[tuple[str, str, str, re.Pattern[str]]] = [
     ("critical", "GSC runtime", "GSC script runtime error", re.compile(r"script runtime error|runtime error in script|unknown function|unresolved external", re.I)),
     ("critical", "Game crash", "Plutonium / game crash signature", re.compile(r"COM_ERROR|fatal error|unhandled exception|EXCEPTION_ACCESS_VIOLATION|game has stopped", re.I)),
-    ("error", "GSC compile", "GSC compile or load failure", re.compile(r"script compile error|could not load script|failed to load script|syntax error|bad syntax", re.I)),
+    # Keep actual GSC compilation failures separate from missing optional/client script assets.
+    ("error", "GSC compile", "GSC compile failure", re.compile(r"script compile error|failed to compile script|compile error in script|syntax error|bad syntax|unknown function|unresolved external", re.I)),
+    ("warning", "Script asset loading", "Script parse-tree asset could not be loaded", re.compile(r"could not load scriptparsetree", re.I)),
     ("warning", "Entity / trigger", "Missing entity or trigger reference", re.compile(r"undefined is not an entity|entity .* not found|could not find.*trigger|invalid entity", re.I)),
-    ("warning", "Bot lifecycle", "Bot may have entered downed / disconnect state", re.compile(r"laststand|downed|disconnect|client dropped|bot.*died|player.*died", re.I)),
+    # Match concrete disconnect/death records, not cvar names such as player_lastStandBleedoutTime.
+    ("warning", "Bot lifecycle", "Bot/client disconnect or death record", re.compile(r"dropping client num \\d+|client \\d+ (?:dropped|disconnected)|(?:bot|player) \\d+.*(?:died|downed)|sv_shutdown:.*exe_disconnected", re.I)),
     ("warning", "Navigation", "Navigation or goal failure signature", re.compile(r"no path|path blocked|goal failed|navigation failed|could not reach", re.I)),
-    ("info", "Quest", "Quest / objective event", re.compile(r"robot|tank|staff|generator|crazy place|portal|drone|dig site|torch|piano|relay", re.I)),
+    # Quest state is reported by structured GSC telemetry; avoid matching unrelated cvar dumps here.
 ]
 
 
@@ -648,6 +651,9 @@ def _is_game_process(process_name: str) -> bool:
 
 def _is_game_title(title: str) -> bool:
     lowered = (title or "").lower()
+    # The watcher window itself contains "BO22"; never capture our own UI.
+    if "origins ai watcher" in lowered:
+        return False
     return any(hint in lowered for hint in GAME_TITLE_HINTS)
 
 
