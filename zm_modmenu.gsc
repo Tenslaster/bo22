@@ -3236,6 +3236,37 @@ MM_OriginsStaffGuideLoop()
             guideText += "\nStones remaining: " + stonesLeft;
         }
 
+        // CRYPT: once both local puzzles for a staff are complete, the
+        // matching chamber gem must be hit and the four outer discs aligned.
+        if(self hasweapon("staff_fire_zm") && flag("fire_puzzle_1_complete") && flag("fire_puzzle_2_complete") && !flag("staff_fire_zm_upgrade_unlocked"))
+        {
+            cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_fire", "fire_orb_plinth_final");
+            foreach(cryptMarker in cryptGuide.markers)
+                markers[markers.size] = cryptMarker;
+            guideText += "\n^3FIRE - CRYPT ORB^7: " + cryptGuide.text;
+        }
+        if(self hasweapon("staff_air_zm") && flag("air_puzzle_1_complete") && flag("air_puzzle_2_complete") && !flag("staff_air_zm_upgrade_unlocked"))
+        {
+            cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_air", "air_orb_plinth_final");
+            foreach(cryptMarker in cryptGuide.markers)
+                markers[markers.size] = cryptMarker;
+            guideText += "\n^3WIND - CRYPT ORB^7: " + cryptGuide.text;
+        }
+        if(self hasweapon("staff_lightning_zm") && flag("electric_puzzle_1_complete") && flag("electric_puzzle_2_complete") && !flag("staff_lightning_zm_upgrade_unlocked"))
+        {
+            cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_elec", "lightning_orb_plinth_final");
+            foreach(cryptMarker in cryptGuide.markers)
+                markers[markers.size] = cryptMarker;
+            guideText += "\n^3LIGHTNING - CRYPT ORB^7: " + cryptGuide.text;
+        }
+        if(self hasweapon("staff_water_zm") && flag("ice_puzzle_1_complete") && flag("ice_puzzle_2_complete") && !flag("staff_water_zm_upgrade_unlocked"))
+        {
+            cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_ice", "ice_orb_plinth_final");
+            foreach(cryptMarker in cryptGuide.markers)
+                markers[markers.size] = cryptMarker;
+            guideText += "\n^3ICE - CRYPT ORB^7: " + cryptGuide.text;
+        }
+
         for(slot = 0; slot < maxMarkers; slot++)
         {
             if(slot < markers.size && isDefined(markers[slot]) && isDefined(markers[slot].origin))
@@ -3307,7 +3338,7 @@ MM_OriginsStaffGuideLine(label, craftableName, baseWeapon, upgradedWeapon, upgra
     built = isDefined(level.craftables_crafted) &&
             isDefined(level.craftables_crafted[craftableName]) &&
             level.craftables_crafted[craftableName];
-    upgraded = flag(upgradeFlag);
+    upgradeReady = flag(upgradeFlag);
     placed = false;
     if(isDefined(level.a_elemental_staffs_upgraded))
     {
@@ -3321,31 +3352,167 @@ MM_OriginsStaffGuideLine(label, craftableName, baseWeapon, upgradedWeapon, upgra
         }
     }
 
-    step = "^3Find staff parts (" + parts + "/3)";
-    if(parts >= 3 && !built)
-        step = "^3Build it at the excavation table";
-    else if(built && !self hasweapon(baseWeapon) && !upgraded)
-        step = "^3Pick up the base staff";
-    else if(self hasweapon(baseWeapon) && !upgraded)
-        step = "^3Insert in charger; kill zombies until 20 souls";
-    else if(upgraded && !self hasweapon(upgradedWeapon))
-        step = "^3Pick up the upgraded staff";
-    else if(self hasweapon(upgradedWeapon) && !placed)
+    if(placed)
+        step = "^2Upgraded staff placed in robot";
+    else if(self hasweapon(upgradedWeapon))
+        step = "^3Place upgraded staff in its matching robot";
+    else if(upgradeReady)
+    {
+        charge = self MM_OriginsStaffChargeProgress(baseWeapon);
+        if(charge >= 20)
+            step = "^2Charger full - pick up the upgraded staff";
+        else
+            step = "^3Insert base staff at its charger; souls: " + charge + "/20";
+    }
+    else if(self hasweapon(baseWeapon))
     {
         if(label == "WIND")
-            step = "^3Crazy Place: ceiling rings + smoke targets; charge crypt orb";
+        {
+            if(!flag("air_puzzle_1_complete"))
+                step = "^3Crazy Place: align the 3 ceiling rings";
+            else if(!flag("air_puzzle_2_complete"))
+                step = "^3Crazy Place: aim smoke streams at the green destination";
+            else
+                step = "^3Crypt: hit the Wind gem and align all 4 discs";
+        }
         else if(label == "FIRE")
-            step = "^3Crazy Place: soul chests + church torches; charge crypt orb";
+        {
+            if(!flag("fire_puzzle_1_complete"))
+                step = "^3Crazy Place: clear all marked soul chests";
+            else if(!flag("fire_puzzle_2_complete"))
+                step = "^3Church: light all 4 marked torches";
+            else
+                step = "^3Crypt: hit the Fire gem and align all 4 discs";
+        }
         else if(label == "LIGHTNING")
-            step = "^3Crazy Place: piano chords + wall switches; charge crypt orb";
+        {
+            if(!flag("electric_puzzle_1_complete"))
+                step = "^3Crazy Place: play the marked piano chord";
+            else if(!flag("electric_puzzle_2_complete"))
+                step = "^3Crazy Place: set the marked relay switches";
+            else
+                step = "^3Crypt: hit the Lightning gem and align all 4 discs";
+        }
         else
-            step = "^3Crazy Place: match ceiling tiles, freeze + shatter stones";
+        {
+            if(!flag("ice_puzzle_1_complete"))
+                step = "^3Crazy Place: shoot the green-marked ceiling tile";
+            else if(!flag("ice_puzzle_2_complete"))
+                step = "^3Crazy Place: freeze and shatter all marked tombstones";
+            else
+                step = "^3Crypt: hit the Ice gem and align all 4 discs";
+        }
     }
-    else if(placed)
-        step = "^2Upgraded staff placed in robot";
+    else if(parts >= 3 && !built)
+        step = "^3Build it at the excavation table";
+    else if(built)
+        step = "^3Pick up the base staff";
+    else
+        step = "^3Find staff parts (" + parts + "/3)";
 
     return "^7" + label + ": " + step;
 }
+
+MM_OriginsStaffChargeProgress(baseWeapon)
+{
+    if(isDefined(level.a_elemental_staffs))
+    {
+        foreach(staff in level.a_elemental_staffs)
+        {
+            if(!isDefined(staff) || !isDefined(staff.weapname) || staff.weapname != baseWeapon)
+                continue;
+            if(isDefined(staff.charger) && isDefined(staff.charger.charges_received))
+                return staff.charger.charges_received;
+        }
+    }
+    return 0;
+}
+
+MM_OriginsBuildCryptGuide(gemName, plinthName)
+{
+    data = spawnstruct();
+    data.markers = [];
+    data.text = "";
+
+    gemFound = false;
+    cryptGems = getentarray("crypt_gem", "script_noteworthy");
+    foreach(gem in cryptGems)
+    {
+        if(!isDefined(gem) || !isDefined(gem.targetname) || gem.targetname != gemName || !isDefined(gem.origin))
+            continue;
+        data.markers[data.markers.size] = self MM_OriginsGuideMakeMarker(gem.origin + (0, 0, 36), (1, 0.12, 0.08));
+        gemFound = true;
+    }
+
+    finalPlinth = getstruct(plinthName, "targetname");
+    if(isDefined(finalPlinth) && isDefined(finalPlinth.origin))
+        data.markers[data.markers.size] = self MM_OriginsGuideMakeMarker(finalPlinth.origin + (0, 0, 36), (0.1, 1, 0.2));
+
+    if(gemFound)
+        data.text = "Shoot the RED matching gem with that staff.";
+    else
+        data.text = "Gem already launched or waiting for its model; use the disc guide below.";
+
+    if(isDefined(finalPlinth))
+        data.text += " GREEN marker = its final orb plinth.";
+
+    if(isDefined(level.gem_start_pos) && isDefined(level.gem_start_pos[gemName]))
+    {
+        mainDisc = getent("crypt_puzzle_disc_main", "targetname");
+        if(isDefined(mainDisc) && isDefined(mainDisc.position))
+        {
+            targetPosition = (mainDisc.position + level.gem_start_pos[gemName]) % 4;
+            data.markers[data.markers.size] = self MM_OriginsGuideMakeMarker(mainDisc.origin + (0, 0, 34), (1, 1, 1));
+            data.text += "\nMAIN disc=" + mainDisc.position + "; all four outer discs must equal " + targetPosition + ".";
+
+            discs = getentarray("crypt_puzzle_disc", "script_noteworthy");
+            discFallbackIndex = 0;
+            foreach(disc in discs)
+            {
+                if(!isDefined(disc) || !isDefined(disc.origin) || !isDefined(disc.position))
+                    continue;
+                if(isDefined(disc.targetname) && disc.targetname == "crypt_puzzle_disc_main")
+                    continue;
+
+                discFallbackIndex++;
+                discIndex = discFallbackIndex;
+                if(isDefined(disc.script_int) && disc.script_int >= 1 && disc.script_int <= 4)
+                    discIndex = disc.script_int;
+
+                discColor = (1, 0.12, 0.08);
+                discColorName = "RED";
+                if(discIndex == 2)
+                {
+                    discColor = (0.1, 0.35, 1);
+                    discColorName = "BLUE";
+                }
+                else if(discIndex == 3)
+                {
+                    discColor = (1, 0.9, 0.1);
+                    discColorName = "YELLOW";
+                }
+                else if(discIndex == 4)
+                {
+                    discColor = (0.8, 0.2, 1);
+                    discColorName = "PURPLE";
+                }
+
+                data.markers[data.markers.size] = self MM_OriginsGuideMakeMarker(disc.origin + (0, 0, 34), discColor);
+                discStatus = "FIX";
+                if(disc.position == targetPosition)
+                    discStatus = "OK";
+                data.text += "\nD" + discIndex + " " + discColorName + " " + disc.position + "->" + targetPosition + " [" + discStatus + "]";
+            }
+        }
+        else
+            data.text += "\nWaiting for Crypt disc state to initialize.";
+    }
+    else
+        data.text += "\nWaiting for Crypt gem position data.";
+
+    return data;
+}
+
 
 MM_OriginsStaffProgress()
 {
