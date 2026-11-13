@@ -41,6 +41,12 @@ MM_OnPlayerSpawned()
 
     self waittill("spawned_player");
 
+    if(level.script == "zm_tomb" && !isDefined(level.mmOriginsPianoTrackerStarted))
+    {
+        level.mmOriginsPianoTrackerStarted = true;
+        level thread MM_OriginsPianoChordTracker();
+    }
+
     if(self isHost())
         self.hasMenu = true;
 
@@ -2874,20 +2880,30 @@ MM_OriginsToggleStaffGuide()
 MM_OriginsStaffGuideLoop()
 {
     self endon("disconnect");
+    if(isDefined(self.mmOriginsStaffGuideActive) && self.mmOriginsStaffGuideActive)
+        return;
+
+    self.mmOriginsStaffGuideActive = true;
     hud = newClientHudElem(self);
     hud.horzAlign = "left";
     hud.vertAlign = "top";
     hud.alignX = "left";
     hud.alignY = "top";
     hud.x = 12;
-    hud.y = 90;
+    hud.y = 76;
     hud.font = "objective";
-    hud.fontScale = 1.25;
+    hud.fontScale = 0.92;
     hud.foreground = true;
     hud.hideWhenInMenu = true;
     hud.sort = 1100;
     hud.alpha = 1;
-    hud.color = (0.85, 0.95, 1);
+    hud.color = (0.9, 0.95, 1);
+
+    maxMarkers = 64;
+    markerHuds = [];
+    for(i = 0; i < maxMarkers; i++)
+        markerHuds[i] = self MM_CreatePartESPDot();
+    self.mmOriginsStaffGuideHuds = markerHuds;
 
     while(self scripts\zm\zm_modmenu::MM_IsOn("origstaffguide"))
     {
@@ -2897,8 +2913,322 @@ MM_OriginsStaffGuideLoop()
             break;
         }
 
-        guideText = "^3ORIGINS STAFF GUIDE^7\n";
+        markers = [];
+        guideText = "^3ORIGINS STAFF UPGRADE GUIDE^7\n";
+        guideText += "^2GREEN^7 = correct target / complete   ^1ORANGE^7 = required action\n";
         guideText += self MM_OriginsStaffGuideLine("WIND", "elemental_staff_air", "staff_air_zm", "staff_air_upgraded_zm", "staff_air_zm_upgrade_unlocked", 2) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("FIRE", "elemental_staff_fire", "staff_fire_zm", "staff_fire_upgraded_zm", "staff_fire_zm_upgrade_unlocked", 1) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
+        guideText += self MM_OriginsStaffGuideLine("ICE", "elemental_staff_water", "staff_water_zm", "staff_water_upgraded_zm", "staff_water_zm_upgrade_unlocked", 4);
+
+        // FIRE: mark unfinished Crazy Place soul chests, then the four exact
+        // church torches selected by the live stock puzzle script.
+        if(self hasweapon("staff_fire_zm") && !flag("fire_puzzle_1_complete"))
+        {
+            fireVolumes = [];
+            if(isDefined(level.sacrifice_volumes))
+                fireVolumes = level.sacrifice_volumes;
+            else
+                fireVolumes = getentarray("fire_sacrifice_volume", "targetname");
+
+            fireLeft = 0;
+            fireTotal = fireVolumes.size;
+            foreach(volume in fireVolumes)
+            {
+                if(!isDefined(volume) || !isDefined(volume.origin))
+                    continue;
+                if(isDefined(volume.b_gods_pleased) && volume.b_gods_pleased)
+                    continue;
+
+                fireLeft++;
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(volume.origin + (0, 0, 28), (1, 0.55, 0.05));
+            }
+            guideText += "\n^3FIRE — CRAZY PLACE CHESTS^7: kill zombies inside each orange marker.";
+            guideText += "\nUnfinished chests: " + fireLeft + "/" + fireTotal;
+        }
+        else if(self hasweapon("staff_fire_zm") && !flag("fire_puzzle_2_complete"))
+        {
+            fireNumbers = getentarray("fire_torch_ternary", "script_noteworthy");
+            torchIndex = 0;
+            torchValues = "";
+            foreach(numberEnt in fireNumbers)
+            {
+                if(!isDefined(numberEnt) || !isDefined(numberEnt.target))
+                    continue;
+                torchTarget = getstruct(numberEnt.target, "targetname");
+                if(!isDefined(torchTarget) || !isDefined(torchTarget.origin))
+                    continue;
+
+                torchIndex++;
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(torchTarget.origin + (0, 0, 30), (1, 0.12, 0.08));
+                if(torchValues != "")
+                    torchValues += "  ";
+                torchValues += "T" + torchIndex + "=";
+                if(isDefined(numberEnt.script_string))
+                    torchValues += numberEnt.script_string;
+                else if(isDefined(numberEnt.script_int))
+                    torchValues += numberEnt.script_int;
+                else
+                    torchValues += torchIndex;
+            }
+            guideText += "\n^3FIRE — CHURCH TORCHES^7: shoot ONLY the four red-marked torches.";
+            guideText += "\nLive torch markers: " + torchIndex + "/4";
+            if(torchValues != "")
+                guideText += "   Numbers: " + torchValues;
+            guideText += "\nTargets are read from this match's randomized puzzle state.";
+        }
+        else if(self hasweapon("staff_fire_zm"))
+            guideText += "\n^2FIRE: both Crazy Place puzzles are complete.";
+
+        // LIGHTNING: use the three live piano chord definitions. Green
+        // waypoints identify the three correct keys for the current chord.
+        if(self hasweapon("staff_lightning_zm") && !flag("electric_puzzle_1_complete"))
+        {
+            chordNames = array("a_minor", "e_minor", "d_minor");
+            chordStep = 0;
+            if(isDefined(level.mmOriginsPianoChordStep))
+                chordStep = level.mmOriginsPianoChordStep;
+            if(chordStep < 0)
+                chordStep = 0;
+            if(chordStep > 2)
+                chordStep = 2;
+
+            chordName = chordNames[chordStep];
+            chordStruct = getstruct("piano_chord_" + chordName, "script_noteworthy");
+            pianoNotes = [];
+            if(isDefined(chordStruct) && isDefined(chordStruct.script_string))
+                pianoNotes = strtok(chordStruct.script_string, " ");
+
+            if(pianoNotes.size >= 3)
+            {
+                keys = getstructarray("piano_key", "script_noteworthy");
+                foreach(key in keys)
+                {
+                    if(!isDefined(key) || !isDefined(key.origin) || !isDefined(key.script_string))
+                        continue;
+                    keyNeeded = false;
+                    foreach(note in pianoNotes)
+                    {
+                        if(note == key.script_string)
+                            keyNeeded = true;
+                    }
+                    if(keyNeeded)
+                        markers[markers.size] = self MM_OriginsGuideMakeMarker(key.origin + (0, 0, 20), (0.1, 1, 0.2));
+                }
+
+                pianoPlayed = 0;
+                if(isDefined(level.a_piano_keys_playing))
+                    pianoPlayed = level.a_piano_keys_playing.size;
+
+                guideText += "\n^3LIGHTNING — PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
+                guideText += "\nShoot the three GREEN-marked keys with the Lightning Staff:";
+                guideText += "\n" + pianoNotes[0] + " + " + pianoNotes[1] + " + " + pianoNotes[2] + "   (" + pianoPlayed + "/3 keys hit)";
+            }
+            else
+                guideText += "\n^3LIGHTNING PIANO^7: waiting for chord data to initialize.";
+        }
+
+        // Required switch positions follow the stock path:
+        // ELEC -> ICE -> VILLAGE -> AIR -> START -> TANK PLATFORM -> RUINS -> CHAMBER.
+        if(self hasweapon("staff_lightning_zm") && flag("electric_puzzle_1_complete") && !flag("electric_puzzle_2_complete"))
+        {
+            if(isDefined(level.electric_relays))
+            {
+                relayNames = array("elec", "ice", "village", "air", "start", "tank_platform", "ruins", "bunker");
+                relayGoals = array(0, 3, 2, 2, 1, 0, 2, -1);
+                guideText += "\n^3LIGHTNING — RELAY SWITCHES^7 (current -> target, positions 0-3):\n";
+                for(relayIndex = 0; relayIndex < relayNames.size; relayIndex++)
+                {
+                    relayName = relayNames[relayIndex];
+                    relay = level.electric_relays[relayName];
+                    if(!isDefined(relay) || !isDefined(relay.e_switch) || !isDefined(relay.e_switch.origin))
+                        continue;
+
+                    if(relayGoals[relayIndex] < 0)
+                    {
+                        markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), (0.55, 0.55, 0.55));
+                        guideText += "^7BUNKER: unused   ";
+                        continue;
+                    }
+
+                    relayColor = (1, 0.5, 0.05);
+                    if(isDefined(relay.position) && relay.position == relayGoals[relayIndex])
+                        relayColor = (0.1, 1, 0.2);
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayColor);
+                    guideText += relayName + " " + relay.position + "->" + relayGoals[relayIndex] + "   ";
+                    if(relayIndex == 3)
+                        guideText += "\n";
+                }
+                guideText += "\nSet every orange switch's current number to its target number.";
+            }
+        }
+
+        // WIND: each ring's randomized current position and its stock target
+        // are read live. Smoke markers point from each source to its destination.
+        if(self hasweapon("staff_air_zm") && !flag("air_puzzle_1_complete"))
+        {
+            if(isDefined(level.a_ceiling_rings))
+            {
+                guideText += "\n^3WIND — CEILING RINGS^7 (current -> target position):\n";
+                ringIndex = 0;
+                foreach(ring in level.a_ceiling_rings)
+                {
+                    if(!isDefined(ring) || !isDefined(ring.origin) || !isDefined(ring.position) || !isDefined(ring.script_int))
+                        continue;
+                    ringIndex++;
+                    ringColor = (1, 0.5, 0.05);
+                    if(ring.position == ring.script_int)
+                        ringColor = (0.1, 1, 0.2);
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(ring.origin + (0, 0, 34), ringColor);
+                    guideText += "R" + ringIndex + " " + ring.position + "->" + ring.script_int + "   ";
+                }
+                guideText += "\nShoot each orange ring with the Wind Staff until its two values match.";
+            }
+        }
+        else if(self hasweapon("staff_air_zm") && !flag("air_puzzle_2_complete"))
+        {
+            smokeSources = getstructarray("puzzle_smoke_origin", "targetname");
+            smokeIndex = 0;
+            foreach(smoke in smokeSources)
+            {
+                if(!isDefined(smoke) || !isDefined(smoke.origin))
+                    continue;
+                smokeIndex++;
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(smoke.origin + (0, 0, 30), (0.1, 0.8, 1));
+            }
+
+            smokeDest = getstruct("puzzle_smoke_dest", "targetname");
+            if(isDefined(smokeDest) && isDefined(smokeDest.origin))
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(smokeDest.origin + (0, 0, 40), (0.1, 1, 0.2));
+            guideText += "\n^3WIND — SMOKE DIRECTION^7: blue markers are smoke sources; GREEN marker is the destination.";
+            guideText += "\nShoot each blue detector with the Wind Staff, then steer its smoke toward the green destination.";
+            guideText += "\nSources marked: " + smokeIndex;
+        }
+
+        // ICE: the active gem value identifies the correct unsolved ceiling
+        // tile. Tombstone markers remain only while their stock stone models exist.
+        if(self hasweapon("staff_water_zm") && !flag("ice_puzzle_1_complete"))
+        {
+            iceGem = getent("ice_chamber_gem", "targetname");
+            if(isDefined(iceGem) && isDefined(iceGem.value) && iceGem.value >= 0)
+            {
+                iceValue = iceGem.value;
+                iceCode = "";
+                if(isDefined(level.ternary_digits) && iceValue < level.ternary_digits.size)
+                {
+                    digits = level.ternary_digits[iceValue];
+                    for(digitIndex = 0; digitIndex < 3; digitIndex++)
+                    {
+                        if(digitIndex > 0)
+                            iceCode += "-";
+                        if(digits[digitIndex] >= 0)
+                            iceCode += digits[digitIndex];
+                        else
+                            iceCode += "X";
+                    }
+                }
+
+                if(isDefined(level.unsolved_tiles))
+                {
+                    correctTileCount = 0;
+                    foreach(tile in level.unsolved_tiles)
+                    {
+                        if(!isDefined(tile) || !isDefined(tile.origin) || !isDefined(tile.value) || tile.value != iceValue)
+                            continue;
+                        if(isDefined(tile.showing_tile_side) && !tile.showing_tile_side)
+                            continue;
+                        correctTileCount++;
+                        markers[markers.size] = self MM_OriginsGuideMakeMarker(tile.origin + (0, 0, 36), (0.1, 1, 0.2));
+                    }
+                    guideText += "\n^3ICE — CEILING TILE^7: shoot the GREEN-marked tile with the Ice Staff.";
+                    guideText += "\nLive gem value: " + iceValue + "   Ternary display: " + iceCode + "   Matching tiles: " + correctTileCount;
+                }
+            }
+            else
+                guideText += "\n^3ICE CEILING TILE^7: waiting for the gem to display its next value.";
+        }
+        else if(self hasweapon("staff_water_zm") && !flag("ice_puzzle_2_complete"))
+        {
+            iceStones = getstructarray("puzzle_stone_water", "targetname");
+            stoneCount = 0;
+            foreach(stone in iceStones)
+            {
+                if(!isDefined(stone) || !isDefined(stone.e_model) || !isDefined(stone.e_model.origin))
+                    continue;
+                stoneCount++;
+                markers[markers.size] = self MM_OriginsGuideMakeMarker(stone.e_model.origin + (0, 0, 24), (0.1, 0.8, 1));
+            }
+
+            stonesLeft = stoneCount;
+            if(isDefined(level.ice_stones_remaining))
+                stonesLeft = level.ice_stones_remaining;
+            guideText += "\n^3ICE — CRAZY PLACE TOMBSTONES^7: freeze every blue marker with the Ice Staff.";
+            guideText += "\nThen shoot each frozen stone with a normal bullet weapon (NOT a Staff).";
+            guideText += "\nStones remaining: " + stonesLeft;
+        }
+
+        for(slot = 0; slot < maxMarkers; slot++)
+        {
+            if(slot < markers.size && isDefined(markers[slot]) && isDefined(markers[slot].origin))
+            {
+                marker = markers[slot];
+                markerHuds[slot].x = marker.origin[0];
+                markerHuds[slot].y = marker.origin[1];
+                markerHuds[slot].z = marker.origin[2];
+                markerHuds[slot].color = marker.color;
+                markerHuds[slot].alpha = 1;
+            }
+            else
+                markerHuds[slot].alpha = 0;
+        }
+
+        hud setText(guideText);
+        wait 0.25;
+    }
+
+    foreach(markerHud in markerHuds)
+    {
+        if(isDefined(markerHud))
+            markerHud destroy();
+    }
+    if(isDefined(hud))
+        hud destroy();
+    self.mmOriginsStaffGuideHuds = [];
+    self.mmOriginsStaffGuideActive = false;
+}
+
+MM_OriginsGuideMakeMarker(origin, color)
+{
+    marker = spawnstruct();
+    marker.origin = origin;
+    marker.color = color;
+    return marker;
+}
+
+MM_OriginsPianoChordTracker()
+{
+    level endon("end_game");
+    level.mmOriginsPianoChordStep = 0;
+    lastRinging = flag("piano_chord_ringing");
+    if(lastRinging)
+        level.mmOriginsPianoChordStep = 1;
+
+    for(;;)
+    {
+        if(flag("electric_puzzle_1_complete"))
+        {
+            level.mmOriginsPianoChordStep = 3;
+            break;
+        }
+        ringing = flag("piano_chord_ringing");
+        if(ringing && !lastRinging && level.mmOriginsPianoChordStep < 3)
+            level.mmOriginsPianoChordStep++;
+        lastRinging = ringing;
+        wait 0.05;
+    }
+}
+
+MM_OriginsStaffGuideLine("WIND", "elemental_staff_air", "staff_air_zm", "staff_air_upgraded_zm", "staff_air_zm_upgrade_unlocked", 2) + "\n";
         guideText += self MM_OriginsStaffGuideLine("FIRE", "elemental_staff_fire", "staff_fire_zm", "staff_fire_upgraded_zm", "staff_fire_zm_upgrade_unlocked", 1) + "\n";
         guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
         guideText += self MM_OriginsStaffGuideLine("ICE", "elemental_staff_water", "staff_water_zm", "staff_water_upgraded_zm", "staff_water_zm_upgrade_unlocked", 4);
