@@ -2228,7 +2228,7 @@ bot_origins_place_staff_in_robot(head, weapon_name)
     head.bot_origins_staff_owner = self;
     head.bot_origins_staff_owner_until = gettime() + 18000;
 
-    arrived = self scripts\\zm\\zm_bo2_bots::bot_quest_move_to(
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(
         head.origin, "bot_origins_staff_plinth", 40, 10000);
 
     if(!arrived || !isalive(self) || !self hasweapon(weapon_name))
@@ -2404,7 +2404,6 @@ bot_quest_origins()
         }
     }
 
-    // Step two of Little Lost Girl: put each upgraded staff into its matching
     // Step two of Little Girl Lost: place each upgraded staff in the
     // matching robot-head plinth. Use native trigger labels, not guessed IDs.
     if(flag("ee_all_staffs_upgraded") && !flag("ee_all_staffs_placed"))
