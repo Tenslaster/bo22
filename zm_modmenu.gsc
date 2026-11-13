@@ -3228,20 +3228,6 @@ MM_OriginsPianoChordTracker()
     }
 }
 
-MM_OriginsStaffGuideLine("WIND", "elemental_staff_air", "staff_air_zm", "staff_air_upgraded_zm", "staff_air_zm_upgrade_unlocked", 2) + "\n";
-        guideText += self MM_OriginsStaffGuideLine("FIRE", "elemental_staff_fire", "staff_fire_zm", "staff_fire_upgraded_zm", "staff_fire_zm_upgrade_unlocked", 1) + "\n";
-        guideText += self MM_OriginsStaffGuideLine("LIGHTNING", "elemental_staff_lightning", "staff_lightning_zm", "staff_lightning_upgraded_zm", "staff_lightning_zm_upgrade_unlocked", 3) + "\n";
-        guideText += self MM_OriginsStaffGuideLine("ICE", "elemental_staff_water", "staff_water_zm", "staff_water_upgraded_zm", "staff_water_zm_upgrade_unlocked", 4);
-        if(flag("ee_all_staffs_placed"))
-            guideText += "\n^2All four upgraded staffs are in the robots.";
-        hud setText(guideText);
-        wait 0.5;
-    }
-
-    if(isDefined(hud))
-        hud destroy();
-}
-
 MM_OriginsStaffGuideLine(label, craftableName, baseWeapon, upgradedWeapon, upgradeFlag, crystalIndex)
 {
     parts = 0;
