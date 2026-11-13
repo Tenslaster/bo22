@@ -2182,6 +2182,603 @@ bot_quest_origins_robot_wind_parts()
     return false;
 }
 
+
+// -----------------------------------------------------------------------------
+// Origins Lightning Staff tank traversal.
+// This is a player-bot controller, not the stock zombie tank-jump AI. It only
+// marks a bot aboard after the stock roof-contact check succeeds, uses the
+// real tank use/call triggers, and leaves by physically moving/jumping toward
+// the stock tank_jump_down_spots / rear-tread push-off points.
+// -----------------------------------------------------------------------------
+bot_origins_tank_has_missing_lightning_parts()
+{
+    return isdefined(level.staff_part_count) &&
+           isdefined(level.staff_part_count["elemental_staff_lightning"]) &&
+           level.staff_part_count["elemental_staff_lightning"] > 0;
+}
+
+bot_origins_tank_is_on_roof()
+{
+    if(!isdefined(level.vh_tank))
+        return false;
+
+    // Use the exact stock entity_on_tank() check first. It tests contact with
+    // vol_on_tank_watch and the stock linked roof-extra trigger.
+    roof_check = getfunction("maps/mp/zm_tomb_tank", "entity_on_tank");
+    if(isdefined(roof_check))
+        return self [[ roof_check ]]();
+
+    roof = level.vh_tank.e_roof;
+    if(!isdefined(roof))
+        roof = getent("vol_on_tank_watch", "targetname");
+    if(isdefined(roof) && self istouching(roof))
+        return true;
+
+    if(isdefined(level.vh_tank.e_roof_extra) &&
+       self istouching(level.vh_tank.e_roof_extra))
+        return true;
+
+    return false;
+}
+
+bot_origins_tank_sync_rider_state()
+{
+    if(!isdefined(self.bot) || !isdefined(level.vh_tank))
+        return false;
+
+    touching_roof = self bot_origins_tank_is_on_roof();
+
+    // Native players are tracked by players_on_tank_update(). Scripted bots
+    // rejected by is_player_valid() need the same counter/state bookkeeping.
+    if(!is_player_valid(self))
+    {
+        if(touching_roof && !is_true(self.b_already_on_tank))
+        {
+            self.b_already_on_tank = 1;
+            self.bot.origins_tank_counted = 1;
+            if(isdefined(level.vh_tank.n_players_on))
+                level.vh_tank.n_players_on++;
+        }
+        else if(!touching_roof && is_true(self.bot.origins_tank_counted))
+        {
+            self.b_already_on_tank = 0;
+            self.bot.origins_tank_counted = undefined;
+            if(isdefined(level.vh_tank.n_players_on) && level.vh_tank.n_players_on > 0)
+                level.vh_tank.n_players_on--;
+        }
+    }
+
+    return touching_roof;
+}
+
+// Find an uncollected Lightning Staff physical part that is reachable from an
+// origin. The existing shared craftable worker still performs the real pickup.
+bot_origins_tank_find_lightning_piece_from(start_origin)
+{
+    if(!isdefined(start_origin) || !isdefined(level.a_uts_craftables))
+        return undefined;
+
+    best_piece = undefined;
+    best_dist_sq = 999999999;
+
+    foreach(stub in level.a_uts_craftables)
+    {
+        if(!isdefined(stub) || !isdefined(stub.craftablespawn) ||
+           !isdefined(stub.craftablespawn.craftable_name) ||
+           stub.craftablespawn.craftable_name != "elemental_staff_lightning" ||
+           !isdefined(stub.craftablespawn.a_piecespawns))
+            continue;
+
+        foreach(piece in stub.craftablespawn.a_piecespawns)
+        {
+            if(!isdefined(piece) || !isdefined(piece.model) ||
+               !isdefined(piece.model.origin) || !isdefined(piece.piecename) ||
+               piece.piecename == "gem")
+                continue;
+
+            if((isdefined(piece.crafted) && piece.crafted) ||
+               (isdefined(piece.in_shared_inventory) && piece.in_shared_inventory))
+                continue;
+
+            if(!self scripts\zm\zm_bo2_bots::bot_player_can_take_piece(piece) ||
+               !self scripts\zm\zm_bo2_bots::bot_craftable_piece_is_available(piece))
+                continue;
+
+            if(isdefined(piece.bot_auto_claim) && piece.bot_auto_claim != self &&
+               isdefined(piece.bot_auto_claim_until) && gettime() < piece.bot_auto_claim_until &&
+               isalive(piece.bot_auto_claim))
+                continue;
+
+            approach = piece.model.origin + (0, 0, -16);
+            dist_sq = distancesquared(start_origin, approach);
+            if(dist_sq >= best_dist_sq || !findpath(start_origin, approach, undefined, 0, 1))
+                continue;
+
+            best_piece = piece;
+            best_dist_sq = dist_sq;
+        }
+    }
+
+    return best_piece;
+}
+
+bot_origins_tank_has_reachable_lightning_piece(start_origin)
+{
+    piece = self bot_origins_tank_find_lightning_piece_from(start_origin);
+    return isdefined(piece);
+}
+
+bot_origins_tank_board_roof(tank)
+{
+    if(!isdefined(tank) || !isdefined(tank.e_roof))
+        return false;
+
+    if(self bot_origins_tank_sync_rider_state())
+        return true;
+
+    if(tank ent_flag("tank_moving"))
+        return false;
+
+    targets = [];
+
+    if(isdefined(tank.e_roof.origin))
+        targets[targets.size] = tank.e_roof.origin;
+
+    if(isdefined(tank.e_roof_extra) && isdefined(tank.e_roof_extra.origin))
+        targets[targets.size] = tank.e_roof_extra.origin;
+
+    // The stock window tags give several real approach edges around the tank.
+    // These are used only as navigation points; no zombie animation is called.
+    if(isdefined(tank.a_tank_tags))
+    {
+        foreach(tag in tank.a_tank_tags)
+        {
+            if(!isdefined(tag) || !isdefined(tag.str_tag))
+                continue;
+
+            tag_origin = tank gettagorigin(tag.str_tag);
+            if(isdefined(tag_origin))
+                targets[targets.size] = tag_origin + (0, 0, 12);
+        }
+    }
+
+    if(targets.size == 0)
+        return false;
+
+    for(i = 0; i < targets.size; i++)
+    {
+        target = targets[i];
+        if(!findpath(self.origin, target, undefined, 0, 1) && i < targets.size - 1)
+            continue;
+
+        self cancelgoal("bot_origins_tank_board");
+        self addgoal(target, 18, 2, "bot_origins_tank_board");
+
+        deadline = gettime() + 6500;
+        while(gettime() < deadline && isalive(self))
+        {
+            if(self bot_origins_tank_sync_rider_state())
+            {
+                self cancelgoal("bot_origins_tank_board");
+                return true;
+            }
+
+            wait 0.15;
+        }
+
+        self cancelgoal("bot_origins_tank_board");
+    }
+
+    return self bot_origins_tank_sync_rider_state();
+}
+
+bot_origins_tank_force_activate(tank, from_callbox)
+{
+    if(!isdefined(tank))
+        return false;
+
+    if(tank ent_flag("tank_activated") || tank ent_flag("tank_moving"))
+        return true;
+
+    if(tank ent_flag("tank_cooldown"))
+        return false;
+
+    free_ride = isdefined(tank.b_no_cost) && tank.b_no_cost;
+    if(!free_ride && self.score < 500)
+        return false;
+
+    minus_score = getfunction("maps/mp/zombies/_zm_score", "minus_to_player_score");
+    if(!free_ride && !isdefined(minus_score))
+        return false;
+
+    // Mirror the native tank watcher only when its trigger ignored this bot.
+    // Never set the rider flag here: roof contact is still independently checked.
+    tank ent_flag_set("tank_activated");
+    tank ent_flag_set("tank_moving");
+
+    if(!free_ride)
+        self [[ minus_score ]](500);
+
+    // The stock call-box thread is still waiting for tank_stop. Clear its
+    // one-shot free-ride marker when we had to supply the bot fallback.
+    if(isdefined(from_callbox) && from_callbox &&
+       isdefined(tank.b_call_box_used) && tank.b_call_box_used)
+        tank.b_call_box_used = 0;
+
+    return true;
+}
+
+bot_origins_tank_activate_from_roof(tank)
+{
+    if(!isdefined(tank) || !isdefined(tank.t_use))
+        return false;
+
+    if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
+        return true;
+
+    if(tank ent_flag("tank_cooldown"))
+        return false;
+
+    // This is the real linked trig_use_tank entity. Let the stock watcher act
+    // first (including its score validation); only then provide a bot fallback.
+    tank.t_use useby(self);
+    wait 0.55;
+
+    if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
+        return true;
+
+    return self bot_origins_tank_force_activate(tank, 0);
+}
+
+bot_origins_tank_call_station(tank)
+{
+    if(!isdefined(tank) || !isdefined(level.tank_boxes_enabled) ||
+       !level.tank_boxes_enabled || tank ent_flag("tank_moving") ||
+       tank ent_flag("tank_cooldown"))
+        return false;
+
+    call_boxes = getentarray("trig_tank_station_call", "targetname");
+    best_box = undefined;
+    best_dist_sq = 999999999;
+
+    foreach(call_box in call_boxes)
+    {
+        if(!isdefined(call_box) || !isdefined(call_box.origin) ||
+           !isdefined(call_box.script_noteworthy))
+            continue;
+
+        if(isdefined(tank.str_location_current) &&
+           call_box.script_noteworthy == "call_box_" + tank.str_location_current)
+            continue;
+
+        dist_sq = distancesquared(self.origin, call_box.origin);
+        if(dist_sq >= best_dist_sq ||
+           !findpath(self.origin, call_box.origin, undefined, 0, 1))
+            continue;
+
+        best_box = call_box;
+        best_dist_sq = dist_sq;
+    }
+
+    if(!isdefined(best_box))
+        return false;
+
+    used = self scripts\zm\zm_bo2_bots::bot_quest_use_target(
+        best_box, "bot_origins_tank_call_station", 48, 2);
+
+    if(!used)
+        return false;
+
+    wait 0.55;
+    if(tank ent_flag("tank_moving") || tank ent_flag("tank_activated"))
+        return true;
+
+    return self bot_origins_tank_force_activate(tank, 1);
+}
+
+bot_origins_tank_get_jump_down_origin(tank, spot)
+{
+    if(!isdefined(tank) || !isdefined(spot))
+        return undefined;
+
+    get_offset = getfunction("maps/mp/zm_tomb_tank", "tank_get_jump_down_offset");
+    if(isdefined(get_offset))
+        return tank [[ get_offset ]](spot);
+
+    // tank_setup() stores this same tank-relative offset on every stock
+    // tank_jump_down_spots struct. Use it only if the helper was not exported.
+    if(!isdefined(spot.tank_offset))
+        return undefined;
+
+    v_fwd = anglestoforward(tank.angles);
+    v_right = anglestoright(tank.angles);
+    v_up = anglestoup(tank.angles);
+    return tank.origin + spot.tank_offset[0] * v_fwd +
+           spot.tank_offset[1] * v_right + spot.tank_offset[2] * v_up;
+}
+
+bot_origins_tank_choose_exit_spot(tank)
+{
+    spots = getstructarray("tank_jump_down_spots", "script_noteworthy");
+    if(!isdefined(spots) || spots.size == 0)
+        return undefined;
+
+    best = undefined;
+    best_cost = 999999999;
+
+    foreach(spot in spots)
+    {
+        if(!isdefined(spot))
+            continue;
+
+        landing = self bot_origins_tank_get_jump_down_origin(tank, spot);
+        if(!isdefined(landing))
+            continue;
+
+        part = self bot_origins_tank_find_lightning_piece_from(landing);
+        if(isdefined(part))
+        {
+            cost = distancesquared(landing, part.model.origin);
+            if(cost < best_cost)
+            {
+                best = spawnstruct();
+                best.spot = spot;
+                best.origin = landing;
+                best.piece = part;
+                best_cost = cost;
+            }
+        }
+        else if(!isdefined(best))
+        {
+            best = spawnstruct();
+            best.spot = spot;
+            best.origin = landing;
+            best.piece = undefined;
+            best_cost = distancesquared(self.origin, landing);
+        }
+    }
+
+    return best;
+}
+
+bot_origins_tank_try_jump_down(tank)
+{
+    exit_target = self bot_origins_tank_choose_exit_spot(tank);
+
+    if(isdefined(exit_target))
+    {
+        deadline = gettime() + 9000;
+        while(gettime() < deadline && isalive(self) &&
+              self bot_origins_tank_is_on_roof())
+        {
+            landing = self bot_origins_tank_get_jump_down_origin(tank, exit_target.spot);
+            if(!isdefined(landing))
+                break;
+
+            self cancelgoal("bot_origins_tank_jump_down");
+            self addgoal(landing, 22, 2, "bot_origins_tank_jump_down");
+
+            if(distancesquared(self.origin, landing) <= 52 * 52)
+            {
+                delta = landing - self.origin;
+                direction = vectornormalize((delta[0], delta[1], 0));
+                if(direction == (0, 0, 0))
+                    direction = anglestoforward(tank.angles);
+
+                // setvelocity is also the native tank's player push-off API.
+                // The upward component makes this a physical player jump/fall,
+                // not a setorigin or a zombie tank_jump_down animation.
+                self setvelocity(vectorscale(direction, 190) + (0, 0, 170));
+                wait 0.35;
+            }
+
+            if(!self bot_origins_tank_is_on_roof())
+            {
+                self cancelgoal("bot_origins_tank_jump_down");
+                self bot_origins_tank_sync_rider_state();
+                return true;
+            }
+
+            wait 0.2;
+        }
+
+        self cancelgoal("bot_origins_tank_jump_down");
+    }
+
+    // Backup: use the same rear-tread direction vectors as stock
+    // tank_push_player_off_edge(), with a modest upward impulse for the bot.
+    if(isdefined(tank.t_rear_tread))
+    {
+        foreach(tread in tank.t_rear_tread)
+        {
+            if(!isdefined(tread) || !isdefined(tread.origin))
+                continue;
+
+            self cancelgoal("bot_origins_tank_rear_exit");
+            self addgoal(tread.origin, 20, 2, "bot_origins_tank_rear_exit");
+            deadline = gettime() + 5000;
+
+            while(gettime() < deadline && isalive(self) &&
+                  self bot_origins_tank_is_on_roof())
+            {
+                if(distancesquared(self.origin, tread.origin) <= 44 * 44)
+                {
+                    push = anglestoforward(tread.angles) * 180;
+                    self setvelocity(push + (0, 0, 150));
+                    wait 0.35;
+                }
+
+                if(!self bot_origins_tank_is_on_roof())
+                {
+                    self cancelgoal("bot_origins_tank_rear_exit");
+                    self bot_origins_tank_sync_rider_state();
+                    return true;
+                }
+
+                wait 0.2;
+            }
+        }
+
+        self cancelgoal("bot_origins_tank_rear_exit");
+    }
+
+    return !self bot_origins_tank_is_on_roof();
+}
+
+bot_origins_tank_lightning_worker()
+{
+    self endon("disconnect");
+    self endon("bot_relife");
+    self endon("death");
+    level endon("end_game");
+
+    if(!isdefined(self.bot) || !isdefined(level.vh_tank))
+        return;
+
+    self.bot.origins_tank_worker_running = 1;
+    self.bot.is_objective_using = 1;
+    tank = level.vh_tank;
+    total_deadline = gettime() + 100000;
+
+    for(trip = 0; trip < 3 && gettime() < total_deadline && isalive(self); trip++)
+    {
+        if(!self bot_origins_tank_has_missing_lightning_parts())
+            break;
+
+        level.bot_origins_tank_owner = self;
+        level.bot_origins_tank_owner_until = gettime() + 12000;
+
+        if(!self bot_origins_tank_sync_rider_state())
+        {
+            // If the vehicle is currently moving away, wait for its station stop.
+            stop_deadline = gettime() + 42000;
+            while(tank ent_flag("tank_moving") && gettime() < stop_deadline && isalive(self))
+            {
+                level.bot_origins_tank_owner_until = gettime() + 12000;
+                wait 0.25;
+            }
+
+            if(tank ent_flag("tank_moving"))
+                break;
+
+            // When the tank is at the other station, call it with the stock
+            // trig_tank_station_call before attempting the roof approach.
+            if(distancesquared(self.origin, tank.origin) > 760 * 760 &&
+               self bot_origins_tank_call_station(tank))
+            {
+                stop_deadline = gettime() + 42000;
+                while(tank ent_flag("tank_moving") && gettime() < stop_deadline && isalive(self))
+                {
+                    level.bot_origins_tank_owner_until = gettime() + 12000;
+                    wait 0.25;
+                }
+            }
+
+            if(!self bot_origins_tank_board_roof(tank))
+            {
+                self.bot.origins_tank_retry_after = gettime() + 12000;
+                break;
+            }
+        }
+
+        self bot_origins_tank_sync_rider_state();
+
+        if(!tank ent_flag("tank_moving"))
+        {
+            // Prefer the normal trig_use_tank event. The fallback mirrors the
+            // stock activation/500-point cost only if stock ignored the bot.
+            if(tank ent_flag("tank_cooldown"))
+            {
+                cooldown_deadline = gettime() + 16000;
+                while(tank ent_flag("tank_cooldown") &&
+                      gettime() < cooldown_deadline && isalive(self))
+                    wait 0.25;
+            }
+
+            if(!tank ent_flag("tank_moving") &&
+               !self bot_origins_tank_activate_from_roof(tank))
+            {
+                self.bot.origins_tank_retry_after = gettime() + 10000;
+                break;
+            }
+        }
+
+        ride_deadline = gettime() + 42000;
+        while(tank ent_flag("tank_moving") && gettime() < ride_deadline &&
+              isalive(self) && self bot_origins_tank_is_on_roof())
+        {
+            self bot_origins_tank_sync_rider_state();
+            level.bot_origins_tank_owner_until = gettime() + 12000;
+            wait 0.2;
+        }
+
+        self bot_origins_tank_sync_rider_state();
+
+        if(!self bot_origins_tank_is_on_roof())
+            break;
+
+        if(self bot_origins_tank_try_jump_down(tank))
+            break;
+
+        // If no exit marker was reached this stop, remain on the actual roof
+        // and take another native tank leg rather than teleporting the player.
+        if(!self bot_origins_tank_is_on_roof())
+            break;
+    }
+
+    self cancelgoal("bot_origins_tank_board");
+    self cancelgoal("bot_origins_tank_call_station");
+    self cancelgoal("bot_origins_tank_jump_down");
+    self cancelgoal("bot_origins_tank_rear_exit");
+    self bot_origins_tank_sync_rider_state();
+
+    self.bot.is_objective_using = undefined;
+    self.bot.origins_tank_worker_running = undefined;
+    self.bot.origins_tank_retry_after = gettime() +
+        (self bot_origins_tank_is_on_roof() ? 3000 : 12000);
+
+    if(isdefined(level.bot_origins_tank_owner) && level.bot_origins_tank_owner == self)
+    {
+        level.bot_origins_tank_owner = undefined;
+        level.bot_origins_tank_owner_until = 0;
+    }
+}
+
+// Start one shared ride controller only if no Lightning Staff piece can be
+// collected from the bot's current position. Existing craftable code handles
+// the actual pickup once a jump-down landing makes a piece reachable.
+bot_quest_origins_tank_lightning_parts()
+{
+    if(!self bot_origins_tank_has_missing_lightning_parts() ||
+       !isdefined(level.vh_tank) || !isdefined(self.bot))
+        return false;
+
+    if(self bot_origins_tank_has_reachable_lightning_piece(self.origin))
+        return false;
+
+    if(isdefined(self.bot.origins_tank_retry_after) &&
+       gettime() < self.bot.origins_tank_retry_after)
+        return false;
+
+    if(isdefined(self.bot.origins_tank_worker_running) &&
+       self.bot.origins_tank_worker_running)
+        return true;
+
+    if(isdefined(level.bot_origins_tank_owner) &&
+       level.bot_origins_tank_owner != self &&
+       isdefined(level.bot_origins_tank_owner_until) &&
+       gettime() < level.bot_origins_tank_owner_until &&
+       isalive(level.bot_origins_tank_owner))
+        return false;
+
+    level.bot_origins_tank_owner = self;
+    level.bot_origins_tank_owner_until = gettime() + 12000;
+    self.bot.origins_tank_worker_running = 1;
+    self thread bot_origins_tank_lightning_worker();
+    return true;
+}
+
+
 bot_quest_origins()
 {
     // Hard runtime gate: never run Origins objectives on TranZit or any other map.
@@ -2237,6 +2834,11 @@ bot_quest_origins()
     if(self bot_quest_origins_dig_ice_staff_parts())
     {
         self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("ice_staff_dig_parts", "active");
+        return;
+    }
+    if(self bot_quest_origins_tank_lightning_parts())
+    {
+        self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("lightning_staff_tank_route", "active");
         return;
     }
     if(self bot_quest_origins_robot_wind_parts())
