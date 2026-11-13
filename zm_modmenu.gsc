@@ -3352,8 +3352,6 @@ MM_OriginsPianoChordTracker()
     level endon("end_game");
     level.mmOriginsPianoChordStep = 0;
     lastRinging = flag("piano_chord_ringing");
-    if(lastRinging)
-        level.mmOriginsPianoChordStep = 1;
 
     for(;;)
     {
@@ -3362,9 +3360,15 @@ MM_OriginsPianoChordTracker()
             level.mmOriginsPianoChordStep = 3;
             break;
         }
+
         ringing = flag("piano_chord_ringing");
-        if(ringing && !lastRinging && level.mmOriginsPianoChordStep < 3)
+        // The stock script raises this flag after a chord is accepted, holds
+        // it during the chord cooldown, then clears it before the next chord.
+        // Advance on the falling edge so the just-solved chord stays displayed
+        // until the stock script is ready for the next one.
+        if(!ringing && lastRinging && level.mmOriginsPianoChordStep < 3)
             level.mmOriginsPianoChordStep++;
+
         lastRinging = ringing;
         wait 0.05;
     }
