@@ -2943,7 +2943,7 @@ MM_OriginsStaffGuideLoop()
                 fireLeft++;
                 markers[markers.size] = self MM_OriginsGuideMakeMarker(volume.origin + (0, 0, 28), (1, 0.55, 0.05));
             }
-            guideText += "\n^3FIRE — CRAZY PLACE CHESTS^7: kill zombies inside each orange marker.";
+            guideText += "\n^3FIRE - CRAZY PLACE CHESTS^7: kill zombies inside each orange marker.";
             guideText += "\nUnfinished chests: " + fireLeft + "/" + fireTotal;
         }
         else if(self hasweapon("staff_fire_zm") && !flag("fire_puzzle_2_complete"))
@@ -2971,7 +2971,7 @@ MM_OriginsStaffGuideLoop()
                 else
                     torchValues += torchIndex;
             }
-            guideText += "\n^3FIRE — CHURCH TORCHES^7: shoot ONLY the four red-marked torches.";
+            guideText += "\n^3FIRE - CHURCH TORCHES^7: shoot ONLY the four red-marked torches.";
             guideText += "\nLive torch markers: " + torchIndex + "/4";
             if(torchValues != "")
                 guideText += "   Numbers: " + torchValues;
@@ -3020,7 +3020,7 @@ MM_OriginsStaffGuideLoop()
                 if(isDefined(level.a_piano_keys_playing))
                     pianoPlayed = level.a_piano_keys_playing.size;
 
-                guideText += "\n^3LIGHTNING — PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
+                guideText += "\n^3LIGHTNING - PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
                 guideText += "\nShoot the three GREEN-marked keys with the Lightning Staff:";
                 guideText += "\n" + pianoNotes[0] + " + " + pianoNotes[1] + " + " + pianoNotes[2] + "   (" + pianoPlayed + "/3 keys hit)";
             }
@@ -3036,7 +3036,7 @@ MM_OriginsStaffGuideLoop()
             {
                 relayNames = array("elec", "ice", "village", "air", "start", "tank_platform", "ruins", "bunker");
                 relayGoals = array(0, 3, 2, 2, 1, 0, 2, -1);
-                guideText += "\n^3LIGHTNING — RELAY SWITCHES^7 (current -> target, positions 0-3):\n";
+                guideText += "\n^3LIGHTNING - RELAY SWITCHES^7 (current -> target, positions 0-3):\n";
                 for(relayIndex = 0; relayIndex < relayNames.size; relayIndex++)
                 {
                     relayName = relayNames[relayIndex];
@@ -3069,7 +3069,7 @@ MM_OriginsStaffGuideLoop()
         {
             if(isDefined(level.a_ceiling_rings))
             {
-                guideText += "\n^3WIND — CEILING RINGS^7 (current -> target position):\n";
+                guideText += "\n^3WIND - CEILING RINGS^7 (current -> target position):\n";
                 ringIndex = 0;
                 foreach(ring in level.a_ceiling_rings)
                 {
@@ -3100,7 +3100,7 @@ MM_OriginsStaffGuideLoop()
             smokeDest = getstruct("puzzle_smoke_dest", "targetname");
             if(isDefined(smokeDest) && isDefined(smokeDest.origin))
                 markers[markers.size] = self MM_OriginsGuideMakeMarker(smokeDest.origin + (0, 0, 40), (0.1, 1, 0.2));
-            guideText += "\n^3WIND — SMOKE DIRECTION^7: blue markers are smoke sources; GREEN marker is the destination.";
+            guideText += "\n^3WIND - SMOKE DIRECTION^7: blue markers are smoke sources; GREEN marker is the destination.";
             guideText += "\nShoot each blue detector with the Wind Staff, then steer its smoke toward the green destination.";
             guideText += "\nSources marked: " + smokeIndex;
         }
@@ -3140,7 +3140,7 @@ MM_OriginsStaffGuideLoop()
                         correctTileCount++;
                         markers[markers.size] = self MM_OriginsGuideMakeMarker(tile.origin + (0, 0, 36), (0.1, 1, 0.2));
                     }
-                    guideText += "\n^3ICE — CEILING TILE^7: shoot the GREEN-marked tile with the Ice Staff.";
+                    guideText += "\n^3ICE - CEILING TILE^7: shoot the GREEN-marked tile with the Ice Staff.";
                     guideText += "\nLive gem value: " + iceValue + "   Ternary display: " + iceCode + "   Matching tiles: " + correctTileCount;
                 }
             }
@@ -3162,7 +3162,7 @@ MM_OriginsStaffGuideLoop()
             stonesLeft = stoneCount;
             if(isDefined(level.ice_stones_remaining))
                 stonesLeft = level.ice_stones_remaining;
-            guideText += "\n^3ICE — CRAZY PLACE TOMBSTONES^7: freeze every blue marker with the Ice Staff.";
+            guideText += "\n^3ICE - CRAZY PLACE TOMBSTONES^7: freeze every blue marker with the Ice Staff.";
             guideText += "\nThen shoot each frozen stone with a normal bullet weapon (NOT a Staff).";
             guideText += "\nStones remaining: " + stonesLeft;
         }
