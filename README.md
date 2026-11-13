@@ -242,12 +242,15 @@ The Origins menu currently includes:
 
 - Give Shovel, Golden Shovel, and Golden Helmet.
 - Dig Site ESP.
-- Staff Progress Tracker.
+- Staff Progress Tracker (one-shot status report for all four staffs).
+- **Staff Upgrade Guide ESP** toggle: a live on-screen checklist for Wind, Fire, Lightning, and Ice. It reports whether to find the three parts, craft the staff, pick it up, charge it, collect the upgraded staff, solve its Crazy Place puzzle, or place it in a robot.
+- **Stage All 4 Staff Crystals in Crazy Place**: signals the four native crystal-plinth teleport events so the four elemental crystal plinths can rise. This does not put four crystal items in one player's inventory.
 - Maxis Drone recall/recovery.
 - Basic, upgraded, and elemental One Inch Punch options.
 - Robot Foot Warning.
 - Tank status and tank call.
 - Crazy Place teleport and return portals.
+- **Teleport Inside Robot 1 / 2 / 3**: uses the matching stock robot-head destination and only works while that robot's foot hatch is open.
 - Collect all shared parts and automatic shared-part collection.
 - Force the four staff upgrades.
 - Turn on all generators.
@@ -627,7 +630,7 @@ Parts ESP reads the live craftable/buildable registries and marks available spaw
 
 ### Origins Tools
 
-Only shown on Origins. See [Origins](#1-origins) for detailed descriptions. Tools include shovel and helmet grants, Dig Site ESP, staff progress, drone recovery, One Inch Punch options, robot warnings, tank status/call, Crazy Place and portal teleports, shared-part collection, staff upgrades, generator activation, and mud slowdown control.
+Only shown on Origins. See [Origins](#1-origins) for detailed descriptions. Tools include shovel and helmet grants, Dig Site ESP, the live Staff Upgrade Guide ESP, staff crystal staging, drone recovery, One Inch Punch options, robot warnings, tank status/call, Crazy Place and robot-head teleports, shared-part collection, staff upgrades, generator activation, and mud slowdown control. Robot-head teleports require the selected robot's hatch to be open; they do not force a closed hatch.
 
 The host-only **Complete Little Lost Girl** action requests the stock ending sequence and can end the match.
 
