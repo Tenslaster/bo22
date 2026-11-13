@@ -6,7 +6,8 @@ This branch adds runtime diagnostics for the BO22 Origins bots.
 
 - `zm_bo2_bots.gsc`: starts a lightweight worker for every bot. It writes one `ORIGINS_AI_EVENT|...` record every two seconds using the stock GSC `logprint()` channel.
 - `zm_bo2_bots.gsc`: adds a throttled objective-event helper so task selection is visible without flooding the game log.
-- `zm_bo2_bots_map_origins.gsc`: emits task-selection events for Maxis Drone deployment, generators, shovel pickup, Ice Staff digging, Wind Staff robot part, chamber door, staff puzzles, crypt, staff charging, upgraded staff pickup, matching robot staff placement, main quest steps, and the final portal.
+- `zm_bo2_bots_map_origins.gsc`: emits task-selection events for Maxis Drone deployment, generators, shovel pickup, Ice Staff digging, the Lightning Staff tank route, Wind Staff robot part, chamber door, staff puzzles, crypt, staff charging, upgraded staff pickup, matching robot staff placement, main quest steps, and the final portal.
+- `zm_bo2_bots_map_origins.gsc`: adds a dedicated Lightning Staff tank worker. It approaches the real tank roof, fires the stock `trig_use_tank` / `trig_tank_station_call` path, verifies roof contact with stock `entity_on_tank()`, tracks the stock rider state for scripted bots the stock validity filter misses, and attempts physical exits using `tank_jump_down_spots` and the rear-tread push-off vectors. The shared craftable worker remains responsible for picking up the actual staff pieces after a landing makes them reachable.
 
 The bot-state record includes:
 - bot entity ID, command mode, map, task category
@@ -38,7 +39,9 @@ The typical local T6 storage root is `%localappdata%\Plutonium\storage\t6`. Depe
 - `fire_active` reports that the bot's GSC firing timer is active; it is not proof that a projectile hit.
 - The Python static scanner is heuristic. It preserves GSC string literals for evidence discovery, and only reports duplicate function definitions repeated within the same file (same-named entrypoints in separate script files are treated as separate namespaces). It does not compile GSC.
 - This change has **not** been compiled or live-tested in a Plutonium match. Run a private match and verify the log records arrive before relying on its diagnostics.
-- The tank / Electric Staff jump controller is not added by this telemetry change. The source audit checks for player-side tank signals such as `trig_use_tank`, `entity_on_tank`, `b_already_on_tank`, and `vol_on_tank_watch`; it does not treat the mod-menu tank status/call buttons or zombie `tank_jump_up/down` animations as proof that bot riding works. The upstream stock tank implementation is [here](https://github.com/plutoniummod/t6-scripts/blob/main/ZM/Maps/Origins/maps/mp/zm_tomb_tank.gsc).
+- The tank worker is an initial source-level implementation, not a guarantee that every bot can board or leave every tank cycle. Its success depends on the current nav graph, roof contact, score / cooldown state, and whether one of the stock jump-down or rear-tread exits is reachable. The worker never teleports the bot or calls the zombie `tank_jump_up/down` animations.
+- Watcher 1.2.0 requires the integrated tank worker plus the stock player-side signal set: `trig_use_tank`, `trig_tank_station_call`, `entity_on_tank`, `b_already_on_tank`, and `vol_on_tank_watch`. Passing that source audit confirms only that the controller is present in the scanned source; it does not prove that boarding, riding, or landing succeeds in-game.
+- The upstream stock tank implementation used for the controller is [here](https://github.com/plutoniummod/t6-scripts/blob/main/ZM/Maps/Origins/maps/mp/zm_tomb_tank.gsc).
 
 ## One-click Windows launcher
 
