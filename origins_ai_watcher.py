@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 APP_NAME = "Origins AI Watcher"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # ---------------------------------------------------------------------------
 # Shared utilities
@@ -582,42 +582,125 @@ class LogTailer:
 # Window capture, lightweight visual activity check, and optional OCR
 # ---------------------------------------------------------------------------
 
-def list_windows() -> list[tuple[int, str, tuple[int, int, int, int]]]:
+def _window_process_name(hwnd: int) -> str:
+    """Return the executable name that owns a window, when Windows permits it."""
+    if os.name != "nt":
+        return ""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    pid = wintypes.DWORD()
+    get_pid = user32.GetWindowThreadProcessId
+    get_pid.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    get_pid.restype = wintypes.DWORD
+    if not get_pid(wintypes.HWND(hwnd), ctypes.byref(pid)) or not pid.value:
+        return ""
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    open_process.restype = wintypes.HANDLE
+    handle = open_process(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if not handle:
+        return ""
+
+    try:
+        query_image = kernel32.QueryFullProcessImageNameW
+        query_image.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        query_image.restype = wintypes.BOOL
+        size = wintypes.DWORD(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if not query_image(handle, 0, buffer, ctypes.byref(size)):
+            return ""
+        return Path(buffer.value).name.lower()
+    except (AttributeError, OSError, ValueError):
+        return ""
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+GAME_PROCESS_EXACT = {
+    "plutonium.exe",
+    "plutonium-bootstrapper-win32.exe",
+    "plutonium-bootstrapper-win64.exe",
+    "t6zm.exe",
+    "t6mp.exe",
+    "t6sp.exe",
+    "blackops2.exe",
+    "blackops2zm.exe",
+    "blackops2mp.exe",
+    "black ops 2.exe",
+}
+GAME_TITLE_HINTS = ("plutonium", "black ops", "blackops", "t6 zombies", "t6zm")
+
+
+def _is_game_process(process_name: str) -> bool:
+    name = (process_name or "").lower()
+    return (
+        name in GAME_PROCESS_EXACT
+        or ("plutonium" in name and "updater" not in name)
+        or (name.startswith("t6") and name.endswith(".exe"))
+    )
+
+
+def _is_game_title(title: str) -> bool:
+    lowered = (title or "").lower()
+    return any(hint in lowered for hint in GAME_TITLE_HINTS)
+
+
+def list_windows() -> list[tuple[int, str, tuple[int, int, int, int], str]]:
+    """Enumerate visible top-level windows with title, bounds, and owner process."""
     if os.name != "nt":
         return []
     import ctypes
     from ctypes import wintypes
-    user32 = ctypes.windll.user32
-    results: list[tuple[int, str, tuple[int, int, int, int]]] = []
-    # WNDENUMPROC is not exported by ctypes.wintypes on all supported
-    # Python/Windows versions (including standard CPython 3.11 builds).
-    # Define the Win32 callback signature explicitly instead.
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    results: list[tuple[int, str, tuple[int, int, int, int], str]] = []
     WNDENUMPROC = ctypes.WINFUNCTYPE(
         wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
     )
 
-    EnumWindows = user32.EnumWindows
-    EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
-    EnumWindows.restype = wintypes.BOOL
-    GetWindowTextLengthW = user32.GetWindowTextLengthW
-    GetWindowTextW = user32.GetWindowTextW
-    IsWindowVisible = user32.IsWindowVisible
-    GetWindowRect = user32.GetWindowRect
+    enum_windows = user32.EnumWindows
+    enum_windows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+    enum_windows.restype = wintypes.BOOL
+    get_text_length = user32.GetWindowTextLengthW
+    get_text_length.argtypes = [wintypes.HWND]
+    get_text_length.restype = ctypes.c_int
+    get_text = user32.GetWindowTextW
+    get_text.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    get_text.restype = ctypes.c_int
+    is_visible = user32.IsWindowVisible
+    is_visible.argtypes = [wintypes.HWND]
+    is_visible.restype = wintypes.BOOL
+    get_rect = user32.GetWindowRect
+    get_rect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    get_rect.restype = wintypes.BOOL
 
     @WNDENUMPROC
     def callback(hwnd: int, lparam: int) -> bool:
-        if IsWindowVisible(hwnd):
-            n = GetWindowTextLengthW(hwnd)
+        if is_visible(hwnd):
+            n = get_text_length(hwnd)
             if n > 0:
-                buf = ctypes.create_unicode_buffer(n + 1)
-                GetWindowTextW(hwnd, buf, n + 1)
-                title = buf.value.strip()
+                buffer = ctypes.create_unicode_buffer(n + 1)
+                get_text(hwnd, buffer, n + 1)
+                title = buffer.value.strip()
                 rect = wintypes.RECT()
-                if title and GetWindowRect(hwnd, ctypes.byref(rect)):
+                if title and get_rect(hwnd, ctypes.byref(rect)):
                     if rect.right - rect.left > 160 and rect.bottom - rect.top > 120:
-                        results.append((int(hwnd), title, (rect.left, rect.top, rect.right, rect.bottom)))
+                        process_name = _window_process_name(int(hwnd))
+                        results.append((
+                            int(hwnd), title,
+                            (rect.left, rect.top, rect.right, rect.bottom),
+                            process_name,
+                        ))
         return True
-    EnumWindows(callback, 0)
+
+    enum_windows(callback, 0)
     return results
 
 
@@ -627,6 +710,7 @@ class ScreenObserver:
                  status_callback: Callable[[str], None],
                  sample_seconds: float = 2.0, ocr_seconds: float = 8.0):
         self.window_title = window_title
+        self.last_window_label = ""
         self.evidence_dir = evidence_dir
         self.event_callback = event_callback
         self.status_callback = status_callback
@@ -650,14 +734,31 @@ class ScreenObserver:
             return None
         windows = list_windows()
         needle = self.window_title.lower().strip()
-        candidates = [w for w in windows if needle and needle in w[1].lower()]
-        if not candidates and not needle:
-            candidates = [w for w in windows if any(x in w[1].lower() for x in ("plutonium", "black ops", "t6"))]
+        auto_detect = not needle or needle in {"auto", "auto-detect", "automatic"}
+
+        if auto_detect:
+            # Prefer the actual T6 game process over the launcher window. If
+            # process lookup is blocked, known Plutonium / T6 titles are fallback.
+            process_matches = [w for w in windows if _is_game_process(w[3])]
+            title_matches = [w for w in windows if _is_game_title(w[1])]
+            candidates = process_matches or title_matches
+            candidates.sort(key=lambda w: (
+                0 if w[3] in {"t6zm.exe", "t6mp.exe", "t6sp.exe", "blackops2.exe"} else 1,
+                -((w[2][2] - w[2][0]) * (w[2][3] - w[2][1])),
+            ))
+        else:
+            candidates = [w for w in windows if needle in w[1].lower()]
+            if not candidates:
+                candidates = [w for w in windows if _is_game_process(w[3])]
+
         if not candidates:
+            self.last_window_label = ""
             return None
-        # Prefer a title most closely matching the configured text.
-        candidates.sort(key=lambda w: (needle not in w[1].lower(), -((w[2][2]-w[2][0])*(w[2][3]-w[2][1]))))
-        return candidates[0][2]
+
+        chosen = candidates[0]
+        process = chosen[3] or "process unknown"
+        self.last_window_label = f"{chosen[1]} ({process})"
+        return chosen[2]
 
     @staticmethod
     def _thumbnail_rgb(raw: bytes, width: int, height: int, target_w: int = 48, target_h: int = 27) -> bytes:
@@ -738,6 +839,7 @@ class ScreenObserver:
             return
         self.status_callback("Screen observer running. Keep the game window visible and unobstructed.")
         with mss.mss() as sct:
+            last_detected_label = ""
             while not self.stop_event.is_set():
                 rect = self._choose_rect()
                 if not rect:
@@ -772,7 +874,13 @@ class ScreenObserver:
                         self.last_ocr = current
                         text = self._ocr(raw, w, h)
                         self._parse_ocr(text, {"raw": raw, "width": w, "height": h})
-                    self.status_callback(f"Watching {right-left}×{bottom-top} game window | last visual change {int(current-self.last_change)}s ago")
+                    detected = self.last_window_label or "game window"
+                    if detected != last_detected_label:
+                        self.event_callback({"timestamp": now_iso(), "source": "screen", "severity": "info",
+                            "area": "window detection", "title": "Game window detected automatically",
+                            "detail": detected})
+                        last_detected_label = detected
+                    self.status_callback(f"Watching {detected} | {right-left}×{bottom-top} | last visual change {int(current-self.last_change)}s ago")
                 except Exception as exc:
                     if not self.capture_error_reported:
                         self.event_callback({"timestamp": now_iso(), "source": "screen", "severity": "warning",
@@ -962,7 +1070,7 @@ class App:
                                lambda s: self.events_queue.put(("status", s)))
         self.project_var = tk.StringVar(value=project or str(Path.cwd()))
         self.logs_var = tk.StringVar(value=logs or "")
-        self.window_var = tk.StringVar(value="Plutonium")
+        self.window_var = tk.StringVar(value="Auto-detect")
         self.interval_var = tk.StringVar(value="2.0")
         self.ollama_url_var = tk.StringVar(value="http://127.0.0.1:11434")
         self.ollama_model_var = tk.StringVar(value="qwen2.5:3b")
@@ -1039,13 +1147,23 @@ class App:
             self.status_var.set("Window selection is supported on Windows. Source audit and manual log analysis remain available.")
             return
         windows = list_windows()
-        options = [f"{title}  [{hwnd}]" for hwnd, title, _ in windows if any(x in title.lower() for x in ("plutonium", "black ops", "t6"))]
+        options = [
+            f"{title}  [{process_name or 'process unknown'}]"
+            for _hwnd, title, _rect, process_name in windows
+            if _is_game_process(process_name) or _is_game_title(title)
+        ]
+        values = ["Auto-detect"] + options
+        self.window_combo.configure(values=values)
+        if not self.window_var.get().strip():
+            self.window_var.set("Auto-detect")
         if options:
-            self.window_combo.configure(values=options)
-            self.window_var.set(options[0].split("  [")[0])
-            self.status_var.set(f"Found {len(options)} likely game window(s).")
+            self.status_var.set(
+                f"Found {len(options)} likely game window(s). Auto-detect selects the T6 game process."
+            )
         else:
-            self.status_var.set("No likely Plutonium window found. Open the game, then click Find windows.")
+            self.status_var.set(
+                "No game window yet. Auto-detect keeps searching and will attach when BO2 opens."
+            )
 
     def _audit(self) -> None:
         from tkinter import filedialog, messagebox
@@ -1077,7 +1195,11 @@ class App:
         logs = Path(self.logs_var.get()).expanduser() if self.logs_var.get().strip() else None
         try: interval = max(0.5, min(10.0, float(self.interval_var.get())))
         except ValueError: interval = 2.0
-        title = self.window_var.get().split("  [")[0].strip()
+        title = self.window_var.get().strip()
+        if title.lower() in {"", "auto-detect", "auto", "automatic"}:
+            title = ""
+        else:
+            title = title.split("  [")[0].strip()
         self.watcher.run(logs, title, interval)
 
     def _stop(self) -> None:
