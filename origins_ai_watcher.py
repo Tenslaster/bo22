@@ -200,7 +200,19 @@ def audit_project(project: Path) -> AuditReport:
 
     gsc_files = [p for p in project.rglob("*.gsc") if not any(x in p.parts for x in (".git", "node_modules", "build", "dist"))]
     if not gsc_files:
-        findings.append(Finding("error", "source", "No GSC files found", "Select the BO22 repository root or a folder containing .gsc files.", confidence="high"))
+        detail = (
+            "The selected folder contains no .gsc files. You selected the watcher deployment folder, "
+            "not the BO22 source checkout. Select the repository root containing "
+            "'zm_bo2_bots.gsc' and 'zm_bo2_bots_map_origins.gsc'. "
+            "In the app, click Browse beside BO22 project folder."
+        )
+        return AuditReport(
+            now_iso(), str(project), 0, 0,
+            [Finding("error", "source", "No GSC files found", detail,
+                     ["Expected: zm_bo2_bots.gsc", "Expected: zm_bo2_bots_map_origins.gsc"],
+                     "high")],
+            {}, ["No source checks performed because no GSC files were found."], ""
+        )
 
     all_functions: list[tuple[str, str, str, int]] = []
     combined_hash_parts: list[str] = []
@@ -930,7 +942,26 @@ class App:
             self.status_var.set("No likely Plutonium window found. Open the game, then click Find windows.")
 
     def _audit(self) -> None:
+        from tkinter import filedialog, messagebox
         project = Path(self.project_var.get()).expanduser()
+        has_gsc = project.exists() and project.is_dir() and any(
+            p.is_file() and p.suffix.lower() == ".gsc"
+            for p in project.rglob("*.gsc")
+            if not any(x in p.parts for x in (".git", "node_modules", "build", "dist"))
+        )
+        if not has_gsc:
+            messagebox.showinfo(
+                "Select the BO22 source folder",
+                "The selected folder does not contain GSC source files.\\n\\n"
+                "Choose the actual Tenslaster/bo22 repository root — the folder containing "
+                "zm_bo2_bots.gsc and zm_bo2_bots_map_origins.gsc."
+            )
+            selected = filedialog.askdirectory(title="Select BO22 repository root (contains zm_bo2_bots.gsc)")
+            if not selected:
+                self.status_var.set("Source audit cancelled: select the BO22 repository folder first.")
+                return
+            project = Path(selected).expanduser()
+            self.project_var.set(str(project))
         def work() -> None:
             report = self.watcher.run_audit(project)
             self.events_queue.put(("audit", report))
