@@ -2884,6 +2884,13 @@ MM_OriginsStaffGuideLoop()
         return;
 
     self.mmOriginsStaffGuideActive = true;
+
+    // Keep the staff overview pinned while cycling the detailed puzzle guide.
+    // This prevents the multi-staff ESP from filling the screen with every
+    // puzzle instruction at once; all live markers continue updating.
+    pageIndex = 0;
+    pageTimer = 0;
+
     hud = newClientHudElem(self);
     hud.horzAlign = "left";
     hud.vertAlign = "top";
@@ -3323,7 +3330,58 @@ MM_OriginsStaffGuideLoop()
                 markerHuds[slot].alpha = 0;
         }
 
-        hud setText(guideText);
+        // Keep the 5-line staff overview visible and page the detailed
+        // puzzle instructions in short groups. The world markers above are
+        // not paged: they remain live and visible on every page.
+        guideLines = strtok(guideText, "\\n");
+        summaryLineCount = 5;
+        detailLinesPerPage = 4;
+        detailCount = guideLines.size - summaryLineCount;
+        if(detailCount < 0)
+            detailCount = 0;
+
+        pageCount = 1;
+        if(detailCount > 0)
+        {
+            pageCount = 0;
+            linesRemaining = detailCount;
+            while(linesRemaining > 0)
+            {
+                pageCount++;
+                linesRemaining -= detailLinesPerPage;
+            }
+        }
+
+        if(pageIndex >= pageCount)
+            pageIndex = 0;
+
+        displayText = "";
+        for(lineIndex = 0; lineIndex < summaryLineCount && lineIndex < guideLines.size; lineIndex++)
+        {
+            if(displayText != "")
+                displayText += "\\n";
+            displayText += guideLines[lineIndex];
+        }
+
+        pageStart = summaryLineCount + (pageIndex * detailLinesPerPage);
+        for(lineIndex = pageStart; lineIndex < pageStart + detailLinesPerPage && lineIndex < guideLines.size; lineIndex++)
+        {
+            if(displayText != "")
+                displayText += "\\n";
+            displayText += guideLines[lineIndex];
+        }
+
+        displayText += "\\n^7[GUIDE " + (pageIndex + 1) + "/" + pageCount + "]";
+        hud setText(displayText);
+
+        pageTimer += 0.25;
+        if(pageTimer >= 5)
+        {
+            pageTimer = 0;
+            pageIndex++;
+            if(pageIndex >= pageCount)
+                pageIndex = 0;
+        }
         wait 0.25;
     }
 
