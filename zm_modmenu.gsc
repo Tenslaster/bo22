@@ -2891,20 +2891,16 @@ MM_OriginsStaffGuideLoop()
     pageIndex = 0;
     pageTimer = 0;
 
-    hud = newClientHudElem(self);
-    hud.horzAlign = "left";
-    hud.vertAlign = "top";
-    hud.alignX = "left";
-    hud.alignY = "top";
-    hud.x = 6;
-    hud.y = 10;
-    hud.font = "default";
-    hud.fontScale = 0.06;
-    hud.foreground = true;
-    hud.hideWhenInMenu = true;
-    hud.sort = 1100;
-    hud.alpha = 1;
-    hud.color = (0.9, 0.95, 1);
+    // Use the exact same font, size and row spacing as the main menu.
+    // Separate HUD rows avoid the oversized multiline/default-font rendering.
+    guideHuds = [];
+    guideRowCount = 8;
+    for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
+    {
+        guideHuds[rowIndex] = self MM_NewText(22, 112 + (rowIndex * 19), 1.25);
+        guideHuds[rowIndex].sort = 1100;
+        guideHuds[rowIndex].color = (0.9, 0.95, 1);
+    }
 
     maxMarkers = 64;
     markerHuds = [];
@@ -3330,12 +3326,12 @@ MM_OriginsStaffGuideLoop()
                 markerHuds[slot].alpha = 0;
         }
 
-        // Keep the 5-line staff overview visible and page the detailed
-        // puzzle instructions in short groups. The world markers above are
-        // not paged: they remain live and visible on every page.
+        // Match the main menu's 8-row viewport exactly: same objective font,
+        // 1.25 scale and 19-pixel row spacing. Five overview rows stay pinned;
+        // only two detailed instruction rows rotate. Markers remain live.
         guideLines = strtok(guideText, "\n");
         summaryLineCount = 5;
-        detailLinesPerPage = 4;
+        detailLinesPerPage = 2;
         detailCount = guideLines.size - summaryLineCount;
         if(detailCount < 0)
             detailCount = 0;
@@ -3355,24 +3351,26 @@ MM_OriginsStaffGuideLoop()
         if(pageIndex >= pageCount)
             pageIndex = 0;
 
-        displayText = "";
+        displayRows = [];
         for(lineIndex = 0; lineIndex < summaryLineCount && lineIndex < guideLines.size; lineIndex++)
-        {
-            if(displayText != "")
-                displayText += "\n";
-            displayText += guideLines[lineIndex];
-        }
+            displayRows[displayRows.size] = guideLines[lineIndex];
 
         pageStart = summaryLineCount + (pageIndex * detailLinesPerPage);
         for(lineIndex = pageStart; lineIndex < pageStart + detailLinesPerPage && lineIndex < guideLines.size; lineIndex++)
-        {
-            if(displayText != "")
-                displayText += "\n";
-            displayText += guideLines[lineIndex];
-        }
+            displayRows[displayRows.size] = guideLines[lineIndex];
 
-        displayText += "\n^7[GUIDE " + (pageIndex + 1) + "/" + pageCount + "]";
-        hud setText(displayText);
+        displayRows[displayRows.size] = "^7[GUIDE " + (pageIndex + 1) + "/" + pageCount + "]";
+
+        for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
+        {
+            if(rowIndex < displayRows.size)
+            {
+                guideHuds[rowIndex] setText(displayRows[rowIndex]);
+                guideHuds[rowIndex].alpha = 1;
+            }
+            else
+                guideHuds[rowIndex].alpha = 0;
+        }
 
         pageTimer += 0.25;
         if(pageTimer >= 5)
@@ -3390,9 +3388,13 @@ MM_OriginsStaffGuideLoop()
         if(isDefined(markerHud))
             markerHud destroy();
     }
-    if(isDefined(hud))
-        hud destroy();
+    foreach(guideHud in guideHuds)
+    {
+        if(isDefined(guideHud))
+            guideHud destroy();
+    }
     self.mmOriginsStaffGuideHuds = [];
+    self.mmOriginsStaffGuideTextHuds = [];
     self.mmOriginsStaffGuideActive = false;
 }
 
