@@ -2911,6 +2911,10 @@ MM_OriginsStaffGuideLoop()
         markerHuds[i] = self MM_CreatePartESPDot();
     self.mmOriginsStaffGuideHuds = markerHuds;
 
+    // Cache rendered rows so unchanged HUD strings are not resubmitted every
+    // quarter-second. Dynamic puzzle values update only when their value changes.
+    guideLastRows = [];
+
     while(self scripts\zm\zm_modmenu::MM_IsOn("origstaffguide"))
     {
         if(level.script != "zm_tomb")
@@ -3174,31 +3178,26 @@ MM_OriginsStaffGuideLoop()
             if(isDefined(level.a_ceiling_rings))
             {
                 guideText += "\n^3WIND - CEILING RINGS^7 (current -> target position):\n";
-                ringIndex = 0;
+                // The ring origin is the hit target used by the stock damage
+                // handler. Put a waypoint directly over each ring, not in a
+                // screen-space list. Orange means it still needs a Wind Staff
+                // hit; green means position == script_int and it is solved.
                 foreach(ring in level.a_ceiling_rings)
                 {
                     if(!isDefined(ring) || !isDefined(ring.origin) || !isDefined(ring.position) || !isDefined(ring.script_int))
                         continue;
-                    ringIndex++;
-                    ringColor = (1, 0.12, 0.08);
-                    ringColorName = "RED";
-                    if(ringIndex == 2)
-                    {
-                        ringColor = (0.1, 0.35, 1);
-                        ringColorName = "BLUE";
-                    }
-                    else if(ringIndex == 3)
-                    {
-                        ringColor = (0.8, 0.2, 1);
-                        ringColorName = "PURPLE";
-                    }
-                    markers[markers.size] = self MM_OriginsGuideMakeMarker(ring.origin + (0, 0, 34), ringColor);
-                    ringStatus = "FIX";
+
+                    ringColor = (1, 0.35, 0.05);
                     if(ring.position == ring.script_int)
-                        ringStatus = "OK";
-                    guideText += "R" + ringIndex + " " + ringColorName + " " + ring.position + "->" + ring.script_int + " [" + ringStatus + "]   ";
+                        ringColor = (0.1, 1, 0.2);
+
+                    markers[markers.size] = self MM_OriginsGuideMakeMarker(ring.origin + (0, 0, 16), ringColor);
                 }
-                guideText += "\nMarker colors: R1 RED, R2 BLUE, R3 PURPLE. Shoot a ring until its current/target values match.";
+                // Keep this text static. Printing every combination of ring
+                // positions creates hundreds of unique HUD strings and can
+                // exhaust the engine configstring table (G_FindConfigstringIndex).
+                guideText += "\n^3WIND - CEILING RINGS^7: shoot every ^1ORANGE^7 marker with the Wind Staff.";
+                guideText += "\n^2GREEN^7 markers are already aligned; each dot marks a ring to aim at.";
             }
         }
         else if(self hasweapon("staff_air_zm") && !flag("air_puzzle_2_complete"))
@@ -3368,7 +3367,11 @@ MM_OriginsStaffGuideLoop()
         {
             if(rowIndex < displayRows.size)
             {
-                guideHuds[rowIndex] setText(displayRows[rowIndex]);
+                if(!isDefined(guideLastRows[rowIndex]) || guideLastRows[rowIndex] != displayRows[rowIndex])
+                {
+                    guideHuds[rowIndex] setText(displayRows[rowIndex]);
+                    guideLastRows[rowIndex] = displayRows[rowIndex];
+                }
                 guideHuds[rowIndex].alpha = 1;
             }
             else
