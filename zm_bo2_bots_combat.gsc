@@ -2288,6 +2288,25 @@ bot_best_enemy()
 {
     enemies = bot_get_zombies();
 
+    // Quest mode deliberately leaves one living zombie alive. This gives the
+    // autonomous part/build/quest workers time to finish without the squad
+    // ending the round. All bots use the same live zombie count.
+    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "quest")
+    {
+        alive_count = 0;
+        foreach(zombie in enemies)
+        {
+            if(isdefined(zombie) && isalive(zombie) && !is_true(zombie.in_the_ground))
+                alive_count++;
+        }
+
+        if(alive_count <= 1)
+        {
+            self bot_clear_enemy();
+            return 0;
+        }
+    }
+
     if(!isdefined(enemies) || enemies.size == 0)
     {
         self bot_expire_stale_threat();
