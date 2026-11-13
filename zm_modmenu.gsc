@@ -2897,7 +2897,10 @@ MM_OriginsStaffGuideLoop()
     guideRowCount = 8;
     for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
     {
-        guideHuds[rowIndex] = self MM_NewText(22, 112 + (rowIndex * 19), 1.25);
+        guideHuds[rowIndex] = self MM_NewText(-22, 112 + (rowIndex * 19), 1.25);
+        guideHuds[rowIndex].horzAlign = "right";
+        guideHuds[rowIndex].alignX = "right";
+        guideHuds[rowIndex].x = -22;
         guideHuds[rowIndex].sort = 1100;
         guideHuds[rowIndex].color = (0.9, 0.95, 1);
     }
