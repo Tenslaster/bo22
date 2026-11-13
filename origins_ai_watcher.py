@@ -531,6 +531,25 @@ class LogTailer:
                                 "area": "Staff inventory", "title": f"Bot {bot_id} {state_label} {field_name.replace('has_staff_', '').title()} Staff",
                                 "detail": f"{field_name}: {previous} → {field_value}"})
                         self.telemetry_state[state_key] = field_value
+
+                    if field_name == "bot_on_tank":
+                        state_key = (f"bot:{bot_id}", field_name)
+                        previous = self.telemetry_state.get(state_key, None)
+                        if previous is not None and previous != field_value:
+                            state_label = "boarded" if field_value in (1, True, "1") else "left"
+                            self.callback({"timestamp": now_iso(), "source": "gsc_telemetry", "severity": "info",
+                                "area": "Origins tank", "title": f"Bot {bot_id} {state_label} the tank",
+                                "detail": f"Stock b_already_on_tank state: {previous} → {field_value}"})
+                        self.telemetry_state[state_key] = field_value
+
+                    if field_name in {"tank_moving", "tank_cooldown", "tank_location"}:
+                        state_key = (map_name, field_name)
+                        previous = self.telemetry_state.get(state_key, None)
+                        if previous is not None and previous != field_value:
+                            self.callback({"timestamp": now_iso(), "source": "gsc_telemetry", "severity": "info",
+                                "area": "Origins tank", "title": f"Tank {field_name.replace('_', ' ')} changed",
+                                "detail": f"{field_name}: {previous} → {field_value}", "map": map_name})
+                        self.telemetry_state[state_key] = field_value
             return
         matches = []
         for severity, area, title, pattern in LOG_RULES:
