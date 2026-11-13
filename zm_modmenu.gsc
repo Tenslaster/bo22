@@ -2935,15 +2935,15 @@ MM_OriginsStaffGuideLoop()
             "staff_lightning_zm_upgrade_unlocked",
             "staff_water_zm_upgrade_unlocked"
         );
-        foreach(chargeWeapon in chargeStaffs)
+        upgradedWeapons = array(
+            "staff_air_upgraded_zm",
+            "staff_fire_upgraded_zm",
+            "staff_lightning_upgraded_zm",
+            "staff_water_upgraded_zm"
+        );
+        for(chargeIndex = 0; chargeIndex < chargeStaffs.size; chargeIndex++)
         {
-            chargeIndex = 0;
-            foreach(testWeapon in chargeStaffs)
-            {
-                if(testWeapon == chargeWeapon)
-                    break;
-                chargeIndex++;
-            }
+            chargeWeapon = chargeStaffs[chargeIndex];
 
             if(!flag(chargeFlags[chargeIndex]))
                 continue;
@@ -2955,7 +2955,7 @@ MM_OriginsStaffGuideLoop()
                 if(isDefined(chargerEnt) && isDefined(chargerEnt.origin))
                     markers[markers.size] = self MM_OriginsGuideMakeMarker(chargerEnt.origin + (0, 0, 32), (1, 0.5, 0.05));
             }
-            else if(!self hasweapon("staff_air_upgraded_zm") || chargeWeapon != "staff_air_zm")
+            else if(!self hasweapon(upgradedWeapons[chargeIndex]))
             {
                 upgradeEnt = self MM_OriginsGetStaffUpgradeEntity(chargeWeapon);
                 if(isDefined(upgradeEnt) && isDefined(upgradeEnt.origin))
