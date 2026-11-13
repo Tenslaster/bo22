@@ -1266,6 +1266,7 @@ bot_combat_update_movement()
 	}
 
 	current_goal = self getgoal("combat");
+	current_goal_valid = false;
 
 	// Do not cancel and recreate a route just because another nearby node
 	// scored a little better on the next scan. Keep the current waypoint until
@@ -1295,10 +1296,11 @@ bot_combat_update_movement()
 		   current_goal_target_gap <= desired_radius + 340 &&
 		   current_goal_safe &&
 		   findpath(self.origin, current_goal, undefined, 0, 1))
-			return;
+			current_goal_valid = true;
 	}
 
-	if(!isdefined(current_goal) || distancesquared(current_goal, best_node.origin) > 3600)
+	if(!isdefined(current_goal) || !current_goal_valid ||
+	   distancesquared(current_goal, best_node.origin) > 3600)
 	{
 		if(self getgoal("combat") || self hasgoal("combat"))
 			self cancelgoal("combat");
