@@ -531,6 +531,10 @@ MM_MenuTitle(name)
         case "guns":           return "MORE GUNS";
         case "lobby":          return "SPAWNS & LOBBY";
         case "zombies":        return "ZOMBIE MANIPULATION";
+        case "zspawn":         return "SPAWN ZOMBIE TYPES";
+        case "zai":            return "ZOMBIE AI & HEALTH";
+        case "zboss":          return "BOSSES & SPECIAL ENEMIES";
+        case "zeffects":       return "ZOMBIE EFFECTS & CROWD TOOLS";
         case "vision":         return "AIMBOT & ESP";
         case "origins":        return "ORIGINS TOOLS";
         case "prison":         return "MOB OF THE DEAD TOOLS";
@@ -892,6 +896,52 @@ BuildMenuStructure()
     self addMenuOpt("zombies", "Kill Nearest Zombie", ::MM_KillNearestZombie);
     self addMenuOpt("zombies", "Teleport Nearest Zombie To Me", ::MM_TeleportNearestZombie);
     self addMenuOpt("zombies", "Teleport Nearest Zombie To Crosshair", ::MM_TeleportNearestZombieToCrosshair);
+    self addSubMenu("zombies", "Spawn Zombie Types", "zspawn");
+    self addSubMenu("zombies", "Zombie AI & Health Controls", "zai");
+    self addSubMenu("zombies", "Boss & Special Enemy Controls", "zboss");
+    self addSubMenu("zombies", "Zombie Effects & Crowd Tools", "zeffects");
+
+    // Spawn options are filtered against the live map's stock registries.
+    self addMenuOpt("zspawn", "Spawn 1 Regular Zombie", ::MM_SpawnZombieBatch, "normal", 1);
+    self addMenuOpt("zspawn", "Spawn 5 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 5);
+    self addMenuOpt("zspawn", "Spawn 10 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 10);
+    self addMenuOpt("zspawn", "Spawn 24 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 24);
+    if(isDefined(level.dog_spawners) && level.dog_spawners.size > 0)
+    {
+        self addMenuOpt("zspawn", "Spawn 1 Hellhound", ::MM_SpawnZombieBatch, "dog", 1);
+        self addMenuOpt("zspawn", "Spawn 5 Hellhounds", ::MM_SpawnZombieBatch, "dog", 5);
+    }
+    if(isDefined(level.leaper_spawners) && level.leaper_spawners.size > 0)
+    {
+        self addMenuOpt("zspawn", "Spawn 1 Denizen / Leaper", ::MM_SpawnZombieBatch, "leaper", 1);
+        self addMenuOpt("zspawn", "Spawn 5 Denizens / Leapers", ::MM_SpawnZombieBatch, "leaper", 5);
+    }
+    self addMenuOpt("zspawn", "Spawn Type Availability", ::MM_ShowZombieSpawnTypes);
+
+    self addToggleOpt("zai", "Disable Regular Zombie AI", ::MM_ToggleZombiePacify, "zpacify");
+    self addMenuOpt("zai", "Set Current Zombies to 1 HP", ::MM_SetZombieHealth, 1);
+    self addMenuOpt("zai", "Set Current Zombies to 50 HP", ::MM_SetZombieHealth, 50);
+    self addMenuOpt("zai", "Set Current Zombies to 100 HP", ::MM_SetZombieHealth, 100);
+    self addMenuOpt("zai", "Set Current Zombies to 500 HP", ::MM_SetZombieHealth, 500);
+    self addMenuOpt("zai", "Set Current Zombies to 1,000 HP", ::MM_SetZombieHealth, 1000);
+    self addMenuOpt("zai", "Zombie Speed: Sprint", ::SetZombieSpeed, "sprint");
+    self addMenuOpt("zai", "Zombie Speed: Run", ::SetZombieSpeed, "run");
+    self addMenuOpt("zai", "Zombie Speed: Walk", ::SetZombieSpeed, "walk");
+    self addMenuOpt("zai", "Zombie Speed: Default", ::SetZombieSpeed, "default");
+
+    self addMenuOpt("zboss", "Kill All Quest Bosses", ::MM_KillZombieGroup, "boss");
+    self addMenuOpt("zboss", "Kill All Hellhounds", ::MM_KillZombieGroup, "dog");
+    self addMenuOpt("zboss", "Kill All Denizens / Leapers", ::MM_KillZombieGroup, "leaper");
+    self addMenuOpt("zboss", "Kill All Special Enemies", ::MM_KillZombieGroup, "special");
+    self addMenuOpt("zboss", "Show Live Boss / Special Enemy Count", ::MM_ShowZombieGroupCounts);
+
+    self addMenuOpt("zeffects", "Explode All Regular Zombies", ::ExplodeZombies);
+    self addMenuOpt("zeffects", "Burn All Regular Zombies", ::BurnZombies);
+    self addMenuOpt("zeffects", "Launch All Regular Zombies", ::FlingZombies);
+    self addMenuOpt("zeffects", "Send All Regular Zombies to the Moon", ::ZombiesToMoon);
+    self addToggleOpt("zeffects", "Freeze All Regular Zombies", ::ToggleFreezeZombies, "freeze");
+    self addToggleOpt("zeffects", "Zombie Magnet", ::ToggleZombieMagnet, "magnet");
+    self addToggleOpt("zeffects", "Insta-Kill Aura", ::ToggleKillAura, "killaura");
 
     // --- VISION ---
     self addToggleOpt("vision", "Aimbot", ::ToggleAimbot, "aimbot");
@@ -6001,6 +6051,232 @@ MM_TeleportNearestZombieToCrosshair()
 
     z forceTeleport(self MM_CrosshairPos() + (0, 0, 24));
     self iprintln("^2Nearest zombie teleported to crosshair.");
+}
+
+// ============================================================================
+//  ZOMBIE EXPANSION - SPAWNING, AI, HEALTH, BOSS FILTERS
+// ============================================================================
+
+// Use the same spawn_zombie() entry point and registered spawn callbacks as
+// stock BO2. The standard path mirrors _zm.gsc; special types use the stock
+// dog/leaper spawner registries, so their native initialization still runs.
+MM_SpawnZombieBatch(kind, requested)
+{
+    if(!isDefined(requested) || requested < 1)
+        return;
+
+    spawners = [];
+    if(kind == "normal")
+    {
+        if(!isDefined(level.zombie_spawners) || level.zombie_spawners.size < 1
+            || !isDefined(level.zombie_spawn_locations) || level.zombie_spawn_locations.size < 1)
+        {
+            self iprintln("^1Regular zombie spawn registry is not ready on this map.");
+            return;
+        }
+        spawners = level.zombie_spawners;
+    }
+    else if(kind == "dog")
+    {
+        if(!isDefined(level.dog_spawners) || level.dog_spawners.size < 1)
+        {
+            self iprintln("^1Hellhounds are not registered on this map.");
+            return;
+        }
+        spawners = level.dog_spawners;
+    }
+    else if(kind == "leaper")
+    {
+        if(!isDefined(level.leaper_spawners) || level.leaper_spawners.size < 1)
+        {
+            self iprintln("^1Denizens / Leapers are not registered on this map.");
+            return;
+        }
+        spawners = level.leaper_spawners;
+    }
+    else
+        return;
+
+    // Respect the stock AI limit instead of flooding the server with actors.
+    limit = 24;
+    if(isDefined(level.zombie_ai_limit) && level.zombie_ai_limit > 0)
+        limit = level.zombie_ai_limit;
+
+    active = MM_AllEnemies().size;
+    capacity = limit - active;
+    if(capacity < 1)
+    {
+        self iprintln("^3Zombie AI limit reached (" + limit + ").");
+        return;
+    }
+
+    count = requested;
+    if(count > capacity)
+        count = capacity;
+
+    spawned = 0;
+    for(i = 0; i < count; i++)
+    {
+        if(kind == "normal")
+        {
+            spawner = spawners[randomInt(spawners.size)];
+            spawnPoint = level.zombie_spawn_locations[randomInt(level.zombie_spawn_locations.size)];
+            ai = spawn_zombie(spawner, spawner.targetname, spawnPoint);
+        }
+        else
+        {
+            spawner = spawners[randomInt(spawners.size)];
+            ai = spawn_zombie(spawner);
+        }
+
+        if(isDefined(ai))
+            spawned++;
+        wait 0.05;
+    }
+
+    self iprintln("^2Spawned " + spawned + " " + kind + " enemies. ^7(Available AI slots: " + (capacity - spawned) + ")");
+}
+
+MM_ShowZombieSpawnTypes()
+{
+    msg = "Regular: ";
+    if(isDefined(level.zombie_spawners) && level.zombie_spawners.size > 0)
+        msg += "YES";
+    else
+        msg += "NO";
+
+    msg += " | Hellhounds: ";
+    if(isDefined(level.dog_spawners) && level.dog_spawners.size > 0)
+        msg += "YES";
+    else
+        msg += "NO";
+
+    msg += " | Leapers: ";
+    if(isDefined(level.leaper_spawners) && level.leaper_spawners.size > 0)
+        msg += "YES";
+    else
+        msg += "NO";
+
+    self iprintln(msg);
+}
+
+MM_ToggleZombiePacify()
+{
+    on = self MM_Flip("zpacify", "Regular Zombie AI");
+    if(on)
+    {
+        self thread MM_ZombiePacifyLoop();
+        self iprintln("^2Regular zombie AI disabled.");
+    }
+    else
+    {
+        self notify("mm_stop_zpacify");
+        zombies = MM_AliveZombies();
+        foreach(z in zombies)
+        {
+            if(isDefined(z) && isAlive(z))
+                z.ignoreall = false;
+        }
+        self iprintln("^1Regular zombie AI restored.");
+    }
+}
+
+MM_ZombiePacifyLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_zpacify");
+    for(;;)
+    {
+        zombies = MM_AliveZombies();
+        foreach(z in zombies)
+        {
+            if(!isDefined(z) || !isAlive(z) || MM_IsBoss(z))
+                continue;
+            z.ignoreall = true;
+        }
+        wait 0.2;
+    }
+}
+
+MM_SetZombieHealth(amount)
+{
+    zombies = MM_AliveZombies();
+    changed = 0;
+    foreach(z in zombies)
+    {
+        if(!isDefined(z) || !isAlive(z) || MM_IsBoss(z))
+            continue;
+        z.maxhealth = amount;
+        z.health = amount;
+        changed++;
+    }
+    self iprintln("^2Set " + changed + " regular zombies to " + amount + " HP. ^7(Current enemies only.)");
+}
+
+MM_IsDog(z)
+{
+    if(!isDefined(z))
+        return false;
+    return (isDefined(z.animname) && z.animname == "zombie_dog")
+        || (isDefined(z.targetname) && z.targetname == "zombie_dog");
+}
+
+MM_IsLeaper(z)
+{
+    if(!isDefined(z))
+        return false;
+    return (isDefined(z.is_leaper) && z.is_leaper)
+        || (isDefined(z.animname) && z.animname == "leaper_zombie");
+}
+
+MM_KillZombieGroup(kind)
+{
+    enemies = MM_AllEnemies();
+    killed = 0;
+    foreach(z in enemies)
+    {
+        if(!isDefined(z) || !isAlive(z))
+            continue;
+
+        match = false;
+        if(kind == "boss")
+            match = MM_IsBoss(z);
+        else if(kind == "dog")
+            match = MM_IsDog(z);
+        else if(kind == "leaper")
+            match = MM_IsLeaper(z);
+        else if(kind == "special")
+            match = MM_IsBoss(z) || MM_IsDog(z) || MM_IsLeaper(z);
+
+        if(!match)
+            continue;
+
+        z doDamage(z.health + 99999, z.origin, self);
+        killed++;
+    }
+
+    self iprintln("^2Killed " + killed + " enemies in group: " + kind);
+}
+
+MM_ShowZombieGroupCounts()
+{
+    enemies = MM_AllEnemies();
+    bosses = 0;
+    dogs = 0;
+    leapers = 0;
+    foreach(z in enemies)
+    {
+        if(!isDefined(z) || !isAlive(z))
+            continue;
+        if(MM_IsBoss(z))
+            bosses++;
+        else if(MM_IsDog(z))
+            dogs++;
+        else if(MM_IsLeaper(z))
+            leapers++;
+    }
+
+    self iprintln("^3BOSSES: ^7" + bosses + "  ^3HELLHOUNDS: ^7" + dogs + "  ^3LEAPERS: ^7" + leapers);
 }
 
 // ============================================================================
