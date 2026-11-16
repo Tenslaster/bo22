@@ -1,11 +1,13 @@
 // ============================================================================
-//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v3.7
+//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v4.0
 //  Install: %localappdata%\Plutonium\storage\t6\scripts\zm\zm_modmenu.gsc
 //
 //  Controls (menu closed):  AIM + MELEE ............ open menu
 //  Controls (menu open)  :  Action Slot 1 / 2 ...... scroll up / down
 //                           JUMP .................... select
 //                           MELEE ................... back / close
+//  Free-roam: the boundary toggle stops the stock player-volume / kill-brush monitor.
+//  Noclip: Attack forward, ADS backward, Frag up, Tactical down.
 //
 //  Maps: TranZit / Nuketown / Die Rise / Mob of the Dead / Buried / Origins
 //  Perk actions include physical vending machines and each map's registered
@@ -54,10 +56,11 @@ MM_OnPlayerSpawned()
         if(isDefined(self.hasMenu) && self.hasMenu)
         {
             self MM_GrantMenu();
+            self MM_ApplySpawnSettings();
             if(firstSpawn)
             {
-                self iprintlnbold("^2ULTIMATE ZM MENU LOADED");
-                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back | Slot 3: bot mode | Slot 4: teleport bots");
+                self iprintlnbold("^2ULTIMATE ZM MENU v4.0 LOADED");
+                self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back");
                 firstSpawn = false;
             }
         }
@@ -511,6 +514,14 @@ MM_MenuTitle(name)
     switch(name)
     {
         case "main":           return "MAIN MENU";
+        case "freeroam":       return "FREE ROAM / NO DEATH BARRIERS";
+        case "roamspots":      return "SAVED FREE-ROAM POSITIONS";
+        case "movement":       return "MOVEMENT & FLIGHT";
+        case "teleport":       return "TELEPORT & SAVED LOCATIONS";
+        case "teleportslots":  return "THREE SAVED LOCATIONS";
+        case "world":          return "WORLD & GAME CONTROL";
+        case "allguns":        return "ALL REGISTERED MAP WEAPONS";
+        case "powerups":       return "ALL REGISTERED POWERUPS";
         case "personal":       return "PERSONAL MODS";
         case "weapons":        return "WEAPON MODS";
         case "mapweapons":     return "MAP WEAPONS";
@@ -614,6 +625,10 @@ BuildMenuStructure()
     hasMapWeapons = self MM_BuildMapWeapons();
 
     // --- MAIN ---
+    self addSubMenu("main", "Free Roam / No Death Barriers", "freeroam");
+    self addSubMenu("main", "Movement & Flight", "movement");
+    self addSubMenu("main", "Teleport & Saved Locations", "teleport");
+    self addSubMenu("main", "World & Game Control", "world");
     self addSubMenu("main", "Personal Mods", "personal");
     self addSubMenu("main", "Weapon Mods", "weapons");
     if(hasMapWeapons)
@@ -633,6 +648,74 @@ BuildMenuStructure()
         self addSubMenu("main", "Buried Tools", "buried");
     if(self isHost())
         self addSubMenu("main", "Players Menu", "players");
+
+    // --- FREE ROAM / MAP BOUNDARIES ---
+    self addToggleOpt("freeroam", "Disable Out-of-Map Death Monitor", ::ToggleNoDeathBarrier, "noboundary");
+    self addToggleOpt("freeroam", "Auto Recover From Falling Out", ::ToggleVoidRecovery, "voidrecover");
+    self addMenuOpt("freeroam", "Emergency Return to Active Map Area", ::MM_TeleportToNearestActiveVolume);
+    self addMenuOpt("freeroam", "Teleport to Crosshair", ::TeleportToCrosshair);
+    self addMenuOpt("freeroam", "Teleport Forward 128", ::MM_TeleportForward, 128);
+    self addMenuOpt("freeroam", "Teleport Forward 256", ::MM_TeleportForward, 256);
+    self addMenuOpt("freeroam", "Teleport Forward 512", ::MM_TeleportForward, 512);
+    self addMenuOpt("freeroam", "Teleport Up 128", ::MM_TeleportVertical, 128);
+    self addMenuOpt("freeroam", "Teleport Down 128", ::MM_TeleportVertical, -128);
+    self addSubMenu("freeroam", "Saved Free-Roam Positions", "roamspots");
+    self addMenuOpt("roamspots", "Save Position 1", ::MM_SaveRoamPosition, 0);
+    self addMenuOpt("roamspots", "Load Position 1", ::MM_LoadRoamPosition, 0);
+    self addMenuOpt("roamspots", "Save Position 2", ::MM_SaveRoamPosition, 1);
+    self addMenuOpt("roamspots", "Load Position 2", ::MM_LoadRoamPosition, 1);
+    self addMenuOpt("roamspots", "Save Position 3", ::MM_SaveRoamPosition, 2);
+    self addMenuOpt("roamspots", "Load Position 3", ::MM_LoadRoamPosition, 2);
+
+    // --- MOVEMENT / FLIGHT ---
+    self addToggleOpt("movement", "Noclip", ::ToggleNoclip, "noclip");
+    self addToggleOpt("movement", "Jetpack (Hold Jump)", ::ToggleJetpack, "jetpack");
+    self addToggleOpt("movement", "Super Jump", ::ToggleSuperJump, "superjump");
+    self addToggleOpt("movement", "Auto-Bhop", ::ToggleBhop, "bhop");
+    self addToggleOpt("movement", "Unlimited Sprint", ::ToggleInfiniteSprint, "infsprint");
+    self addMenuOpt("movement", "Walk Speed: Normal", ::MM_SetMovementSpeed, 1.0);
+    self addMenuOpt("movement", "Walk Speed: 1.5x", ::MM_SetMovementSpeed, 1.5);
+    self addMenuOpt("movement", "Walk Speed: 2x", ::MM_SetMovementSpeed, 2.0);
+    self addMenuOpt("movement", "Walk Speed: 3x", ::MM_SetMovementSpeed, 3.0);
+    self addMenuOpt("movement", "Walk Speed: 4x", ::MM_SetMovementSpeed, 4.0);
+    self addMenuOpt("movement", "Noclip Speed: Slow", ::MM_SetNoclipSpeed, 15);
+    self addMenuOpt("movement", "Noclip Speed: Normal", ::MM_SetNoclipSpeed, 40);
+    self addMenuOpt("movement", "Noclip Speed: Fast", ::MM_SetNoclipSpeed, 80);
+    self addMenuOpt("movement", "Noclip Speed: Very Fast", ::MM_SetNoclipSpeed, 150);
+
+    // --- TELEPORT / SAVED POSITIONS ---
+    self addMenuOpt("teleport", "Teleport to Crosshair", ::TeleportToCrosshair);
+    self addMenuOpt("teleport", "Teleport Forward 128", ::MM_TeleportForward, 128);
+    self addMenuOpt("teleport", "Teleport Forward 256", ::MM_TeleportForward, 256);
+    self addMenuOpt("teleport", "Teleport Forward 512", ::MM_TeleportForward, 512);
+    self addMenuOpt("teleport", "Teleport Up 128", ::MM_TeleportVertical, 128);
+    self addMenuOpt("teleport", "Teleport Down 128", ::MM_TeleportVertical, -128);
+    self addMenuOpt("teleport", "Return to Nearest Active Map Area", ::MM_TeleportToNearestActiveVolume);
+    self addSubMenu("teleport", "Three Saved Locations", "teleportslots");
+    self addMenuOpt("teleportslots", "Save Slot 1", ::MM_SaveRoamPosition, 0);
+    self addMenuOpt("teleportslots", "Load Slot 1", ::MM_LoadRoamPosition, 0);
+    self addMenuOpt("teleportslots", "Save Slot 2", ::MM_SaveRoamPosition, 1);
+    self addMenuOpt("teleportslots", "Load Slot 2", ::MM_LoadRoamPosition, 1);
+    self addMenuOpt("teleportslots", "Save Slot 3", ::MM_SaveRoamPosition, 2);
+    self addMenuOpt("teleportslots", "Load Slot 3", ::MM_LoadRoamPosition, 2);
+
+    // --- WORLD / GAME CONTROL ---
+    self addMenuOpt("world", "Gravity: Very Low", ::MM_SetGravity, 50);
+    self addMenuOpt("world", "Gravity: Low", ::MM_SetGravity, 150);
+    self addMenuOpt("world", "Gravity: Medium", ::MM_SetGravity, 300);
+    self addMenuOpt("world", "Gravity: Normal", ::MM_SetGravity, 800);
+    self addMenuOpt("world", "Game Speed: 0.25x", ::SetTimeScale, 0.25);
+    self addMenuOpt("world", "Game Speed: 0.5x", ::SetTimeScale, 0.5);
+    self addMenuOpt("world", "Game Speed: Normal", ::SetTimeScale, 1.0);
+    self addMenuOpt("world", "Game Speed: 2x", ::SetTimeScale, 2.0);
+    self addMenuOpt("world", "Game Speed: 4x", ::SetTimeScale, 4.0);
+    self addMenuOpt("world", "Round 5", ::SetRound, 5);
+    self addMenuOpt("world", "Round 25", ::SetRound, 25);
+    self addMenuOpt("world", "Round 50", ::SetRound, 50);
+    self addMenuOpt("world", "Round 75", ::SetRound, 75);
+    self addMenuOpt("world", "Round 99", ::SetRound, 99);
+    self addMenuOpt("world", "Round 150", ::SetRound, 150);
+    self addMenuOpt("world", "Round 250", ::SetRound, 250);
 
     // --- PERSONAL ---
     self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
@@ -664,6 +747,8 @@ BuildMenuStructure()
     self addMenuOpt("weapons", "Max Ammo Current", ::FillCurrentAmmo);
     self addMenuOpt("weapons", "Max Ammo ALL", ::FillAllAmmo);
     self addSubMenu("weapons", "More Guns (PaP)", "guns");
+    self addSubMenu("weapons", "All Registered Weapons (This Map)", "allguns");
+    self MM_BuildRegisteredWeaponList();
     // Each entry only appears if the current map actually has that weapon loaded.
     self MM_AddWeaponOpt("guns", "HAMR (PaP)", "hamr_upgraded_zm");
     self MM_AddWeaponOpt("guns", "LSAT (PaP)", "lsat_upgraded_zm");
@@ -724,6 +809,8 @@ BuildMenuStructure()
     self MM_AddDropOpt("Spawn Free Perk", "free_perk");
     self MM_AddDropOpt("Spawn Death Machine", "minigun");
     self MM_AddDropOpt("Spawn Zombie Blood", "zombie_blood");
+    self addSubMenu("lobby", "All Registered Powerups", "powerups");
+    self MM_BuildRegisteredPowerupList();
     self addMenuOpt("lobby", "Skip Round (+1)", ::SkipRound);
     self addMenuOpt("lobby", "Jump to Round 10", ::SetRound, 10);
     self addMenuOpt("lobby", "Jump to Round 25", ::SetRound, 25);
@@ -759,6 +846,10 @@ BuildMenuStructure()
     self addToggleOpt("zombies", "Insta-Kill Aura", ::ToggleKillAura, "killaura");
     self addMenuOpt("zombies", "Delete All Zombies", ::DeleteZombies);
     self addMenuOpt("zombies", "Add 24 Zombies To Round", ::RespawnZombies);
+    self addMenuOpt("zombies", "Leave One Zombie Alive", ::MM_LeaveOneZombieAlive);
+    self addMenuOpt("zombies", "Kill Nearest Zombie", ::MM_KillNearestZombie);
+    self addMenuOpt("zombies", "Teleport Nearest Zombie To Me", ::MM_TeleportNearestZombie);
+    self addMenuOpt("zombies", "Teleport Nearest Zombie To Crosshair", ::MM_TeleportNearestZombieToCrosshair);
 
     // --- VISION ---
     self addToggleOpt("vision", "Aimbot", ::ToggleAimbot, "aimbot");
@@ -903,10 +994,10 @@ BuildMenuStructure()
         self addMenuOpt("player_actions", "[+] Give Mod Menu Access", ::ActionGiveMenu);
         self addMenuOpt("player_actions", "[-] Take Mod Menu Access", ::ActionTakeMenu);
         self addMenuOpt("player_actions", "Toggle God Mode", ::ActionGodMode);
+        self addMenuOpt("player_actions", "Toggle Free-Roam / No Death Barriers", ::ActionBoundary);
         self addMenuOpt("player_actions", "Give All Perks", ::ActionGivePerks);
         self addMenuOpt("player_actions", "Give +100k Points", ::ActionPoints);
-        self addMenuOpt("player_actions", "Revive", ::ActionRevive);
-        self addMenuOpt("player_actions", "Teleport To Them", ::ActionTeleportTo);
+        self addMenuOpt("player_actions", "Revive", ::ActionRevive);        self addMenuOpt("player_actions", "Teleport To Them", ::ActionTeleportTo);
         self addMenuOpt("player_actions", "Bring Them To Me", ::ActionBring);
         self addMenuOpt("player_actions", "Freeze Player (Troll)", ::ActionFreeze);
         self addMenuOpt("player_actions", "Launch Player (Troll)", ::ActionSendToMoon);
@@ -1239,6 +1330,25 @@ ActionGodMode()
     }
 }
 
+ActionBoundary()
+{
+    p = self MM_Target();
+    if(!isDefined(p))
+        return;
+
+    on = p MM_Flip("noboundary", "Free-Roam / Death-Barrier Bypass");
+    if(on)
+    {
+        p notify("stop_player_out_of_playable_area_monitor");
+        self iprintln("^2Disabled map death monitor for " + p.name);
+    }
+    else
+    {
+        p thread maps\mp\zombies\_zm::player_out_of_playable_area_monitor();
+        self iprintln("^1Restored map death monitor for " + p.name);
+    }
+}
+
 ActionGivePerks()
 {
     p = self MM_Target();
@@ -1421,7 +1531,17 @@ GodLoop()
 ToggleNoclip()
 {
     if(self MM_Toggle("noclip", "Noclip", ::NoclipLoop))
+    {
+        // The stock BO2 out-of-playable-area monitor kills players even when
+        // God Mode is active. Noclip therefore enables its per-player bypass.
+        if(!self MM_IsOn("noboundary"))
+        {
+            self.mmToggle["noboundary"] = true;
+            self notify("stop_player_out_of_playable_area_monitor");
+            self iprintln("^2Free-roam death-barrier bypass enabled.");
+        }
         return;
+    }
     self unlink();
 }
 
@@ -1434,16 +1554,23 @@ NoclipLoop()
     obj.angles = self.angles;
     self playerLinkTo(obj);
     self thread MM_NoclipCleanup(obj);
-    self iprintln("Noclip: Attack = forward | Frag = up | Tactical = down");
+    if(!isDefined(self.mmNoclipSpeed))
+        self.mmNoclipSpeed = 40;
+    self iprintln("Noclip: Attack forward | ADS backward | Frag up | Tactical down");
 
     for(;;)
     {
+        speed = self.mmNoclipSpeed;
+        forward = anglesToForward(self getPlayerAngles());
+
         if(self attackButtonPressed())
-            obj.origin = obj.origin + (anglesToForward(self getPlayerAngles()) * 40);
+            obj.origin = obj.origin + (forward * speed);
+        if(self adsButtonPressed())
+            obj.origin = obj.origin - (forward * speed);
         if(self fragButtonPressed())
-            obj.origin = obj.origin + (0, 0, 25);
+            obj.origin = obj.origin + (0, 0, speed * 0.65);
         if(self secondaryOffhandButtonPressed())
-            obj.origin = obj.origin - (0, 0, 25);
+            obj.origin = obj.origin - (0, 0, speed * 0.65);
         wait 0.05;
     }
 }
@@ -1869,8 +1996,7 @@ MM_GetAvailablePerks()
         }
     }
 
-    // Include any other custom perk registered by this map.
-    if(isDefined(level._custom_perks))
+    // Include any other custom perk registered by this map.    if(isDefined(level._custom_perks))
     {
         customKeys = getarraykeys(level._custom_perks);
         foreach(perk in customKeys)
@@ -2869,7 +2995,6 @@ MM_OriginsStaffGuideLoop()
                 fireVolumes = level.sacrifice_volumes;
             else
                 fireVolumes = getentarray("fire_sacrifice_volume", "targetname");
-
             fireLeft = 0;
             fireTotal = fireVolumes.size;
             foreach(volume in fireVolumes)
@@ -3869,8 +3994,7 @@ MM_OriginsTeleportRobot(robotId)
         return;
     }
     if(!isDefined(robotId) || robotId < 0 || robotId > 2)
-        return;
-    if(!isDefined(level.a_giant_robots) || !isDefined(level.a_giant_robots[robotId]))
+        return;    if(!isDefined(level.a_giant_robots) || !isDefined(level.a_giant_robots[robotId]))
     {
         self iprintln("^1That giant robot is not initialized yet.");
         return;
@@ -4869,8 +4993,7 @@ MM_MapBuildableFunction(name)
     if(!isDefined(level.mm_map_buildable_funcs))
         level.mm_map_buildable_funcs = [];
 
-    if(!isDefined(level.mm_map_buildable_funcs[name]))
-        level.mm_map_buildable_funcs[name] = getfunction("maps/mp/zombies/_zm_buildables", name);
+    if(!isDefined(level.mm_map_buildable_funcs[name]))        level.mm_map_buildable_funcs[name] = getfunction("maps/mp/zombies/_zm_buildables", name);
 
     return level.mm_map_buildable_funcs[name];
 }
@@ -5222,3 +5345,374 @@ MM_PartsESPLoop()
     self.mmPartsESPHuds = [];
     self.mmPartsESPActive = false;
 }
+
+// ============================================================================
+//  V4 EXPANSION - BO2 FREE ROAM, MOVEMENT, MAP-AWARE REGISTRIES & ZOMBIE TOOLS
+// ============================================================================
+
+// Apply persistent menu state after every respawn. The stock ZM spawn path
+// creates player_out_of_playable_area_monitor(); the delayed notify below
+// stops that exact player's monitor when Free-Roam is enabled.
+MM_ApplySpawnSettings()
+{
+    if(!isDefined(self.mmToggle))
+        return;
+
+    wait 0.10;
+
+    if(self MM_IsOn("noboundary"))
+        self notify("stop_player_out_of_playable_area_monitor");
+
+    if(self MM_IsOn("infsprint"))
+        self setSprintDuration(9999);
+
+    if(self MM_IsOn("thirdp"))
+        self setClientThirdPerson(1);
+
+    if(self MM_IsOn("speed"))
+        self setMoveSpeedScale(2.0);
+
+    if(self MM_IsOn("health"))
+    {
+        self setMaxHealth(99999);
+        self.health = 99999;
+    }
+}
+
+// The stock BO2 source checks kill_brush and player_volume entities from
+// maps\mp\zombies\_zm::player_out_of_playable_area_monitor().
+// Stopping that per-player monitor bypasses those map-boundary deaths.
+ToggleNoDeathBarrier()
+{
+    on = self MM_Flip("noboundary", "Out-of-Map Death Monitor");
+    if(on)
+    {
+        self notify("stop_player_out_of_playable_area_monitor");
+        self iprintln("^2Out-of-map death monitor disabled for you.");
+    }
+    else
+    {
+        self thread maps\mp\zombies\_zm::player_out_of_playable_area_monitor();
+        self iprintln("^1Out-of-map death monitor restored.");
+    }
+}
+
+// Remember the most recent grounded point in an enabled player volume, then
+// recover if the player falls far below that point.
+ToggleVoidRecovery()
+{
+    self MM_Toggle("voidrecover", "Auto Void Recovery", ::MM_VoidRecoveryLoop);
+}
+
+MM_VoidRecoveryLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_voidrecover");
+
+    safeOrigin = self.origin;
+
+    for(;;)
+    {
+        if(self isOnGround() && self maps\mp\zombies\_zm::in_enabled_playable_area())
+            safeOrigin = self.origin;
+
+        if(self.origin[2] < safeOrigin[2] - 900)
+        {
+            self setOrigin(safeOrigin + (0, 0, 40));
+            self setVelocity((0, 0, 0));
+            self iprintln("^3Recovered from falling out of the map.");
+            wait 0.75;
+        }
+
+        wait 0.10;
+    }
+}
+
+MM_SetGravity(value)
+{
+    setDvar("g_gravity", value);
+    self iprintln("Gravity set to " + value);
+}
+
+MM_SetMovementSpeed(scale)
+{
+    self.mmMoveScale = scale;
+    self setMoveSpeedScale(scale);
+    self iprintln("Movement speed set to " + scale + "x");
+}
+
+MM_SetNoclipSpeed(speed)
+{
+    self.mmNoclipSpeed = speed;
+    self iprintln("Noclip speed set to " + speed);
+}
+
+ToggleInfiniteSprint()
+{
+    if(self MM_Toggle("infsprint", "Unlimited Sprint", ::MM_InfiniteSprintLoop))
+        return;
+
+    self setSprintDuration(4);
+}
+
+MM_InfiniteSprintLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_infsprint");
+
+    for(;;)
+    {
+        self setSprintDuration(9999);
+        wait 0.50;
+    }
+}
+
+MM_TeleportForward(dist)
+{
+    pos = self MM_Forward(dist);
+    self setOrigin(pos + (0, 0, 24));
+    self setVelocity((0, 0, 0));
+    self iprintln("Teleported forward " + dist);
+}
+
+MM_TeleportVertical(height)
+{
+    self setOrigin(self.origin + (0, 0, height));
+    self setVelocity((0, 0, 0));
+    self iprintln("Vertical teleport: " + height);
+}
+
+MM_SaveRoamPosition(slot)
+{
+    if(!isDefined(self.mmRoamPositions))
+        self.mmRoamPositions = [];
+    if(!isDefined(self.mmRoamAngles))
+        self.mmRoamAngles = [];
+
+    self.mmRoamPositions[slot] = self.origin;
+    self.mmRoamAngles[slot] = self getPlayerAngles();
+    self iprintln("^2Saved free-roam position " + (slot + 1));
+}
+
+MM_LoadRoamPosition(slot)
+{
+    if(!isDefined(self.mmRoamPositions) || !isDefined(self.mmRoamPositions[slot]))
+    {
+        self iprintln("^1That saved position is empty.");
+        return;
+    }
+
+    self setOrigin(self.mmRoamPositions[slot] + (0, 0, 16));
+
+    if(isDefined(self.mmRoamAngles) && isDefined(self.mmRoamAngles[slot]))
+        self setPlayerAngles(self.mmRoamAngles[slot]);
+
+    self setVelocity((0, 0, 0));
+    self iprintln("^2Loaded free-roam position " + (slot + 1));
+}
+
+// Return to the nearest enabled player_volume on the current map.
+MM_TeleportToNearestActiveVolume()
+{
+    volumes = getEntArray("player_volume", "script_noteworthy");
+    if(!isDefined(volumes) || volumes.size < 1)
+    {
+        self iprintln("^1No player-volume markers exist on this map.");
+        return;
+    }
+
+    best = undefined;
+    bestDistance = 999999999;
+
+    foreach(volume in volumes)
+    {
+        if(!isDefined(volume) || !isDefined(volume.origin) || !isDefined(volume.targetname))
+            continue;
+
+        if(!maps\mp\zombies\_zm_zonemgr::zone_is_enabled(volume.targetname))
+            continue;
+
+        d = distanceSquared(self.origin, volume.origin);
+        if(d < bestDistance)
+        {
+            bestDistance = d;
+            best = volume;
+        }
+    }
+
+    if(!isDefined(best))
+    {
+        self iprintln("^1No enabled player-volume was found.");
+        return;
+    }
+
+    self setOrigin(best.origin + (0, 0, 48));
+    self setVelocity((0, 0, 0));
+    self iprintln("^2Returned to the nearest active map area.");
+}
+
+// Build a menu from the actual weapon registries initialized by the current
+// BO2 map. This makes the extra folder map-aware rather than assuming every
+// weapon is loaded on every map.
+MM_BuildRegisteredWeaponList()
+{
+    if(!isDefined(self.menuOpts["allguns"]))
+        self.menuOpts["allguns"] = [];
+
+    if(isDefined(level.zombie_weapons))
+    {
+        weaponKeys = getArrayKeys(level.zombie_weapons);
+        foreach(weaponName in weaponKeys)
+        {
+            if(!isDefined(weaponName) || weaponName == "")
+                continue;
+
+            self MM_AddWeaponOpt("allguns", weaponName, weaponName);
+        }
+    }
+
+    if(isDefined(level.zombie_weapons_upgraded))
+    {
+        upgradedKeys = getArrayKeys(level.zombie_weapons_upgraded);
+        foreach(weaponName in upgradedKeys)
+        {
+            if(!isDefined(weaponName) || weaponName == "")
+                continue;
+
+            alreadyAdded = false;
+            if(isDefined(self.menuOpts["allguns"]))
+            {
+                foreach(existing in self.menuOpts["allguns"])
+                {
+                    if(isDefined(existing.arg) && existing.arg == weaponName)
+                    {
+                        alreadyAdded = true;
+                        break;
+                    }
+                }
+            }
+
+            if(!alreadyAdded)
+                self MM_AddWeaponOpt("allguns", weaponName, weaponName);
+        }
+    }
+
+    if(!isDefined(self.menuOpts["allguns"]) || self.menuOpts["allguns"].size < 1)
+        self addMenuOpt("allguns", "No registered weapons found", ::MM_NoRegisteredEntry);
+}
+
+MM_BuildRegisteredPowerupList()
+{
+    count = 0;
+
+    if(isDefined(level.zombie_powerups))
+    {
+        powerupKeys = getArrayKeys(level.zombie_powerups);
+        foreach(powerupName in powerupKeys)
+        {
+            if(!isDefined(powerupName) || powerupName == "")
+                continue;
+
+            self addMenuOpt("powerups", "Spawn: " + powerupName, ::SpawnDrop, powerupName);
+            count++;
+        }
+    }
+
+    if(count < 1)
+        self addMenuOpt("powerups", "No registered powerups found", ::MM_NoRegisteredEntry);
+}
+
+MM_NoRegisteredEntry()
+{
+    self iprintln("^1No registered entry is available on this map.");
+}
+
+// Find the closest standard zombie while leaving map-specific bosses alone.
+MM_ClosestZombie()
+{
+    zombies = MM_AliveZombies();
+    closest = undefined;
+    bestDistance = 999999999;
+
+    foreach(z in zombies)
+    {
+        if(!isDefined(z) || !isAlive(z))
+            continue;
+
+        d = distanceSquared(self.origin, z.origin);
+        if(d < bestDistance)
+        {
+            bestDistance = d;
+            closest = z;
+        }
+    }
+
+    return closest;
+}
+
+MM_LeaveOneZombieAlive()
+{
+    zombies = MM_AliveZombies();
+    if(zombies.size < 2)
+    {
+        self iprintln("^1There are not enough standard zombies to leave one alive.");
+        return;
+    }
+
+    keep = self MM_ClosestZombie();
+    killed = 0;
+
+    foreach(z in zombies)
+    {
+        if(!isDefined(z) || z == keep || !isAlive(z))
+            continue;
+
+        z doDamage(z.health + 666, z.origin, self);
+        killed++;
+    }
+
+    self iprintln("^2Left one standard zombie alive. Killed " + killed + ".");
+}
+
+MM_KillNearestZombie()
+{
+    z = self MM_ClosestZombie();
+    if(!isDefined(z))
+    {
+        self iprintln("^1No standard zombie is available.");
+        return;
+    }
+
+    z doDamage(z.health + 666, z.origin, self);
+    self iprintln("^2Nearest zombie killed.");
+}
+
+MM_TeleportNearestZombie()
+{
+    z = self MM_ClosestZombie();
+    if(!isDefined(z))
+    {
+        self iprintln("^1No standard zombie is available.");
+        return;
+    }
+
+    z forceTeleport(self MM_Forward(100) + (0, 0, 24));
+    self iprintln("^2Nearest zombie teleported to you.");
+}
+
+MM_TeleportNearestZombieToCrosshair()
+{
+    z = self MM_ClosestZombie();
+    if(!isDefined(z))
+    {
+        self iprintln("^1No standard zombie is available.");
+        return;
+    }
+
+    z forceTeleport(self MM_CrosshairPos() + (0, 0, 24));
+    self iprintln("^2Nearest zombie teleported to crosshair.");
+}
+
+// ============================================================================
+//  END V4 EXPANSION
+// ============================================================================
