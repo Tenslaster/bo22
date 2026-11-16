@@ -1262,6 +1262,7 @@ MM_BuildPlayersList()
     self.menuParents["players"] = "main";
 
     self addMenuOpt("players", "Refresh Player List", ::PopulatePlayersMenu);
+    self addToggleOpt("players", "Auto Revive All Teammates", ::MM_ToggleTeamRevive, "teamrevive");
     self addMenuOpt("players", "Revive All Players", ::ReviveAllPlayers);
     self addMenuOpt("players", "Give All Players 100k", ::GiveAllPoints);
     self addMenuOpt("players", "Kill All Players (not me)", ::KillAllPlayers);
@@ -2176,6 +2177,29 @@ MM_AutoReviveLoop()
     }
 }
 
+MM_ToggleTeamRevive()
+{
+    self MM_Toggle("teamrevive", "Auto Revive Team", ::MM_TeamReviveLoop);
+}
+
+MM_TeamReviveLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_teamrevive");
+    for(;;)
+    {
+        players = get_players();
+        foreach(player in players)
+        {
+            if(!isDefined(player))
+                continue;
+            if(player maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
+                player maps\\mp\\zombies\\_zm_laststand::auto_revive(self);
+        }
+        wait 0.20;
+    }
+}
+
 MM_ToggleAutoPerks()
 {
     self MM_Toggle("autoperks", "Auto Rebuy Perks", ::MM_AutoPerksLoop);
@@ -2235,11 +2259,19 @@ MM_StatusHUDLoop()
         if(!isDefined(weapon) || weapon == "none")
             weapon = "Unarmed";
 
+        perkCount = 0;
+        availablePerks = self MM_GetAvailablePerks();
+        foreach(perk in availablePerks)
+        {
+            if(self hasPerk(perk))
+                perkCount++;
+        }
+
         hud setText("^2BO2 LIVE ^7| ROUND: ^3" + roundText
             + " ^7| POINTS: ^3" + self.score
             + " ^7| HP: ^3" + self.health + "/" + self.maxhealth
             + " ^7| ENEMIES: ^3" + enemyCount
-            + "\\n^7WEAPON: ^3" + weapon);
+            + "\\n^7WEAPON: ^3" + weapon + " ^7| PERKS: ^3" + perkCount);
         wait 0.35;
     }
 
