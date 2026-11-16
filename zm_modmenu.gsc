@@ -1521,11 +1521,33 @@ GodLoop()
 {
     self endon("disconnect");
     self endon("mm_stop_god");
+
+    // God Mode also bypasses the stock out-of-playable-area death monitor.
+    // Keep this as a separate persistent toggle so turning God Mode off does
+    // not unexpectedly re-enable map boundaries if the player chose free-roam.
+    self MM_EnableGodBoundaryBypass();
+
     for(;;)
     {
         self enableInvulnerability();   // re-applied because revives clear it
         wait 0.5;
     }
+}
+
+// Enable the same per-player bypass used by the Free-Roam menu. This stops
+// BO2's stock kill_brush / player_volume monitor from killing this player.
+MM_EnableGodBoundaryBypass()
+{
+    if(!isDefined(self.mmToggle))
+        self.mmToggle = [];
+
+    if(!self MM_IsOn("noboundary"))
+    {
+        self.mmToggle["noboundary"] = true;
+        self iprintln("^2God Mode: out-of-map death monitor disabled.");
+    }
+
+    self notify("stop_player_out_of_playable_area_monitor");
 }
 
 ToggleNoclip()
@@ -5360,7 +5382,12 @@ MM_ApplySpawnSettings()
 
     wait 0.10;
 
-    if(self MM_IsOn("noboundary"))
+    if(self MM_IsOn("god"))
+    {
+        self enableInvulnerability();
+        self MM_EnableGodBoundaryBypass();
+    }
+    else if(self MM_IsOn("noboundary"))
         self notify("stop_player_out_of_playable_area_monitor");
 
     if(self MM_IsOn("infsprint"))
