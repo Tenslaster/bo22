@@ -918,8 +918,8 @@ BuildMenuStructure()
     }
     self addMenuOpt("zspawn", "Spawn Type Availability", ::MM_ShowZombieSpawnTypes);
 
-    self addToggleOpt("zai", "Disable Regular Zombie AI", ::MM_ToggleZombiePacify, "zpacify");
-    self addMenuOpt("zai", "Set Current Zombies to 1 HP", ::MM_SetZombieHealth, 1);
+    self addToggleOpt("zai", "Disable Non-Boss Zombie AI", ::MM_ToggleZombiePacify, "zpacify");
+    self addMenuOpt("zai", "Set Current Non-Boss Enemies to 1 HP", ::MM_SetZombieHealth, 1);
     self addMenuOpt("zai", "Set Current Zombies to 50 HP", ::MM_SetZombieHealth, 50);
     self addMenuOpt("zai", "Set Current Zombies to 100 HP", ::MM_SetZombieHealth, 100);
     self addMenuOpt("zai", "Set Current Zombies to 500 HP", ::MM_SetZombieHealth, 500);
@@ -6168,7 +6168,7 @@ MM_ToggleZombiePacify()
         level.mmZombiePacifyEnabled = true;
         if(!isDefined(level.mmZombiePacifyRunning) || !level.mmZombiePacifyRunning)
             level thread MM_ZombiePacifyLoop();
-        self iprintln("^2Regular zombie AI disabled.");
+        self iprintln("^2Non-boss zombie AI disabled.");
     }
     else
     {
