@@ -523,6 +523,7 @@ MM_MenuTitle(name)
         case "allguns":        return "ALL REGISTERED MAP WEAPONS";
         case "powerups":       return "ALL REGISTERED POWERUPS";
         case "personal":       return "PERSONAL MODS";
+        case "survival":       return "SURVIVAL & AUTOMATION";
         case "weapons":        return "WEAPON MODS";
         case "mapweapons":     return "MAP WEAPONS";
         case "guns":           return "MORE GUNS";
@@ -630,6 +631,7 @@ BuildMenuStructure()
     self addSubMenu("main", "Teleport & Saved Locations", "teleport");
     self addSubMenu("main", "World & Game Control", "world");
     self addSubMenu("main", "Personal Mods", "personal");
+    self addSubMenu("main", "Survival & Automation", "survival");
     self addSubMenu("main", "Weapon Mods", "weapons");
     if(hasMapWeapons)
         self addSubMenu("main", "Map Weapons (" + MM_MapName() + ")", "mapweapons");
@@ -716,6 +718,10 @@ BuildMenuStructure()
     self addMenuOpt("world", "Round 99", ::SetRound, 99);
     self addMenuOpt("world", "Round 150", ::SetRound, 150);
     self addMenuOpt("world", "Round 250", ::SetRound, 250);
+    self addMenuOpt("world", "Advance 1 Round", ::MM_AdvanceRound, 1);
+    self addMenuOpt("world", "Advance 5 Rounds", ::MM_AdvanceRound, 5);
+    self addMenuOpt("world", "Advance 10 Rounds", ::MM_AdvanceRound, 10);
+    self addMenuOpt("world", "Reset World (Gravity + Speed)", ::MM_ResetWorld);
 
     // --- PERSONAL ---
     self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
@@ -733,6 +739,9 @@ BuildMenuStructure()
     self addToggleOpt("personal", "Third Person", ::ToggleThirdPerson, "thirdp");
     self addMenuOpt("personal", "FOV 120", ::SetFOV, "120");
     self addMenuOpt("personal", "FOV Default (65)", ::SetFOV, "65");
+    self addMenuOpt("personal", "+1,000 Points", ::MM_GiveScore, 1000);
+    self addMenuOpt("personal", "+10,000 Points", ::MM_GiveScore, 10000);
+    self addMenuOpt("personal", "+50,000 Points", ::MM_GiveScore, 50000);
     self addMenuOpt("personal", "+100,000 Points", ::GivePoints);
     self addToggleOpt("personal", "Infinite Points", ::ToggleInfPoints, "infpoints");
     self addMenuOpt("personal", "Save Position", ::SavePosition);
@@ -740,8 +749,16 @@ BuildMenuStructure()
     self addMenuOpt("personal", "Teleport To Crosshair", ::TeleportToCrosshair);
     self addMenuOpt("personal", "Suicide", ::DoSuicide);
 
+    // --- SURVIVAL / AUTOMATION ---
+    self addToggleOpt("survival", "Auto Revive (Self)", ::MM_ToggleAutoRevive, "autorevive");
+    self addToggleOpt("survival", "Auto Rebuy All Map Perks", ::MM_ToggleAutoPerks, "autoperks");
+    self addToggleOpt("survival", "Live Match HUD (Round / Points / Health)", ::MM_ToggleStatusHUD, "statushud");
+    self addMenuOpt("survival", "Restore Default Movement", ::MM_ResetMovement);
+    self addMenuOpt("survival", "Refill Health Now", ::MM_RefillHealth);
+
     // --- WEAPONS ---
-    self addToggleOpt("weapons", "Infinite Ammo", ::ToggleInfAmmo, "infammo");
+    self addToggleOpt("weapons", "Infinite Ammo (Current Weapon)", ::ToggleInfAmmo, "infammo");
+    self addToggleOpt("weapons", "Infinite Ammo (All Weapons)", ::MM_ToggleInfAmmoAll, "infammoall");
     self addMenuOpt("weapons", "Pack-A-Punch Current", ::PapCurrentWeapon);
     self addMenuOpt("weapons", "Pack-A-Punch ALL Guns", ::PapAllWeapons);
     self addMenuOpt("weapons", "Max Ammo Current", ::FillCurrentAmmo);
@@ -830,7 +847,8 @@ BuildMenuStructure()
     }
 
     // --- ZOMBIES ---
-    self addMenuOpt("zombies", "Kill All Zombies", ::KillAllZombies);
+    self addMenuOpt("zombies", "Kill All Enemies", ::KillAllZombies);
+    self addMenuOpt("zombies", "Clear Regular Zombies (Keep Bosses)", ::MM_ClearRegularZombies);
     self addMenuOpt("zombies", "Explode All Zombies", ::ExplodeZombies);
     self addMenuOpt("zombies", "Burn All Zombies", ::BurnZombies);
     self addMenuOpt("zombies", "Teleport All To Me", ::TeleportZombies);
@@ -2086,6 +2104,161 @@ RemoveAllPerks()
     }
 
     self iprintln("^2Removed " + removed + " available perks");
+}
+
+// ============================================================================
+//  SURVIVAL, AUTOMATION & QUALITY-OF-LIFE
+// ============================================================================
+
+MM_GiveScore(amount)
+{
+    if(amount < 1)
+        return;
+    MM_AddScore(self, amount);
+    self iprintln("^2+" + amount + " points");
+}
+
+MM_RefillHealth()
+{
+    if(self MM_IsOn("health"))
+    {
+        self setMaxHealth(99999);
+        self.health = 99999;
+    }
+    else
+        self.health = self.maxhealth;
+    self iprintln("^2Health restored");
+}
+
+MM_ResetMovement()
+{
+    self setMoveSpeedScale(1.0);
+    self.mmMoveScale = 1.0;
+    self setVelocity((0, 0, 0));
+    if(self MM_IsOn("noclip"))
+    {
+        self.mmToggle["noclip"] = false;
+        self notify("mm_stop_noclip");
+        self unlink();
+    }
+    self iprintln("^2Movement settings restored");
+}
+
+MM_ResetWorld()
+{
+    setDvar("g_gravity", 800);
+    setDvar("timescale", 1.0);
+    self iprintln("^2World reset: gravity 800, game speed 1.0");
+}
+
+MM_AdvanceRound(amount)
+{
+    if(amount < 1)
+        return;
+    targetRound = level.round_number + amount + 1;
+    SetRound(targetRound);
+}
+
+MM_ToggleAutoRevive()
+{
+    self MM_Toggle("autorevive", "Auto Revive", ::MM_AutoReviveLoop);
+}
+
+MM_AutoReviveLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_autorevive");
+    for(;;)
+    {
+        if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
+            self maps\\mp\\zombies\\_zm_laststand::auto_revive(self);
+        wait 0.20;
+    }
+}
+
+MM_ToggleAutoPerks()
+{
+    self MM_Toggle("autoperks", "Auto Rebuy Perks", ::MM_AutoPerksLoop);
+}
+
+MM_AutoPerksLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_autoperks");
+    for(;;)
+    {
+        if(!self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
+            self MM_GivePerks();
+        wait 3.0;
+    }
+}
+
+MM_ToggleInfAmmoAll()
+{
+    self MM_Toggle("infammoall", "Infinite Ammo (All Weapons)", ::MM_InfAmmoAllLoop);
+}
+
+MM_InfAmmoAllLoop()
+{
+    self endon("disconnect");
+    self endon("mm_stop_infammoall");
+    for(;;)
+    {
+        primaries = self getWeaponsListPrimaries();
+        foreach(weap in primaries)
+            self MM_RefillWeapon(weap);
+        wait 0.20;
+    }
+}
+
+MM_ToggleStatusHUD()
+{
+    self MM_Toggle("statushud", "Live Match HUD", ::MM_StatusHUDLoop);
+}
+
+MM_StatusHUDLoop()
+{
+    self endon("disconnect");
+
+    hud = self MM_NewText(12, 350, 0.85);
+    hud.color = (0.75, 1, 0.75);
+    hud.sort = 1002;
+
+    for(;;)
+    {
+        if(!self MM_IsOn("statushud"))
+            break;
+
+        enemyCount = MM_AllEnemies().size;
+        roundText = level.round_number + 1;
+        weapon = self getCurrentWeapon();
+        if(!isDefined(weapon) || weapon == "none")
+            weapon = "Unarmed";
+
+        hud setText("^2BO2 LIVE ^7| ROUND: ^3" + roundText
+            + " ^7| POINTS: ^3" + self.score
+            + " ^7| HP: ^3" + self.health + "/" + self.maxhealth
+            + " ^7| ENEMIES: ^3" + enemyCount
+            + "\\n^7WEAPON: ^3" + weapon);
+        wait 0.35;
+    }
+
+    if(isDefined(hud))
+        hud destroy();
+}
+
+MM_ClearRegularZombies()
+{
+    zombies = MM_AliveZombies();
+    killed = 0;
+    foreach(z in zombies)
+    {
+        if(!isDefined(z) || !isAlive(z))
+            continue;
+        z doDamage(z.health + 9999, z.origin, self);
+        killed++;
+    }
+    self iprintln("^2Cleared " + killed + " regular zombies; boss entities were preserved.");
 }
 
 // ============================================================================
