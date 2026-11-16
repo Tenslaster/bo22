@@ -525,6 +525,8 @@ MM_MenuTitle(name)
         case "personal":       return "PERSONAL MODS";
         case "survival":       return "SURVIVAL & AUTOMATION";
         case "weapons":        return "WEAPON MODS";
+        case "heavyweapons":   return "HEAVY / EXPLOSIVE ARSENAL";
+        case "wonderweapons":  return "WONDER WEAPONS";
         case "mapweapons":     return "MAP WEAPONS";
         case "guns":           return "MORE GUNS";
         case "lobby":          return "SPAWNS & LOBBY";
@@ -763,8 +765,30 @@ BuildMenuStructure()
     self addMenuOpt("weapons", "Pack-A-Punch ALL Guns", ::PapAllWeapons);
     self addMenuOpt("weapons", "Max Ammo Current", ::FillCurrentAmmo);
     self addMenuOpt("weapons", "Max Ammo ALL", ::FillAllAmmo);
+    self addSubMenu("weapons", "Heavy / Explosive Arsenal", "heavyweapons");
+    self addSubMenu("weapons", "Wonder Weapons", "wonderweapons");
     self addSubMenu("weapons", "More Guns (PaP)", "guns");
     self addSubMenu("weapons", "All Registered Weapons (This Map)", "allguns");
+
+    // Heavy weapons are only displayed when the active map registers them.
+    self MM_AddWeaponOpt("heavyweapons", "RPG-7 / Rocket Launcher", "usrpg_zm");
+    self MM_AddWeaponOpt("heavyweapons", "RPG-7 (Pack-A-Punched)", "usrpg_upgraded_zm");
+    self MM_AddWeaponOpt("heavyweapons", "War Machine Grenade Launcher", "m32_zm");
+    self MM_AddWeaponOpt("heavyweapons", "War Machine (Pack-A-Punched)", "m32_upgraded_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Monkey Bombs", "cymbal_monkey_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Semtex Grenades", "sticky_grenade_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Claymores", "claymore_zm");
+    self addMenuOpt("heavyweapons", "Give RPG + War Machine Loadout", ::MM_GiveRocketLoadout);
+
+    // Wonder weapons are map-aware; unavailable weapons are omitted.
+    self MM_AddWeaponOpt("wonderweapons", "Ray Gun", "ray_gun_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Ray Gun (Pack-A-Punched)", "ray_gun_upgraded_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Ray Gun Mark II", "raygun_mark2_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Ray Gun Mark II (Pack-A-Punched)", "raygun_mark2_upgraded_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Jet Gun (TranZit)", "jetgun_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Blundergat (Mob of the Dead)", "blundergat_zm");
+    self MM_AddWeaponOpt("wonderweapons", "Acid Gat / Vitriolic Withering", "blundergat_upgraded_zm");
+
     self MM_BuildRegisteredWeaponList();
     // Each entry only appears if the current map actually has that weapon loaded.
     self MM_AddWeaponOpt("guns", "HAMR (PaP)", "hamr_upgraded_zm");
@@ -1890,6 +1914,40 @@ GiveWeap(weap)
     // Let the game handle weapon limits, PaP camos, equipment and melee slots.
     self maps\mp\zombies\_zm_weapons::weapon_give(weap, isSubStr(weap, "upgraded"));
     self iprintln("Weapon given");
+}
+
+// Two-slot heavy loadout. Each weapon is checked against the active map
+// registry before the stock Zombies weapon-give routine is called.
+MM_GiveRocketLoadout()
+{
+    given = 0;
+
+    if(MM_WeaponKnown("usrpg_zm"))
+    {
+        self maps\\mp\\zombies\\_zm_weapons::weapon_give("usrpg_zm", false);
+        given++;
+    }
+    else if(MM_WeaponKnown("usrpg_upgraded_zm"))
+    {
+        self maps\\mp\\zombies\\_zm_weapons::weapon_give("usrpg_upgraded_zm", true);
+        given++;
+    }
+
+    if(MM_WeaponKnown("m32_zm"))
+    {
+        self maps\\mp\\zombies\\_zm_weapons::weapon_give("m32_zm", false);
+        given++;
+    }
+    else if(MM_WeaponKnown("m32_upgraded_zm"))
+    {
+        self maps\\mp\\zombies\\_zm_weapons::weapon_give("m32_upgraded_zm", true);
+        given++;
+    }
+
+    if(given > 0)
+        self iprintln("^2Heavy loadout granted. Check your weapon slots.");
+    else
+        self iprintln("^1Neither rocket weapon is available on this map.");
 }
 
 // Returns the Pack-a-Punched version of a weapon, or undefined if it has none.
