@@ -6165,39 +6165,56 @@ MM_ToggleZombiePacify()
     on = self MM_Flip("zpacify", "Regular Zombie AI");
     if(on)
     {
-        self thread MM_ZombiePacifyLoop();
+        level.mmZombiePacifyEnabled = true;
+        if(!isDefined(level.mmZombiePacifyRunning) || !level.mmZombiePacifyRunning)
+            level thread MM_ZombiePacifyLoop();
         self iprintln("^2Regular zombie AI disabled.");
     }
     else
     {
-        self notify("mm_stop_zpacify");
-        zombies = MM_AliveZombies();
-        foreach(z in zombies)
-        {
-            if(isDefined(z) && isAlive(z))
-                z.ignoreall = false;
-        }
-        self iprintln("^1Regular zombie AI restored.");
+        level.mmZombiePacifyEnabled = false;
+        self iprintln("^1Regular zombie AI restore requested.");
     }
 }
 
 MM_ZombiePacifyLoop()
 {
-    self endon("disconnect");
-    self endon("mm_stop_zpacify");
-    for(;;)
+    level endon("end_game");
+    level.mmZombiePacifyRunning = true;
+
+    while(isDefined(level.mmZombiePacifyEnabled) && level.mmZombiePacifyEnabled)
     {
         zombies = MM_AliveZombies();
         foreach(z in zombies)
         {
             if(!isDefined(z) || !isAlive(z) || MM_IsBoss(z))
                 continue;
+
+            // Preserve each actor's original ignoreall state, including dogs
+            // and map-specific AI, instead of forcing every enemy to false.
+            if(!isDefined(z.mmPacifyOriginalIgnore))
+            {
+                if(isDefined(z.ignoreall))
+                    z.mmPacifyOriginalIgnore = z.ignoreall;
+                else
+                    z.mmPacifyOriginalIgnore = false;
+            }
             z.ignoreall = true;
         }
         wait 0.2;
     }
-}
 
+    zombies = MM_AliveZombies();
+    foreach(z in zombies)
+    {
+        if(!isDefined(z) || !isDefined(z.mmPacifyOriginalIgnore))
+            continue;
+        z.ignoreall = z.mmPacifyOriginalIgnore;
+        z.mmPacifyOriginalIgnore = undefined;
+    }
+
+    level.mmZombiePacifyRunning = false;
+}
 MM_SetZombieHealth(amount)
 {
     zombies = MM_AliveZombies();
