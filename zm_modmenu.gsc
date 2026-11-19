@@ -2434,7 +2434,7 @@ MM_InfAmmoAllLoop()
 }
 
 // ============================================================================
- // LIVE EASTER EGG TRACKER — Mob of the Dead, TranZit, Buried and Die Rise
+ // LIVE EASTER EGG TRACKER - Mob of the Dead, TranZit, Buried and Die Rise
  // Reads the stock quest flags / sidequest stats; it does not change quest state.
  // ============================================================================
 
@@ -2547,8 +2547,8 @@ MM_EETrackerMob()
     zapped = flag("plane_zapped");
     crashed = flag("plane_crashed");
 
+    keyFound = flag("key_found");
     parts = 0;
-    if(flag("key_found")) parts++;
     if(flag("cloth_found")) parts++;
     if(flag("fueltanks_found")) parts++;
     if(flag("engine_found")) parts++;
@@ -2580,19 +2580,20 @@ MM_EETrackerMob()
     else if(crashed && !goodEnding && !badEnding)
         nextText = "Finish the final Weasel showdown";
 
-    return "^2MOB OF THE DEAD — POP GOES THE WEASEL"
-        + "\n^7Three dog heads: " + self MM_EETrackerStatus(dogs)
+    return "^2MOB OF THE DEAD - POP GOES THE WEASEL"
+        + "\\n^7Three dog heads: " + self MM_EETrackerStatus(dogs)
         + "   Spoon: " + self MM_EETrackerStatus(spoon)
-        + "\n^7Warden's Blundergat: " + self MM_EETrackerStatus(blundergat)
+        + "\\n^7Warden's Blundergat: " + self MM_EETrackerStatus(blundergat)
         + "   Nixie codes: " + self MM_EETrackerStatus(nixie)
-        + "\n^7Plane parts: ^3" + parts + "/6"
+        + "\\n^7Quest key: " + self MM_EETrackerStatus(keyFound)
+        + "   Plane parts: ^3" + parts + "/5"
         + "   Build: " + self MM_EETrackerStatus(planeBuilt)
-        + "\n^7Flight: Board " + self MM_EETrackerStatus(boarded)
+        + "\\n^7Flight: Board " + self MM_EETrackerStatus(boarded)
         + " Depart " + self MM_EETrackerStatus(departed)
-        + "\n^7Bridge " + self MM_EETrackerStatus(zapped)
+        + "\\n^7Bridge " + self MM_EETrackerStatus(zapped)
         + " Crash " + self MM_EETrackerStatus(crashed)
-        + "\n^7Ending: " + endingText
-        + "\n^3NEXT: ^7" + nextText;
+        + "\\n^7Ending: " + endingText
+        + "\\n^3NEXT: ^7" + nextText;
 }
 
 MM_EETrackerTranzit()
@@ -2623,16 +2624,16 @@ MM_EETrackerTranzit()
     if(richC)
         richNext = "Richtofen route complete";
 
-    return "^2TRANZIT — TOWER EASTER EGG"
-        + "\n^7Navcard applied: " + self MM_EETrackerStatus(navcard)
-        + "\n^7MAXIS A/B/C: " + self MM_EETrackerStatus(maxA)
+    return "^2TRANZIT - TOWER EASTER EGG"
+        + "\\n^7Navcard applied: " + self MM_EETrackerStatus(navcard)
+        + "\\n^7MAXIS A/B/C: " + self MM_EETrackerStatus(maxA)
         + " " + self MM_EETrackerStatus(maxB)
         + " " + self MM_EETrackerStatus(maxC)
-        + "\n^7M NEXT: ^3" + maxNext
-        + "\n^7RICHTOFEN A/B/C: " + self MM_EETrackerStatus(richA)
+        + "\\n^7M NEXT: ^3" + maxNext
+        + "\\n^7RICHTOFEN A/B/C: " + self MM_EETrackerStatus(richA)
         + " " + self MM_EETrackerStatus(richB)
         + " " + self MM_EETrackerStatus(richC)
-        + "\n^7R NEXT: ^3" + richNext;
+        + "\\n^7R NEXT: ^3" + richNext;
 }
 
 MM_EETrackerDieRise()
@@ -2689,18 +2690,18 @@ MM_EETrackerDieRise()
     else if(flag("sq_max_tower_complete"))
         routeText = "Maxis";
 
-    return "^2DIE RISE — TOWER EASTER EGG"
-        + "\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
+    return "^2DIE RISE - TOWER EASTER EGG"
+        + "\\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
         + "   Navcard: " + self MM_EETrackerStatus(navcard)
-        + "\n^7Dragon puzzle: " + self MM_EETrackerStatus(dragon)
+        + "\\n^7Dragon puzzle: " + self MM_EETrackerStatus(dragon)
         + "   Lion ball: " + self MM_EETrackerStatus(lionBall)
-        + "\n^7Richtofen balls / pads: " + self MM_EETrackerStatus(richtofenBalls)
+        + "\\n^7Richtofen balls / pads: " + self MM_EETrackerStatus(richtofenBalls)
         + " " + self MM_EETrackerStatus(richtofenPads)
-        + "\n^7Maxis rebirth / pads: " + self MM_EETrackerStatus(maxisRebirth)
+        + "\\n^7Maxis rebirth / pads: " + self MM_EETrackerStatus(maxisRebirth)
         + " " + self MM_EETrackerStatus(maxisPads)
-        + "\n^7Route: ^3" + routeText
+        + "\\n^7Route: ^3" + routeText
         + "   Tower: " + self MM_EETrackerStatus(towerActive)
-        + "\n^3NEXT: ^7" + nextText;
+        + "\\n^3NEXT: ^7" + nextText;
 }
 
 MM_EETrackerBuried()
@@ -2726,7 +2727,7 @@ MM_EETrackerBuried()
     if(stageName == "bt")
     {
         stageIndex = 0;
-        currentText = "Build the first tower — place its four objects";
+        currentText = "Build the first tower - place its four objects";
     }
     else if(stageName == "mta")
     {
@@ -2785,23 +2786,23 @@ MM_EETrackerBuried()
     else if(questDone)
         nextText = "Buried main quest complete";
 
-    return "^2BURIED — MAZE / TOWER EASTER EGG"
-        + "\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
+    return "^2BURIED - MAZE / TOWER EASTER EGG"
+        + "\\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
         + "   Navcard: " + self MM_EETrackerStatus(navcard)
-        + "\n^7Route: ^3" + routeText
+        + "\\n^7Route: ^3" + routeText
         + "   Wisp: " + self MM_EETrackerStatus(flag("sq_wisp_success"))
-        + "\n^7Stages  BT " + self MM_EETrackerStageMark(0, stageIndex, questDone)
+        + "\\n^7Stages  BT " + self MM_EETrackerStageMark(0, stageIndex, questDone)
         + "  MTA " + self MM_EETrackerStageMark(1, stageIndex, questDone)
         + "  GL " + self MM_EETrackerStageMark(2, stageIndex, questDone)
         + "  FTL " + self MM_EETrackerStageMark(3, stageIndex, questDone)
         + "  LL " + self MM_EETrackerStageMark(4, stageIndex, questDone)
-        + "\n^7        TS " + self MM_EETrackerStageMark(5, stageIndex, questDone)
+        + "\\n^7        TS " + self MM_EETrackerStageMark(5, stageIndex, questDone)
         + "  CTW " + self MM_EETrackerStageMark(6, stageIndex, questDone)
         + "  TPO " + self MM_EETrackerStageMark(7, stageIndex, questDone)
         + "  IP " + self MM_EETrackerStageMark(8, stageIndex, questDone)
         + "  OWS " + self MM_EETrackerStageMark(9, stageIndex, questDone)
-        + "\n^7Current: ^3" + currentText
-        + "\n^3NEXT: ^7" + nextText;
+        + "\\n^7Current: ^3" + currentText
+        + "\\n^3NEXT: ^7" + nextText;
 }
 
 MM_ToggleStatusHUD()
@@ -3803,7 +3804,7 @@ MM_OriginsStaffGuideLoop()
                 fireLeft++;
                 markers[markers.size] = self MM_OriginsGuideMakeMarker(volume.origin + (0, 0, 28), (1, 0.55, 0.05));
             }
-            guideText += "\n^3FIRE - CRAZY PLACE CHESTS^7: kill zombies inside each orange marker.";
+            guideText += "\\n^3FIRE - CRAZY PLACE CHESTS^7: kill zombies inside each orange marker.";
             guideText += "\nUnfinished chests: " + fireLeft + "/" + fireTotal;
         }
         else if(self hasweapon("staff_fire_zm") && !flag("fire_puzzle_2_complete"))
@@ -3848,7 +3849,7 @@ MM_OriginsStaffGuideLoop()
                 else
                     torchValues += torchIndex;
             }
-            guideText += "\n^3FIRE - CHURCH TORCHES^7: light all four marked torches; order is not required.";
+            guideText += "\\n^3FIRE - CHURCH TORCHES^7: light all four marked torches; order is not required.";
             guideText += "\nMarker colors: T1 RED, T2 ORANGE, T3 PURPLE, T4 CYAN.";
             guideText += "\nLive torch markers: " + torchIndex + "/4";
             if(torchValues != "")
@@ -3856,7 +3857,7 @@ MM_OriginsStaffGuideLoop()
             guideText += "\nTargets are read from this match's randomized puzzle state.";
         }
         else if(self hasweapon("staff_fire_zm"))
-            guideText += "\n^2FIRE: both Crazy Place puzzles are complete.";
+            guideText += "\\n^2FIRE: both Crazy Place puzzles are complete.";
 
         // LIGHTNING: use the three live piano chord definitions. Green
         // waypoints identify the three correct keys for the current chord.
@@ -3899,13 +3900,13 @@ MM_OriginsStaffGuideLoop()
                 if(isDefined(level.a_piano_keys_playing))
                     pianoPlayed = level.a_piano_keys_playing.size;
 
-                guideText += "\n^3LIGHTNING - PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
+                guideText += "\\n^3LIGHTNING - PIANO CHORD " + (chordStep + 1) + "/3^7 (" + chordName + ")";
                 guideText += "\nShoot the three marked keys with the Lightning Staff (any order):";
                 guideText += "\nRED=" + pianoNotes[0] + "  BLUE=" + pianoNotes[1] + "  YELLOW=" + pianoNotes[2];
                 guideText += "\n(" + pianoPlayed + "/3 keys hit)";
             }
             else
-                guideText += "\n^3LIGHTNING PIANO^7: waiting for chord data to initialize.";
+                guideText += "\\n^3LIGHTNING PIANO^7: waiting for chord data to initialize.";
         }
 
         // Required switch positions follow the stock path:
@@ -3916,7 +3917,7 @@ MM_OriginsStaffGuideLoop()
             {
                 relayNames = array("elec", "ice", "village", "air", "start", "tank_platform", "ruins", "bunker");
                 relayGoals = array(0, 3, 2, 2, 1, 0, 2, -1);
-                guideText += "\n^3LIGHTNING - RELAY SWITCHES^7: make every active marker GREEN.";
+                guideText += "\\n^3LIGHTNING - RELAY SWITCHES^7: make every active marker GREEN.";
                 for(relayIndex = 0; relayIndex < relayNames.size; relayIndex++)
                 {
                     relayName = relayNames[relayIndex];
@@ -3935,7 +3936,7 @@ MM_OriginsStaffGuideLoop()
                     markers[markers.size] = self MM_OriginsGuideMakeMarker(relay.e_switch.origin + (0, 0, 24), relayMarkerColor);
                 }
                 guideText += "\nTargets (positions 0-3): ELEC 0, ICE 3, VILLAGE 2, AIR 2, START 1, TANK 0, RUINS 2.";
-                guideText += "\n^1ORANGE^7 = wrong, ^2GREEN^7 = correct, ^7GRAY^7 = unused BUNKER switch.";
+                guideText += "\\n^1ORANGE^7 = wrong, ^2GREEN^7 = correct, ^7GRAY^7 = unused BUNKER switch.";
             }
         }
 
@@ -3945,7 +3946,7 @@ MM_OriginsStaffGuideLoop()
         {
             if(isDefined(level.a_ceiling_rings))
             {
-                guideText += "\n^3WIND - RING HIT ESP^7 (ORANGE=shoot, GREEN=aligned):\n";
+                guideText += "\\n^3WIND - RING HIT ESP^7 (ORANGE=shoot, GREEN=aligned):\n";
                 // The ring origin is the hit target used by the stock damage
                 // handler. Put a waypoint directly over each ring, not in a
                 // screen-space list. Orange means it still needs a Wind Staff
@@ -3964,8 +3965,8 @@ MM_OriginsStaffGuideLoop()
                 // Keep this text static. Printing every combination of ring
                 // positions creates hundreds of unique HUD strings and can
                 // exhaust the engine configstring table (G_FindConfigstringIndex).
-                guideText += "\n^3WIND - CEILING RINGS^7: shoot every ^1ORANGE^7 marker with the Wind Staff.";
-                guideText += "\n^2GREEN^7 markers are already aligned; each dot marks a ring to aim at.";
+                guideText += "\\n^3WIND - CEILING RINGS^7: shoot every ^1ORANGE^7 marker with the Wind Staff.";
+                guideText += "\\n^2GREEN^7 markers are already aligned; each dot marks a ring to aim at.";
             }
         }
         else if(self hasweapon("staff_air_zm") && !flag("air_puzzle_2_complete"))
@@ -3983,7 +3984,7 @@ MM_OriginsStaffGuideLoop()
             smokeDest = getstruct("puzzle_smoke_dest", "targetname");
             if(isDefined(smokeDest) && isDefined(smokeDest.origin))
                 markers[markers.size] = self MM_OriginsGuideMakeMarker(smokeDest.origin + (0, 0, 40), (0.1, 1, 0.2));
-            guideText += "\n^3WIND - SMOKE DIRECTION^7: blue markers are smoke sources; GREEN marker is the destination.";
+            guideText += "\\n^3WIND - SMOKE DIRECTION^7: blue markers are smoke sources; GREEN marker is the destination.";
             guideText += "\nShoot each blue detector with the Wind Staff, then steer its smoke toward the green destination.";
             guideText += "\nSources marked: " + smokeIndex;
         }
@@ -4023,12 +4024,12 @@ MM_OriginsStaffGuideLoop()
                         correctTileCount++;
                         markers[markers.size] = self MM_OriginsGuideMakeMarker(tile.origin + (0, 0, 36), (0.1, 1, 0.2));
                     }
-                    guideText += "\n^3ICE - CEILING TILE^7: shoot the GREEN-marked tile with the Ice Staff.";
+                    guideText += "\\n^3ICE - CEILING TILE^7: shoot the GREEN-marked tile with the Ice Staff.";
                     guideText += "\nLive gem value: " + iceValue + "   Ternary display: " + iceCode + "   Matching tiles: " + correctTileCount;
                 }
             }
             else
-                guideText += "\n^3ICE CEILING TILE^7: waiting for the gem to display its next value.";
+                guideText += "\\n^3ICE CEILING TILE^7: waiting for the gem to display its next value.";
         }
         else if(self hasweapon("staff_water_zm") && !flag("ice_puzzle_2_complete"))
         {
@@ -4045,7 +4046,7 @@ MM_OriginsStaffGuideLoop()
             stonesLeft = stoneCount;
             if(isDefined(level.ice_stones_remaining))
                 stonesLeft = level.ice_stones_remaining;
-            guideText += "\n^3ICE - CRAZY PLACE TOMBSTONES^7: freeze every blue marker with the Ice Staff.";
+            guideText += "\\n^3ICE - CRAZY PLACE TOMBSTONES^7: freeze every blue marker with the Ice Staff.";
             guideText += "\nThen shoot each frozen stone with a normal bullet weapon (NOT a Staff).";
             guideText += "\nStones remaining: " + stonesLeft;
         }
@@ -4057,28 +4058,28 @@ MM_OriginsStaffGuideLoop()
             cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_fire", "fire_orb_plinth_final");
             foreach(cryptMarker in cryptGuide.markers)
                 markers[markers.size] = cryptMarker;
-            guideText += "\n^3FIRE - CRYPT ORB^7: " + cryptGuide.text;
+            guideText += "\\n^3FIRE - CRYPT ORB^7: " + cryptGuide.text;
         }
         if(self hasweapon("staff_air_zm") && flag("air_puzzle_1_complete") && flag("air_puzzle_2_complete") && !flag("staff_air_zm_upgrade_unlocked"))
         {
             cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_air", "air_orb_plinth_final");
             foreach(cryptMarker in cryptGuide.markers)
                 markers[markers.size] = cryptMarker;
-            guideText += "\n^3WIND - CRYPT ORB^7: " + cryptGuide.text;
+            guideText += "\\n^3WIND - CRYPT ORB^7: " + cryptGuide.text;
         }
         if(self hasweapon("staff_lightning_zm") && flag("electric_puzzle_1_complete") && flag("electric_puzzle_2_complete") && !flag("staff_lightning_zm_upgrade_unlocked"))
         {
             cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_elec", "lightning_orb_plinth_final");
             foreach(cryptMarker in cryptGuide.markers)
                 markers[markers.size] = cryptMarker;
-            guideText += "\n^3LIGHTNING - CRYPT ORB^7: " + cryptGuide.text;
+            guideText += "\\n^3LIGHTNING - CRYPT ORB^7: " + cryptGuide.text;
         }
         if(self hasweapon("staff_water_zm") && flag("ice_puzzle_1_complete") && flag("ice_puzzle_2_complete") && !flag("staff_water_zm_upgrade_unlocked"))
         {
             cryptGuide = self MM_OriginsBuildCryptGuide("crypt_gem_ice", "ice_orb_plinth_final");
             foreach(cryptMarker in cryptGuide.markers)
                 markers[markers.size] = cryptMarker;
-            guideText += "\n^3ICE - CRYPT ORB^7: " + cryptGuide.text;
+            guideText += "\\n^3ICE - CRYPT ORB^7: " + cryptGuide.text;
         }
 
         for(slot = 0; slot < maxMarkers; slot++)
