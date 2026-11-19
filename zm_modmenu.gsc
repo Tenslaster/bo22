@@ -3143,6 +3143,7 @@ MM_EETrackerESPLoop()
     maxMarkers = 24;
     dots = [];
     labels = [];
+    lastLabelText = [];
 
     for(i = 0; i < maxMarkers; i++)
     {
@@ -3189,8 +3190,6 @@ MM_EETrackerESPLoop()
             used[bestIdx] = true;
             target = targets[bestIdx].ent;
             markerPos = target.origin + (0, 0, 28);
-            distanceUnits = int(sqrt(bestDistance));
-
             dots[slot].x = markerPos[0];
             dots[slot].y = markerPos[1];
             dots[slot].z = markerPos[2];
@@ -3199,7 +3198,15 @@ MM_EETrackerESPLoop()
             labels[slot].x = markerPos[0];
             labels[slot].y = markerPos[1];
             labels[slot].z = markerPos[2] + 10;
-            labels[slot] setText("^3" + targets[bestIdx].label + " ^7[" + distanceUnits + "u]");
+            // Keep the HUD string stable. A live distance suffix creates a new
+            // configstring as the player moves and eventually overflows BO2's
+            // fixed configstring table (G_FindConfigstringIndex).
+            labelText = "^3" + targets[bestIdx].label;
+            if(!isDefined(lastLabelText[slot]) || lastLabelText[slot] != labelText)
+            {
+                labels[slot] setText(labelText);
+                lastLabelText[slot] = labelText;
+            }
             labels[slot].alpha = 1;
         }
 
