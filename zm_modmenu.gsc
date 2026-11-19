@@ -663,7 +663,10 @@ BuildMenuStructure()
         self addSubMenu("main", "Players Menu", "players");
 
     if(self MM_EETrackerAvailable())
+    {
         self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
+        self addToggleOpt("eetracker", "Quest Object ESP (Labels + Distance)", ::MM_ToggleEETrackerESP, "eetargets");
+    }
 
     // --- FREE ROAM / MAP BOUNDARIES ---
     self addToggleOpt("freeroam", "Disable Out-of-Map Death Monitor", ::ToggleNoDeathBarrier, "noboundary");
@@ -2803,6 +2806,420 @@ MM_EETrackerBuried()
         + "  OWS " + self MM_EETrackerStageMark(9, stageIndex, questDone)
         + "\\n^7Current: ^3" + currentText
         + "\\n^3NEXT: ^7" + nextText;
+}
+
+// ============================================================================
+ // QUEST OBJECT ESP — world waypoints for current Easter Egg objectives.
+ // Uses stock map entities, structs and spawned quest models only.
+ // ============================================================================
+
+MM_EETrackerESPAvailable()
+{
+    return self MM_EETrackerAvailable();
+}
+
+MM_EEAddQuestTarget(targets, target, label)
+{
+    if(!isDefined(target) || !isDefined(target.origin))
+        return targets;
+
+    foreach(existing in targets)
+    {
+        if(isDefined(existing) && isDefined(existing.ent) && existing.ent == target)
+            return targets;
+    }
+
+    item = spawnstruct();
+    item.ent = target;
+    item.label = label;
+    targets[targets.size] = item;
+    return targets;
+}
+
+MM_EEAddQuestEnt(targets, targetName, label)
+{
+    ent = getent(targetName, "targetname");
+    return self MM_EEAddQuestTarget(targets, ent, label);
+}
+
+MM_EEAddQuestEntKey(targets, targetName, keyName, label)
+{
+    ent = getent(targetName, keyName);
+    return self MM_EEAddQuestTarget(targets, ent, label);
+}
+
+MM_EEAddQuestEntArray(targets, targetName, keyName, label)
+{
+    ents = getentarray(targetName, keyName);
+    foreach(ent in ents)
+        targets = self MM_EEAddQuestTarget(targets, ent, label);
+    return targets;
+}
+
+MM_EEAddQuestStruct(targets, structName, label)
+{
+    spot = getstruct(structName, "targetname");
+    return self MM_EEAddQuestTarget(targets, spot, label);
+}
+
+MM_EEAddQuestStructArray(targets, structName, keyName, label)
+{
+    spots = getstructarray(structName, keyName);
+    foreach(spot in spots)
+        targets = self MM_EEAddQuestTarget(targets, spot, label);
+    return targets;
+}
+
+MM_EECollectQuestTargets()
+{
+    targets = [];
+
+    if(level.script == "zm_prison")
+        return self MM_EECollectMobTargets(targets);
+    if(level.script == "zm_transit")
+        return self MM_EECollectTranzitTargets(targets);
+    if(level.script == "zm_highrise")
+        return self MM_EECollectDieRiseTargets(targets);
+    if(level.script == "zm_buried")
+        return self MM_EECollectBuriedTargets(targets);
+
+    return targets;
+}
+
+MM_EECollectMobTargets(targets)
+{
+    if(!flag("spoon_obtained"))
+    {
+        targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON");
+        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / SPORK");
+    }
+
+    if(!flag("quest_completed_thrice"))
+    {
+        if(isDefined(level.a_wolf_structs))
+        {
+            foreach(spot in level.a_wolf_structs)
+                targets = self MM_EEAddQuestTarget(targets, spot, "WOLF SOULS");
+        }
+        targets = self MM_EEAddQuestEnt(targets, "spinning_tomahawk_pickup", "HELL'S RETRIEVER");
+    }
+
+    if(!flag("warden_blundergat_obtained"))
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "WARDEN'S BLUNDERGAT");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - TOMAHAWK");
+    }
+
+    if(!flag("nixie_puzzle_completed"))
+    {
+        for(i = 1; i <= 3; i++)
+            targets = self MM_EEAddQuestEnt(targets, "nixie_tube_" + i, "NIXIE TUBE " + i);
+    }
+
+    if(isDefined(level.m_headphones))
+        targets = self MM_EEAddQuestTarget(targets, level.m_headphones, "AUDIO LOG");
+
+    if(!flag("plane_built"))
+    {
+        targets = self MM_EEAddQuestEnt(targets, "plane_craftable", "BUILD THE PLANE");
+        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_engine", "PLANE ENGINE");
+        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_clothes_pile", "PLANE CLOTH");
+        targets = self MM_EEAddQuestEnt(targets, "fake_veh_t6_dlc_zombie_part_control", "PLANE STEERING");
+        targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "PLANE FLIGHT");
+    }
+    else if(!flag("plane_crashed"))
+        targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "BOARD THE PLANE");
+
+    return targets;
+}
+
+MM_EECollectTranzitTargets(targets)
+{
+    navStarted = self MM_EETrackerStat("sq_transit_started") > 0;
+    navApplied = self MM_EETrackerStat("navcard_applied_zm_transit") > 0;
+
+    if(!navStarted || !navApplied)
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+    }
+
+    if(isDefined(level.sq_volume))
+        targets = self MM_EEAddQuestTarget(targets, level.sq_volume, "TOWER - EASTER EGG");
+
+    if(isDefined(level.power_station_zones))
+    {
+        foreach(zoneName in level.power_station_zones)
+        {
+            targets = self MM_EEAddQuestEnt(targets, zoneName, "MAXIS POWER / TURBINE");
+            targets = self MM_EEAddQuestStruct(targets, zoneName, "MAXIS POWER / TURBINE");
+        }
+    }
+
+    if(isDefined(level.sq_progress) && isDefined(level.sq_progress["rich"]))
+    {
+        if(!isDefined(level.sq_progress["rich"]["A_complete"]) || !level.sq_progress["rich"]["A_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "RICHTOFEN - JET GUN TOWER");
+        if(!isDefined(level.sq_progress["rich"]["C_complete"]) || !level.sq_progress["rich"]["C_complete"])
+            targets = self MM_EEAddQuestStructArray(targets, "screecher_escape", "targetname", "RICHTOFEN - EMP LIGHT");
+    }
+
+    if(isDefined(level.sq_progress) && isDefined(level.sq_progress["maxis"]))
+    {
+        if(!isDefined(level.sq_progress["maxis"]["A_complete"]) || !level.sq_progress["maxis"]["A_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - TOWER TURBINES");
+        if(!isDefined(level.sq_progress["maxis"]["B_complete"]) || !level.sq_progress["maxis"]["B_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - AVOGADRO");
+    }
+
+    return targets;
+}
+
+MM_EECollectDieRiseTargets(targets)
+{
+    navBuilt = flag("sq_nav_built");
+    navApplied = self MM_EETrackerStat("navcard_applied_zm_highrise") > 0;
+
+    if(!navBuilt || !navApplied)
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+    }
+
+    if(!flag("sq_atd_drg_puzzle_complete"))
+    {
+        targets = self MM_EEAddQuestEntArray(targets, "elevator_dragon_icon", "targetname", "DRAGON / ELEVATOR PUZZLE");
+        targets = self MM_EEAddQuestEntArray(targets, "trig_atd_drg_puzzle", "targetname", "DRAGON PUZZLE SWITCH");
+        targets = self MM_EEAddQuestEntArray(targets, "atd2_marker_lit", "targetname", "DRAGON ELEVATOR");
+        targets = self MM_EEAddQuestEntArray(targets, "atd2_marker_unlit", "script_noteworthy", "DRAGON ELEVATOR");
+    }
+
+    if(!flag("sq_ball_picked_up"))
+        targets = self MM_EEAddQuestEntArray(targets, "sq_dragon_lion_ball", "targetname", "LION BALL");
+
+    if(!flag("ssp1_complete"))
+    {
+        targets = self MM_EEAddQuestEntKey(targets, "sq_sliquify_r", "script_noteworthy", "RICHTOFEN - DRAGON BALL");
+        targets = self MM_EEAddQuestEntKey(targets, "sq_sliquify_m", "script_noteworthy", "RICHTOFEN - DRAGON BALL");
+    }
+
+    if(!flag("pts_1_springpads_placed") || !flag("pts_2_springpads_placed"))
+    {
+        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "SPRING PAD PLACEMENT");
+        targets = self MM_EEAddQuestStructArray(targets, "pts_ghoul", "targetname", "SPRING PAD PLACEMENT");
+        targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "TOWER LAUNCH");
+        targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "ZOMBIE LAUNCH TARGET");
+    }
+
+    if(flag("sq_branch_complete") && !flag("sq_tower_active"))
+    {
+        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_north", "script_noteworthy", "PUNCH TOWER LEGS");
+        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_south", "script_noteworthy", "PUNCH TOWER LEGS");
+        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_east", "script_noteworthy", "PUNCH TOWER LEGS");
+        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_west", "script_noteworthy", "PUNCH TOWER LEGS");
+    }
+
+    return targets;
+}
+
+MM_EECollectBuriedTargets(targets)
+{
+    stageName = "";
+    if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
+
+    navBuilt = flag("sq_nav_built");
+    navApplied = self MM_EETrackerStat("navcard_applied_zm_buried") > 0;
+
+    if(!navBuilt || !navApplied)
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+    }
+
+    if(stageName == "bt")
+    {
+        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "BUILD THE TOWER");
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "BUILD THE TOWER");
+    }
+    else if(stageName == "mta")
+    {
+        targets = self MM_EEAddQuestEntArray(targets, "sq_amplifier", "targetname", "AMPLIFIER");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_amplifier_spot", "targetname", "AMPLIFIER PLACEMENT");
+    }
+    else if(stageName == "gl")
+    {
+        targets = self MM_EEAddQuestStruct(targets, "sq_ghost_lamp_start", "LANTERN START");
+        targets = self MM_EEAddQuestEnt(targets, "sq_lantern_symbol", "LANTERN");
+        if(isDefined(level.m_lantern))
+            targets = self MM_EEAddQuestTarget(targets, level.m_lantern, "LANTERN");
+    }
+    else if(stageName == "ftl")
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_lantern_symbol", "CHARGE THE LANTERN");
+        if(isDefined(level.m_lantern))
+            targets = self MM_EEAddQuestTarget(targets, level.m_lantern, "CHARGE THE LANTERN");
+    }
+    else if(stageName == "ll" || stageName == "ts")
+    {
+        targets = self MM_EEAddQuestEntArray(targets, "sq_tunnel_sign", "targetname", "TUNNEL SIGN CODE");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_code_pos", "targetname", "TUNNEL CODE");
+    }
+    else if(stageName == "ctw")
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_wisp", "FOLLOW THE WISP");
+        targets = self MM_EEAddQuestEnt(targets, "sq_guillotine", "WISP DESTINATION");
+        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "WISP DESTINATION");
+    }
+    else if(stageName == "tpo")
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_tpo_timebomb_volume", "TIME BOMB OBJECTIVE");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_tpo_corpse_model", "targetname", "SEARCH CORPSE");
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "TIME BOMB SWITCH");
+    }
+    else if(stageName == "ip")
+    {
+        targets = self MM_EEAddQuestEnt(targets, "sq_bp_board", "FINAL PUZZLE BOARD");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_ml_lever", "targetname", "MAZE LEVER");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_bp_button", "targetname", "PUZZLE BUTTON");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_maze_lever", "targetname", "MAZE LEVER LOCATION");
+    }
+    else if(stageName == "ows")
+    {
+        targets = self MM_EEAddQuestStruct(targets, "sq_ows_fountain", "FOUNTAIN");
+        targets = self MM_EEAddQuestStructArray(targets, "otw_target_spot", "script_noteworthy", "SHOOT THE TARGETS");
+    }
+    else
+    {
+        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "BURIED QUEST START");
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "BURIED QUEST START");
+    }
+
+    return targets;
+}
+
+MM_EECreateQuestESPMarker()
+{
+    hud = newClientHudElem(self);
+    hud.archived = 1;
+    hud.foreground = false;
+    hud.hideWhenInMenu = true;
+    hud.sort = 2;
+    hud.alpha = 0;
+    hud.color = (0.2, 1.0, 1.0);
+    hud setShader("white", 6, 6);
+    hud setWaypoint(true, "white");
+    return hud;
+}
+
+MM_EECreateQuestESPLabel()
+{
+    hud = newClientHudElem(self);
+    hud.archived = 1;
+    hud.foreground = false;
+    hud.hideWhenInMenu = true;
+    hud.sort = 3;
+    hud.alpha = 0;
+    hud.color = (1.0, 0.9, 0.35);
+    hud.font = "objective";
+    hud.fontScale = 0.62;
+    hud setWaypoint(true, "white");
+    return hud;
+}
+
+MM_ToggleEETrackerESP()
+{
+    self MM_Toggle("eetargets", "Quest Object ESP", ::MM_EETrackerESPLoop);
+}
+
+MM_EETrackerESPLoop()
+{
+    self endon("disconnect");
+
+    if(isDefined(self.mmEEESPActive) && self.mmEEESPActive)
+        return;
+
+    self.mmEEESPActive = true;
+    maxMarkers = 24;
+    dots = [];
+    labels = [];
+
+    for(i = 0; i < maxMarkers; i++)
+    {
+        dots[i] = self MM_EECreateQuestESPMarker();
+        labels[i] = self MM_EECreateQuestESPLabel();
+    }
+
+    self.mmEEESPDots = dots;
+    self.mmEEESPLabels = labels;
+
+    for(;;)
+    {
+        if(!self MM_IsOn("eetargets"))
+            break;
+
+        targets = self MM_EECollectQuestTargets();
+        used = [];
+
+        for(slot = 0; slot < maxMarkers; slot++)
+        {
+            bestIdx = -1;
+            bestDistance = 999999999;
+
+            foreach(idx, item in targets)
+            {
+                if(isDefined(used[idx]) || !isDefined(item) || !isDefined(item.ent) || !isDefined(item.ent.origin))
+                    continue;
+
+                distanceNow = distancesquared(self.origin, item.ent.origin);
+                if(distanceNow < bestDistance)
+                {
+                    bestDistance = distanceNow;
+                    bestIdx = idx;
+                }
+            }
+
+            if(bestIdx < 0)
+            {
+                dots[slot].alpha = 0;
+                labels[slot].alpha = 0;
+                continue;
+            }
+
+            used[bestIdx] = true;
+            target = targets[bestIdx].ent;
+            markerPos = target.origin + (0, 0, 28);
+            distanceUnits = int(sqrt(bestDistance));
+
+            dots[slot].x = markerPos[0];
+            dots[slot].y = markerPos[1];
+            dots[slot].z = markerPos[2];
+            dots[slot].alpha = 1;
+
+            labels[slot].x = markerPos[0];
+            labels[slot].y = markerPos[1];
+            labels[slot].z = markerPos[2] + 10;
+            labels[slot] setText("^3" + targets[bestIdx].label + " ^7[" + distanceUnits + "u]");
+            labels[slot].alpha = 1;
+        }
+
+        wait 0.15;
+    }
+
+    foreach(dot in dots)
+    {
+        if(isDefined(dot))
+            dot destroy();
+    }
+    foreach(label in labels)
+    {
+        if(isDefined(label))
+            label destroy();
+    }
+
+    self.mmEEESPDots = [];
+    self.mmEEESPLabels = [];
+    self.mmEEESPActive = false;
 }
 
 MM_ToggleStatusHUD()
