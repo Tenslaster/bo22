@@ -523,6 +523,7 @@ MM_MenuTitle(name)
         case "allguns":        return "ALL REGISTERED MAP WEAPONS";
         case "powerups":       return "ALL REGISTERED POWERUPS";
         case "personal":       return "PERSONAL MODS";
+        case "permaperks":     return "PERSISTENT UPGRADES / PERMA-PERKS";
         case "survival":       return "SURVIVAL & AUTOMATION";
         case "weapons":        return "WEAPON MODS";
         case "heavyweapons":   return "HEAVY / EXPLOSIVE ARSENAL";
@@ -637,6 +638,7 @@ BuildMenuStructure()
     self addSubMenu("main", "Teleport & Saved Locations", "teleport");
     self addSubMenu("main", "World & Game Control", "world");
     self addSubMenu("main", "Personal Mods", "personal");
+    self addSubMenu("main", "Persistent Upgrades / Perma-Perks", "permaperks");
     self addSubMenu("main", "Survival & Automation", "survival");
     self addSubMenu("main", "Weapon Mods", "weapons");
     if(hasMapWeapons)
@@ -728,6 +730,9 @@ BuildMenuStructure()
     self addMenuOpt("world", "Advance 5 Rounds", ::MM_AdvanceRound, 5);
     self addMenuOpt("world", "Advance 10 Rounds", ::MM_AdvanceRound, 10);
     self addMenuOpt("world", "Reset World (Gravity + Speed)", ::MM_ResetWorld);
+
+    // --- PERSISTENT UPGRADES / PERMA-PERKS ---
+    self addMenuOpt("permaperks", "Unlock ALL Available Perma-Perks", ::MM_GiveAllPersistentUpgrades);
 
     // --- PERSONAL ---
     self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
@@ -2084,6 +2089,85 @@ DropWeapon()
     weap = self getCurrentWeapon();
     self dropItem(weap);
     self iprintln("Weapon dropped");
+}
+
+// Unlock every persistent upgrade registered by the active classic ZM map.
+// The stock monitor awards each upgrade and runs its normal activation thread.
+MM_GiveAllPersistentUpgrades()
+{
+    if(!isDefined(level.pers_upgrades) || !isDefined(level.pers_upgrades_keys) || level.pers_upgrades_keys.size < 1)
+    {
+        self iprintln("^1No Persistent Upgrades are registered on this map.");
+        self iprintln("^7Perma-Perks are available in classic TranZit, Die Rise and Buried.");
+        return;
+    }
+
+    if(!maps\\mp\\zombies\\_zm_pers_upgrades::is_pers_system_active())
+    {
+        self iprintln("^1Perma-Perks are disabled in this game mode.");
+        return;
+    }
+
+    if(isDefined(level.zm_disable_recording_stats) && level.zm_disable_recording_stats)
+    {
+        self iprintln("^1Stats recording is disabled; permanent unlocks cannot be saved.");
+        return;
+    }
+
+    if(!isDefined(self.stats_this_frame))
+        self.stats_this_frame = [];
+
+    changedStats = 0;
+    foreach(upgradeName in level.pers_upgrades_keys)
+    {
+        if(!isDefined(level.pers_upgrades[upgradeName]))
+            continue;
+
+        upgrade = level.pers_upgrades[upgradeName];
+        if(!isDefined(upgrade.stat_names) || !isDefined(upgrade.stat_desired_values))
+            continue;
+
+        statCount = upgrade.stat_names.size;
+        if(upgrade.stat_desired_values.size < statCount)
+            statCount = upgrade.stat_desired_values.size;
+
+        for(i = 0; i < statCount; i++)
+        {
+            statName = upgrade.stat_names[i];
+            desiredValue = upgrade.stat_desired_values[i];
+            if(!isDefined(statName) || !isDefined(desiredValue))
+                continue;
+
+            currentValue = self maps\\mp\\zombies\\_zm_stats::get_global_stat(statName);
+            if(!isDefined(currentValue))
+                currentValue = 0;
+
+            // Never reduce an existing stat value; only raise it to the unlock threshold.
+            if(currentValue < desiredValue)
+            {
+                self maps\\mp\\zombies\\_zm_stats::set_client_stat(statName, desiredValue, 0);
+                changedStats++;
+            }
+        }
+    }
+
+    // Let the stat-recording threads finish before asking the stock monitor to test.
+    wait 0.1;
+    self.pers_upgrade_force_test = 1;
+    wait 0.25;
+
+    unlocked = 0;
+    foreach(upgradeName in level.pers_upgrades_keys)
+    {
+        if(isDefined(self.pers_upgrades_awarded[upgradeName]) && self.pers_upgrades_awarded[upgradeName])
+            unlocked++;
+    }
+
+    self iprintlnbold("^2PERMA-PERK UNLOCK CHECK COMPLETE");
+    self iprintln("^7Unlocked: ^2" + unlocked + " ^7/ ^2" + level.pers_upgrades_keys.size + " ^7available upgrades");
+
+    if(unlocked < level.pers_upgrades_keys.size)
+        self iprintln("^3Some upgrades were not confirmed. Check the current map, mode and stat settings.");
 }
 
 // Collect every perk the current map actually registers:
