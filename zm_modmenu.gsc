@@ -542,6 +542,7 @@ MM_MenuTitle(name)
         case "transit":        return "TRANZIT TOOLS";
         case "highrise":       return "DIE RISE TOOLS";
         case "buried":         return "BURIED TOOLS";
+        case "eetracker":      return "EASTER EGG TRACKER";
         case "players":        return "PLAYERS";
         case "player_actions": return "PLAYER ACTIONS";
     }
@@ -656,8 +657,13 @@ BuildMenuStructure()
         self addSubMenu("main", "Die Rise Tools", "highrise");
     if(level.script == "zm_buried")
         self addSubMenu("main", "Buried Tools", "buried");
+    if(self MM_EETrackerAvailable())
+        self addSubMenu("main", "Easter Egg Tracker", "eetracker");
     if(self isHost())
         self addSubMenu("main", "Players Menu", "players");
+
+    if(self MM_EETrackerAvailable())
+        self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
 
     // --- FREE ROAM / MAP BOUNDARIES ---
     self addToggleOpt("freeroam", "Disable Out-of-Map Death Monitor", ::ToggleNoDeathBarrier, "noboundary");
@@ -2425,6 +2431,377 @@ MM_InfAmmoAllLoop()
             self MM_RefillWeapon(weap);
         wait 0.20;
     }
+}
+
+// ============================================================================
+ // LIVE EASTER EGG TRACKER — Mob of the Dead, TranZit, Buried and Die Rise
+ // Reads the stock quest flags / sidequest stats; it does not change quest state.
+ // ============================================================================
+
+MM_EETrackerAvailable()
+{
+    return level.script == "zm_prison" || level.script == "zm_transit" || level.script == "zm_buried" || level.script == "zm_highrise";
+}
+
+MM_EETrackerInit()
+{
+    if(!self MM_EETrackerAvailable())
+        return;
+
+    if(!isDefined(self.mmToggle))
+        self.mmToggle = [];
+
+    if(!isDefined(self.mmToggle["eetracker"]))
+        self.mmToggle["eetracker"] = true;
+
+    if(!isDefined(self.mmEETrackerStarted) || !self.mmEETrackerStarted)
+    {
+        self.mmEETrackerStarted = true;
+        self thread MM_EETrackerLoop();
+    }
+}
+
+MM_ToggleEETracker()
+{
+    self MM_Flip("eetracker", "Easter Egg Tracker");
+}
+
+MM_EETrackerLoop()
+{
+    self endon("disconnect");
+    hud = undefined;
+
+    for(;;)
+    {
+        if(self MM_IsOn("eetracker"))
+        {
+            if(!isDefined(hud))
+            {
+                hud = self MM_NewText(385, 86, 0.68);
+                hud.color = (0.85, 1, 0.85);
+                hud.sort = 1003;
+            }
+
+            hud setText(self MM_EETrackerBuildText());
+        }
+        else if(isDefined(hud))
+        {
+            hud destroy();
+            hud = undefined;
+        }
+
+        wait 0.45;
+    }
+
+    if(isDefined(hud))
+        hud destroy();
+}
+
+MM_EETrackerStatus(done)
+{
+    if(done)
+        return "^2[OK]";
+    return "^1[--]";
+}
+
+MM_EETrackerStageMark(stepIndex, currentIndex, questDone)
+{
+    if(questDone || stepIndex < currentIndex)
+        return "^2[OK]";
+    if(stepIndex == currentIndex)
+        return "^3[NOW]";
+    return "^1[--]";
+}
+
+MM_EETrackerStat(statName)
+{
+    value = self maps\mp\zombies\_zm_stats::get_global_stat(statName);
+    if(!isDefined(value))
+        value = 0;
+    return value;
+}
+
+MM_EETrackerBuildText()
+{
+    if(level.script == "zm_prison")
+        return self MM_EETrackerMob();
+    if(level.script == "zm_transit")
+        return self MM_EETrackerTranzit();
+    if(level.script == "zm_buried")
+        return self MM_EETrackerBuried();
+    if(level.script == "zm_highrise")
+        return self MM_EETrackerDieRise();
+
+    return "^1EASTER EGG TRACKER\n^7This map is not supported.";
+}
+
+MM_EETrackerMob()
+{
+    dogs = flag("quest_completed_thrice");
+    spoon = flag("spoon_obtained");
+    blundergat = flag("warden_blundergat_obtained");
+    nixie = flag("nixie_puzzle_completed");
+    planeBuilt = flag("plane_built");
+    boarded = flag("plane_boarded");
+    departed = flag("plane_departed");
+    zapped = flag("plane_zapped");
+    crashed = flag("plane_crashed");
+
+    parts = 0;
+    if(flag("key_found")) parts++;
+    if(flag("cloth_found")) parts++;
+    if(flag("fueltanks_found")) parts++;
+    if(flag("engine_found")) parts++;
+    if(flag("steering_found")) parts++;
+    if(flag("rigging_found")) parts++;
+
+    goodEnding = self MM_EETrackerStat("prison_ee_good_ending") > 0;
+    badEnding = self MM_EETrackerStat("prison_ee_bad_ending") > 0;
+
+    endingText = "^3Pending";
+    if(goodEnding)
+        endingText = "^2Crew victory";
+    else if(badEnding)
+        endingText = "^1Weasel victory";
+
+    nextText = "Complete the prerequisite quests";
+    if(dogs && spoon && blundergat && !nixie)
+        nextText = "Solve all four Nixie-tube codes";
+    else if(nixie && !planeBuilt)
+        nextText = "Follow the audio logs and assemble the plane";
+    else if(planeBuilt && !boarded)
+        nextText = "Board the plane for the final flight";
+    else if(boarded && !departed)
+        nextText = "Wait for take-off";
+    else if(departed && !zapped)
+        nextText = "Reach the Golden Gate Bridge";
+    else if(zapped && !crashed)
+        nextText = "Finish the crash sequence";
+    else if(crashed && !goodEnding && !badEnding)
+        nextText = "Finish the final Weasel showdown";
+
+    return "^2MOB OF THE DEAD — POP GOES THE WEASEL"
+        + "\n^7Three dog heads: " + self MM_EETrackerStatus(dogs)
+        + "   Spoon: " + self MM_EETrackerStatus(spoon)
+        + "\n^7Warden's Blundergat: " + self MM_EETrackerStatus(blundergat)
+        + "   Nixie codes: " + self MM_EETrackerStatus(nixie)
+        + "\n^7Plane parts: ^3" + parts + "/6"
+        + "   Build: " + self MM_EETrackerStatus(planeBuilt)
+        + "\n^7Flight: Board " + self MM_EETrackerStatus(boarded)
+        + " Depart " + self MM_EETrackerStatus(departed)
+        + "\n^7Bridge " + self MM_EETrackerStatus(zapped)
+        + " Crash " + self MM_EETrackerStatus(crashed)
+        + "\n^7Ending: " + endingText
+        + "\n^3NEXT: ^7" + nextText;
+}
+
+MM_EETrackerTranzit()
+{
+    navcard = self MM_EETrackerStat("navcard_applied_zm_transit") > 0;
+
+    // These stock counters are advanced by the original Maxis / Richtofen quest scripts.
+    maxA = self MM_EETrackerStat("sq_transit_maxis_stage_2") > 0;
+    maxB = self MM_EETrackerStat("sq_transit_maxis_stage_3") > 0;
+    maxC = self MM_EETrackerStat("sq_transit_maxis_complete") > 0;
+    richA = self MM_EETrackerStat("sq_transit_rich_stage_2") > 0;
+    richB = self MM_EETrackerStat("sq_transit_rich_stage_3") > 0;
+    richC = self MM_EETrackerStat("sq_transit_rich_complete") > 0;
+
+    maxNext = "Place two powered turbines at the tower";
+    if(maxA)
+        maxNext = "Stun Avogadro at the tower";
+    if(maxB)
+        maxNext = "Finish the remaining Maxis light tasks";
+    if(maxC)
+        maxNext = "Maxis route complete";
+
+    richNext = "Build the Jet Gun and fire it at the tower";
+    if(richA)
+        richNext = "Lure 25 zombies into the tower";
+    if(richB)
+        richNext = "EMP the four safety lights";
+    if(richC)
+        richNext = "Richtofen route complete";
+
+    return "^2TRANZIT — TOWER EASTER EGG"
+        + "\n^7Navcard applied: " + self MM_EETrackerStatus(navcard)
+        + "\n^7MAXIS A/B/C: " + self MM_EETrackerStatus(maxA)
+        + " " + self MM_EETrackerStatus(maxB)
+        + " " + self MM_EETrackerStatus(maxC)
+        + "\n^7M NEXT: ^3" + maxNext
+        + "\n^7RICHTOFEN A/B/C: " + self MM_EETrackerStatus(richA)
+        + " " + self MM_EETrackerStatus(richB)
+        + " " + self MM_EETrackerStatus(richC)
+        + "\n^7R NEXT: ^3" + richNext;
+}
+
+MM_EETrackerDieRise()
+{
+    navBuilt = flag("sq_nav_built");
+    navcard = self MM_EETrackerStat("navcard_applied_zm_highrise") > 0;
+    dragon = flag("sq_atd_drg_puzzle_complete");
+    lionBall = flag("sq_ball_picked_up");
+
+    richtofenBalls = flag("ssp1_complete");
+    richtofenPads = flag("pts_1_springpads_placed");
+    maxisRebirth = flag("ssp2_resurrection_done") && flag("ssp2_statue_complete");
+    maxisPads = flag("pts_2_springpads_placed");
+
+    branchDone = flag("sq_branch_complete");
+    towerActive = flag("sq_tower_active");
+    richtofenDone = self MM_EETrackerStat("sq_highrise_rich_complete") > 0;
+    maxisDone = self MM_EETrackerStat("sq_highrise_maxis_complete") > 0;
+
+    stageName = "";
+    if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
+
+    nextText = "Build the Navcard computer";
+    if(navBuilt && !navcard)
+        nextText = "Apply the correct Navcard";
+    else if(navcard && !dragon)
+        nextText = "Solve the dragon / elevator sequence";
+    else if(dragon && !lionBall)
+        nextText = "Shoot and collect the lion ball";
+    else if(lionBall && !branchDone)
+    {
+        if(stageName == "ssp_1")
+            nextText = "Richtofen: liquify both dragon balls";
+        else if(stageName == "pts_1")
+            nextText = "Richtofen: place spring pads and launch zombies";
+        else if(stageName == "ssp_2")
+            nextText = "Maxis: complete the corpse and reincarnation steps";
+        else if(stageName == "pts_2")
+            nextText = "Maxis: finish the generator spring-pad steps";
+        else
+            nextText = "Complete the active Richtofen or Maxis branch";
+    }
+    else if(branchDone && !towerActive)
+        nextText = "Punch the tower legs in the displayed order";
+    else if(towerActive && !richtofenDone && !maxisDone)
+        nextText = "Finish the tower sequence";
+    else if(richtofenDone || maxisDone)
+        nextText = "Die Rise main quest complete";
+
+    routeText = "Not selected";
+    if(flag("sq_ric_tower_complete"))
+        routeText = "Richtofen";
+    else if(flag("sq_max_tower_complete"))
+        routeText = "Maxis";
+
+    return "^2DIE RISE — TOWER EASTER EGG"
+        + "\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
+        + "   Navcard: " + self MM_EETrackerStatus(navcard)
+        + "\n^7Dragon puzzle: " + self MM_EETrackerStatus(dragon)
+        + "   Lion ball: " + self MM_EETrackerStatus(lionBall)
+        + "\n^7Richtofen balls / pads: " + self MM_EETrackerStatus(richtofenBalls)
+        + " " + self MM_EETrackerStatus(richtofenPads)
+        + "\n^7Maxis rebirth / pads: " + self MM_EETrackerStatus(maxisRebirth)
+        + " " + self MM_EETrackerStatus(maxisPads)
+        + "\n^7Route: ^3" + routeText
+        + "   Tower: " + self MM_EETrackerStatus(towerActive)
+        + "\n^3NEXT: ^7" + nextText;
+}
+
+MM_EETrackerBuried()
+{
+    navBuilt = flag("sq_nav_built");
+    navcard = self MM_EETrackerStat("navcard_applied_zm_buried") > 0;
+    richDone = self MM_EETrackerStat("sq_buried_rich_complete") > 0;
+    maxDone = self MM_EETrackerStat("sq_buried_maxis_complete") > 0;
+    questDone = richDone || maxDone;
+
+    routeText = "Not selected";
+    if(flag("sq_is_ric_tower_built"))
+        routeText = "Richtofen";
+    else if(flag("sq_is_max_tower_built"))
+        routeText = "Maxis";
+
+    stageName = "";
+    if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
+
+    stageIndex = -1;
+    currentText = "Build a tower and start the side quest";
+    if(stageName == "bt")
+    {
+        stageIndex = 0;
+        currentText = "Build the first tower — place its four objects";
+    }
+    else if(stageName == "mta")
+    {
+        stageIndex = 1;
+        currentText = "Complete the four amplifier task";
+    }
+    else if(stageName == "gl")
+    {
+        stageIndex = 2;
+        currentText = "Find and collect the lantern";
+    }
+    else if(stageName == "ftl")
+    {
+        stageIndex = 3;
+        currentText = "Charge the lantern with zombie souls";
+    }
+    else if(stageName == "ll")
+    {
+        stageIndex = 4;
+        currentText = "Read the tunnel-sign code";
+    }
+    else if(stageName == "ts")
+    {
+        stageIndex = 5;
+        currentText = "Activate the signs in the correct sequence";
+    }
+    else if(stageName == "ctw")
+    {
+        stageIndex = 6;
+        currentText = "Guide the wisp to the guillotine";
+    }
+    else if(stageName == "tpo")
+    {
+        stageIndex = 7;
+        currentText = "Complete the Time Bomb stage";
+    }
+    else if(stageName == "ip")
+    {
+        stageIndex = 8;
+        currentText = "Solve the final button / lever puzzle";
+    }
+    else if(stageName == "ows")
+    {
+        stageIndex = 9;
+        currentText = "Complete the moving-target challenge";
+    }
+
+    if(questDone)
+        stageIndex = 10;
+
+    nextText = currentText;
+    if(!navBuilt)
+        nextText = "Build the Navcard computer";
+    else if(!navcard)
+        nextText = "Apply the correct Navcard";
+    else if(questDone)
+        nextText = "Buried main quest complete";
+
+    return "^2BURIED — MAZE / TOWER EASTER EGG"
+        + "\n^7Nav computer: " + self MM_EETrackerStatus(navBuilt)
+        + "   Navcard: " + self MM_EETrackerStatus(navcard)
+        + "\n^7Route: ^3" + routeText
+        + "   Wisp: " + self MM_EETrackerStatus(flag("sq_wisp_success"))
+        + "\n^7Stages  BT " + self MM_EETrackerStageMark(0, stageIndex, questDone)
+        + "  MTA " + self MM_EETrackerStageMark(1, stageIndex, questDone)
+        + "  GL " + self MM_EETrackerStageMark(2, stageIndex, questDone)
+        + "  FTL " + self MM_EETrackerStageMark(3, stageIndex, questDone)
+        + "  LL " + self MM_EETrackerStageMark(4, stageIndex, questDone)
+        + "\n^7        TS " + self MM_EETrackerStageMark(5, stageIndex, questDone)
+        + "  CTW " + self MM_EETrackerStageMark(6, stageIndex, questDone)
+        + "  TPO " + self MM_EETrackerStageMark(7, stageIndex, questDone)
+        + "  IP " + self MM_EETrackerStageMark(8, stageIndex, questDone)
+        + "  OWS " + self MM_EETrackerStageMark(9, stageIndex, questDone)
+        + "\n^7Current: ^3" + currentText
+        + "\n^3NEXT: ^7" + nextText;
 }
 
 MM_ToggleStatusHUD()
@@ -5778,6 +6155,8 @@ MM_ApplySpawnSettings()
         return;
 
     wait 0.10;
+
+    self MM_EETrackerInit();
 
     if(self MM_IsOn("god"))
     {
