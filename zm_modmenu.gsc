@@ -1979,23 +1979,23 @@ MM_GiveRocketLoadout()
 
     if(MM_WeaponKnown("usrpg_zm"))
     {
-        self maps\\mp\\zombies\\_zm_weapons::weapon_give("usrpg_zm", false);
+        self maps\mp\zombies\_zm_weapons::weapon_give("usrpg_zm", false);
         given++;
     }
     else if(MM_WeaponKnown("usrpg_upgraded_zm"))
     {
-        self maps\\mp\\zombies\\_zm_weapons::weapon_give("usrpg_upgraded_zm", true);
+        self maps\mp\zombies\_zm_weapons::weapon_give("usrpg_upgraded_zm", true);
         given++;
     }
 
     if(MM_WeaponKnown("m32_zm"))
     {
-        self maps\\mp\\zombies\\_zm_weapons::weapon_give("m32_zm", false);
+        self maps\mp\zombies\_zm_weapons::weapon_give("m32_zm", false);
         given++;
     }
     else if(MM_WeaponKnown("m32_upgraded_zm"))
     {
-        self maps\\mp\\zombies\\_zm_weapons::weapon_give("m32_upgraded_zm", true);
+        self maps\mp\zombies\_zm_weapons::weapon_give("m32_upgraded_zm", true);
         given++;
     }
 
@@ -2102,7 +2102,7 @@ MM_GiveAllPersistentUpgrades()
         return;
     }
 
-    if(!maps\\mp\\zombies\\_zm_pers_upgrades::is_pers_system_active())
+    if(!maps\mp\zombies\_zm_pers_upgrades::is_pers_system_active())
     {
         self iprintln("^1Perma-Perks are disabled in this game mode.");
         return;
@@ -2138,14 +2138,14 @@ MM_GiveAllPersistentUpgrades()
             if(!isDefined(statName) || !isDefined(desiredValue))
                 continue;
 
-            currentValue = self maps\\mp\\zombies\\_zm_stats::get_global_stat(statName);
+            currentValue = self maps\mp\zombies\_zm_stats::get_global_stat(statName);
             if(!isDefined(currentValue))
                 currentValue = 0;
 
             // Never reduce an existing stat value; only raise it to the unlock threshold.
             if(currentValue < desiredValue)
             {
-                self maps\\mp\\zombies\\_zm_stats::set_client_stat(statName, desiredValue, 0);
+                self maps\mp\zombies\_zm_stats::set_client_stat(statName, desiredValue, 0);
                 changedStats++;
             }
         }
@@ -2363,8 +2363,8 @@ MM_AutoReviveLoop()
     self endon("mm_stop_autorevive");
     for(;;)
     {
-        if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
-            self maps\\mp\\zombies\\_zm_laststand::auto_revive(self);
+        if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+            self maps\mp\zombies\_zm_laststand::auto_revive(self);
         wait 0.20;
     }
 }
@@ -2385,8 +2385,8 @@ MM_TeamReviveLoop()
         {
             if(!isDefined(player))
                 continue;
-            if(player maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
-                player maps\\mp\\zombies\\_zm_laststand::auto_revive(self);
+            if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+                player maps\mp\zombies\_zm_laststand::auto_revive(self);
         }
         wait 0.20;
     }
@@ -2403,7 +2403,7 @@ MM_AutoPerksLoop()
     self endon("mm_stop_autoperks");
     for(;;)
     {
-        if(!self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
+        if(!self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
             self MM_GivePerks();
         wait 3.0;
     }
