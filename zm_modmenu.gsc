@@ -3101,7 +3101,6 @@ MM_EECollectDieRiseTargets(targets)
         return targets;
     }
 
-    // The first Die Rise stage is shared by both routes.
     if(!flag("sq_atd_drg_puzzle_complete"))
     {
         elevatorTriggers = array("elevator_bldg1b_trigger", "elevator_bldg1d_trigger", "elevator_bldg3b_trigger", "elevator_bldg3c_trigger");
@@ -3123,25 +3122,30 @@ MM_EECollectDieRiseTargets(targets)
         return targets;
     }
 
-    // Die Rise starts the Maxis and Richtofen branches in parallel. Show both.
+    // Richtofen's PTS1 uses pts_ghoul (not pts_lion).
     if(!flag("ssp1_ball0_complete") || !flag("ssp1_ball1_complete"))
         targets = self MM_EEAddQuestEntArray(targets, "sq_sliquify_ball", "targetname", "RICHTOFEN - LIQUIFY BALL");
 
-    if(!flag("ssp2_resurrection_done"))
-        targets = self MM_EEAddQuestEnt(targets, "corpse_room_trigger", "MAXIS - CORPSE ROOM");
-
     if(!flag("pts_1_springpads_placed"))
+        targets = self MM_EEAddQuestStructArray(targets, "pts_ghoul", "targetname", "RICHTOFEN - PLACE TRAMPLE STEAM");
+    else if(!isDefined(level.n_launched_zombies) || level.n_launched_zombies < 16)
     {
-        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "RICHTOFEN - TRAMPLE STEAM SPOT");
         targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "RICHTOFEN - LAUNCH ZOMBIES");
         targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "RICHTOFEN - TOWER TARGET");
     }
 
+    // Maxis' SSP2 resurrection is separate and progresses in parallel with Richtofen.
+    if(!flag("ssp2_resurrection_done"))
+        targets = self MM_EEAddQuestEnt(targets, "corpse_room_trigger", "MAXIS - CORPSE ROOM");
+
+    // Maxis PTS2 uses pts_lion springpad spots and two ball placements,
+    // not the Richtofen zombie-launch tower target.
     if(!flag("pts_2_springpads_placed"))
+        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "MAXIS - PLACE TRAMPLE STEAM");
+    else if(!flag("pts_2_generator_1_started") || !flag("pts_2_generator_2_started"))
     {
-        targets = self MM_EEAddQuestStructArray(targets, "pts_ghoul", "targetname", "MAXIS - TRAMPLE STEAM SPOT");
-        targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "MAXIS - LAUNCH ZOMBIES");
-        targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "MAXIS - TOWER TARGET");
+        targets = self MM_EEAddQuestEntArray(targets, "ball_place_trig", "targetname", "MAXIS - PLACE BALL IN GENERATOR");
+        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "MAXIS - BALL GENERATOR SPOT");
     }
 
     if(flag("sq_branch_complete") && !flag("sq_tower_active") &&
@@ -3395,16 +3399,22 @@ MM_EEGuideDieRise()
         if(!flag("ssp1_ball0_complete") || !flag("ssp1_ball1_complete"))
             guide += "^3RICHTOFEN:^7 Use the Sliquifier on both dragon balls.";
         else if(!flag("pts_1_springpads_placed"))
-            guide += "^3RICHTOFEN:^7 Place Trample Steams on lion spots and launch zombies into the tower.";
+            guide += "^3RICHTOFEN:^7 Place Trample Steams on the GHOUL spots.";
+        else if(!isDefined(level.n_launched_zombies) || level.n_launched_zombies < 16)
+            guide += "^3RICHTOFEN:^7 Launch 16 zombies into the marked tower target.";
         else
-            guide += "^2RICHTOFEN:^7 Branch complete.";
+            guide += "^2RICHTOFEN:^7 PTS launch objective complete.";
 
         if(!flag("ssp2_resurrection_done"))
             guide += "\n^3MAXIS:^7 Complete the corpse-room resurrection with the Sliquifier.";
         else if(!flag("pts_2_springpads_placed"))
-            guide += "\n^3MAXIS:^7 Place Trample Steams on ghoul spots and launch zombies to the tower.";
+            guide += "\n^3MAXIS:^7 Place Trample Steams on the LION spots.";
+        else if(!flag("pts_2_generator_1_started"))
+            guide += "\n^3MAXIS:^7 Carry a ball to the first marked generator placement trigger.";
+        else if(!flag("pts_2_generator_2_started"))
+            guide += "\n^3MAXIS:^7 Carry the second ball to the remaining generator placement trigger.";
         else
-            guide += "\n^2MAXIS:^7 Branch complete.";
+            guide += "\n^2MAXIS:^7 Both generator balls placed.";
 
         if(flag("sq_branch_complete") && !flag("sq_tower_active"))
         {
@@ -3416,8 +3426,9 @@ MM_EEGuideDieRise()
             guide += "\n^2FINAL:^7 Tower sequence active.";
     }
 
-    guide += "\n^7SSP = Sliquifier puzzle; PTS = Trample Steam launch stage.";
-    guide += "\n^7Cyan markers show both branches until their objectives are complete.";
+    guide += "\n^7Richtofen: ghoul pads + 16 zombie launches.";
+    guide += "\n^7Maxis: lion pads + two ball placements.";
+    guide += "\n^7Both branches run in parallel; follow both status lines.";
     return guide;
 }
 
