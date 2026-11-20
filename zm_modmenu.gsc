@@ -2950,7 +2950,10 @@ MM_EECollectMobTargets(targets)
             targets = self MM_EEAddQuestTarget(targets, spot, "SOUL CATCHER - FEED 6 ZOMBIES");
     }
     else if(flag("soul_catchers_charged"))
-        targets = self MM_EEAddQuestEntKey(targets, "retriever_pickup_trigger", "script_noteworthy", "HELL'S RETRIEVER");
+    {
+        targets = self MM_EEAddQuestEnt(targets, "trig_cellblock_hellhole", "THROW TOMAHAWK INTO HELLHOLE");
+        targets = self MM_EEAddQuestEntKey(targets, "retriever_pickup_trigger", "script_noteworthy", "HELL'S RETRIEVER PICKUP");
+    }
 
     if(!flag("key_found"))
         targets = self MM_EEAddCraftablePieceTarget(targets, "quest_key1", "p6_zm_al_key", "WARDEN KEY");
@@ -3315,7 +3318,7 @@ MM_EEGuideMob()
     guide = "^2MOB OF THE DEAD - POP GOES THE WEASEL\n";
     guide += "^3KEY:^7 " + self MM_EETrackerStatus(flag("key_found")) + " Warden's key / Afterlife access.";
     guide += "\n^3SOUL CATCHERS:^7 " + self MM_EETrackerStatus(flag("soul_catchers_charged")) + " Feed 6 zombies to each of the 3 wolf heads.";
-    guide += "\n^3HELL'S RETRIEVER:^7 Charge the heads, then complete the hellhole pickup challenge.";
+    guide += "\n^3HELL'S RETRIEVER:^7 After round 10, complete a bridge round using only the Tomahawk; hit the hellhole and collect it.";
     guide += "\n^3SPOON:^7 " + self MM_EETrackerStatus(flag("spoon_obtained")) + " Collect it at the Afterlife portal.";
     guide += "\n^3BLUNDERGAT:^7 " + self MM_EETrackerStatus(flag("warden_blundergat_obtained")) + " Collect the skulls with the Retriever.";
     guide += "\n^3NML TRIPS:^7 " + self MM_EETrackerStatus(flag("quest_completed_thrice")) + " Return from the bridge three times; use a chair after each crash.";
