@@ -665,7 +665,7 @@ BuildMenuStructure()
     if(self MM_EETrackerAvailable())
     {
         self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
-        self addToggleOpt("eetracker", "Quest Object ESP (Labels + Distance)", ::MM_ToggleEETrackerESP, "eetargets");
+        self addToggleOpt("eetracker", "Quest Guide ESP (Steps + Object Markers)", ::MM_ToggleEETrackerESP, "eetargets");
     }
 
     // --- FREE ROAM / MAP BOUNDARIES ---
@@ -2473,6 +2473,7 @@ MM_EETrackerLoop()
 {
     self endon("disconnect");
     hud = undefined;
+    lastTrackerText = undefined;
 
     for(;;)
     {
@@ -2485,7 +2486,12 @@ MM_EETrackerLoop()
                 hud.sort = 1003;
             }
 
-            hud setText(self MM_EETrackerBuildText());
+            trackerText = self MM_EETrackerBuildText();
+            if(!isDefined(lastTrackerText) || lastTrackerText != trackerText)
+            {
+                hud setText(trackerText);
+                lastTrackerText = trackerText;
+            }
         }
         else if(isDefined(hud))
         {
@@ -2870,6 +2876,53 @@ MM_EEAddQuestStructArray(targets, structName, keyName, label)
     return targets;
 }
 
+
+MM_EEAddQuestStructKey(targets, structName, keyName, label)
+{
+    spot = getstruct(structName, keyName);
+    return self MM_EEAddQuestTarget(targets, spot, label);
+}
+
+MM_EEAddQuestStructArrayNoKey(targets, structName, label)
+{
+    spots = getstructarray(structName);
+    foreach(spot in spots)
+        targets = self MM_EEAddQuestTarget(targets, spot, label);
+    return targets;
+}
+
+// Same spawned-piece registry lookup used by Mob of the Dead's stock quest scripts.
+MM_EEFindCraftablePieceModel(craftableName, pieceName)
+{
+    if(!isDefined(level.a_uts_craftables))
+        return undefined;
+
+    foreach(utsCraftable in level.a_uts_craftables)
+    {
+        if(!isDefined(utsCraftable) || !isDefined(utsCraftable.craftablestub) ||
+           !isDefined(utsCraftable.craftablestub.name) ||
+           utsCraftable.craftablestub.name != craftableName)
+            continue;
+
+        if(!isDefined(utsCraftable.craftablespawn) || !isDefined(utsCraftable.craftablespawn.a_piecespawns))
+            return undefined;
+
+        foreach(pieceSpawn in utsCraftable.craftablespawn.a_piecespawns)
+        {
+            if(isDefined(pieceSpawn) && isDefined(pieceSpawn.piecename) &&
+               pieceSpawn.piecename == pieceName && isDefined(pieceSpawn.model))
+                return pieceSpawn.model;
+        }
+    }
+    return undefined;
+}
+
+MM_EEAddCraftablePieceTarget(targets, craftableName, pieceName, label)
+{
+    model = self MM_EEFindCraftablePieceModel(craftableName, pieceName);
+    return self MM_EEAddQuestTarget(targets, model, label);
+}
+
 MM_EECollectQuestTargets()
 {
     targets = [];
@@ -3096,6 +3149,178 @@ MM_EECollectBuriedTargets(targets)
     }
 
     return targets;
+}
+
+
+// Compact Origins-style, stage-aware walkthrough. Rows are cached by the ESP loop.
+MM_EETrackerGuideBuildText()
+{
+    if(level.script == "zm_prison")
+        return self MM_EEGuideMob();
+    if(level.script == "zm_transit")
+        return self MM_EEGuideTranzit();
+    if(level.script == "zm_highrise")
+        return self MM_EEGuideDieRise();
+    if(level.script == "zm_buried")
+        return self MM_EEGuideBuried();
+    return "^1QUEST GUIDE\n^7Unsupported map.";
+}
+
+MM_EEGuideMob()
+{
+    guide = "^2MOB OF THE DEAD - QUEST GUIDE\n";
+    if(!flag("quest_completed_thrice"))
+        guide += "^3STEP 1:^7 Charge all three dog heads around the prison.";
+    else if(!flag("warden_blundergat_obtained"))
+        guide += "^3STEP 2:^7 Use Hell's Retriever to collect the Warden's skulls.";
+    else if(!flag("key_found"))
+        guide += "^3STEP 3:^7 Find the Warden's key and open the Afterlife route.";
+    else if(!flag("nixie_puzzle_completed"))
+        guide += "^3STEP 4:^7 Solve the three Nixie tubes in the correct sequence.";
+    else if(!flag("plane_built"))
+        guide += "^3STEP 5:^7 Collect cloth, fuel tanks, engine, steering and rigging; build the plane.";
+    else if(!flag("plane_boarded"))
+        guide += "^3STEP 6:^7 Board the plane at the roof flight trigger.";
+    else if(!flag("plane_departed"))
+        guide += "^3STEP 7:^7 Stay aboard and wait for take-off.";
+    else if(!flag("plane_zapped"))
+        guide += "^3STEP 8:^7 Reach the bridge and shoot the Warden.";
+    else if(!flag("plane_crashed"))
+        guide += "^3STEP 9:^7 Finish the crash sequence.";
+    else
+        guide += "^3STEP 10:^7 Finish the final Weasel showdown.";
+    guide += "\n^7CYAN MARKERS:^3 Current objects and interactions to visit.";
+    guide += "\n^7Refuel: collect all five cans when the fuel stage starts.";
+    guide += "\n^7Optional: Golden Spork and audio logs are marked too.";
+    guide += "\n^7The guide advances when stock quest flags change.";
+    return guide;
+}
+
+MM_EEGuideTranzit()
+{
+    navcard = self MM_EETrackerStat("navcard_applied_zm_transit") > 0;
+    maxA = self MM_EETrackerStat("sq_transit_maxis_stage_2") > 0;
+    maxB = self MM_EETrackerStat("sq_transit_maxis_stage_3") > 0;
+    maxC = self MM_EETrackerStat("sq_transit_maxis_complete") > 0;
+    richA = self MM_EETrackerStat("sq_transit_rich_stage_2") > 0;
+    richB = self MM_EETrackerStat("sq_transit_rich_stage_3") > 0;
+    richC = self MM_EETrackerStat("sq_transit_rich_complete") > 0;
+
+    guide = "^2TRANZIT - TOWER QUEST GUIDE\n";
+    if(!navcard)
+        guide += "^3SETUP:^7 Build the Navcard table and apply the correct card.";
+    else
+        guide += "^2SETUP:^7 Navcard applied.";
+    if(!maxA)
+        guide += "\n^3MAXIS A:^7 Place two powered turbines inside the tower area.";
+    else if(!maxB)
+        guide += "\n^3MAXIS B:^7 Stun Avogadro inside the tower while both turbines are powered.";
+    else if(!maxC)
+        guide += "\n^3MAXIS C:^7 Power two different Screecher escape-light zones with turbines.";
+    else
+        guide += "\n^2MAXIS:^7 Route complete.";
+    if(!richA)
+        guide += "\n^3RICHTOFEN A:^7 Build the Jet Gun and fire it at the tower.";
+    else if(!richB)
+        guide += "\n^3RICHTOFEN B:^7 Lure and kill 25 zombies inside the tower objective area.";
+    else if(!richC)
+        guide += "\n^3RICHTOFEN C:^7 EMP all four safety lights after stages A and B.";
+    else
+        guide += "\n^2RICHTOFEN:^7 Route complete.";
+    guide += "\n^7Cyan markers point to the current tower / light objectives.";
+    return guide;
+}
+
+MM_EEGuideDieRise()
+{
+    navBuilt = flag("sq_nav_built");
+    navcard = self MM_EETrackerStat("navcard_applied_zm_highrise") > 0;
+    stageName = "";
+    if(isDefined(level._cur_stage_name))
+        stageName = level._cur_stage_name;
+    else if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
+
+    guide = "^2DIE RISE - TOWER QUEST GUIDE\n";
+    if(!navBuilt)
+        guide += "^3SETUP:^7 Build the Navcard computer.";
+    else if(!navcard)
+        guide += "^3SETUP:^7 Apply the correct Navcard.";
+    else if(!flag("sq_atd_drg_puzzle_complete"))
+        guide += "^3STEP 1:^7 Stand on all four marked elevators, then activate dragon symbols in VO order.";
+    else if(!flag("sq_ball_picked_up"))
+        guide += "^3STEP 2:^7 Shoot the dragon / lion ball and collect it.";
+    else if(stageName == "ssp_1" && (!flag("ssp1_ball0_complete") || !flag("ssp1_ball1_complete")))
+        guide += "^3RICHTOFEN:^7 Use the Sliquifier on both dragon balls.";
+    else if(stageName == "pts_1" && !flag("pts_1_springpads_placed"))
+        guide += "^3RICHTOFEN:^7 Place Trample Steams on lion spots and launch zombies into the tower.";
+    else if(stageName == "ssp_2" && !flag("ssp2_resurrection_done"))
+        guide += "^3MAXIS:^7 Complete the corpse-room resurrection with the Sliquifier.";
+    else if(stageName == "pts_2" && !flag("pts_2_springpads_placed"))
+        guide += "^3MAXIS:^7 Place Trample Steams on ghoul spots and launch zombies to the tower.";
+    else if(flag("sq_branch_complete") && !flag("sq_tower_active"))
+    {
+        guide += "^3FINAL:^7 Punch the four tower legs in randomized wind order.";
+        if(isDefined(level.a_wind_order) && isDefined(level.n_cur_leg) && level.n_cur_leg < level.a_wind_order.size)
+            guide += "\n^7NEXT LEG: ^3" + level.a_wind_order[level.n_cur_leg];
+    }
+    else if(flag("sq_tower_active"))
+        guide += "^2FINAL:^7 Wait for the tower sequence to finish.";
+    else
+        guide += "^3STEP:^7 Follow the active quest stage and cyan markers.";
+    guide += "\n^7SSP = Sliquifier puzzle; PTS = Trample Steam launch stage.";
+    guide += "\n^7Richtofen and Maxis have different ball / launch locations.";
+    guide += "\n^7Only active-stage objects are marked.";
+    return guide;
+}
+
+MM_EEGuideBuried()
+{
+    navBuilt = flag("sq_nav_built");
+    navcard = self MM_EETrackerStat("navcard_applied_zm_buried") > 0;
+    stageName = "";
+    if(isDefined(level._cur_stage_name))
+        stageName = level._cur_stage_name;
+    else if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
+
+    guide = "^2BURIED - TOWER QUEST GUIDE\n";
+    if(!navBuilt)
+        guide += "^3SETUP:^7 Build the Navcard computer.";
+    else if(!navcard)
+        guide += "^3SETUP:^7 Apply the correct Navcard.";
+    else if(stageName == "bt")
+        guide += "^3STEP 1:^7 Build your chosen tower: place four parts at Gallows or Guillotine.";
+    else if(stageName == "mta")
+        guide += "^3STEP 2:^7 Place all four amplifiers at their marked positions.";
+    else if(stageName == "gl")
+        guide += "^3STEP 3:^7 Follow the ghost lantern; collect it when it crashes.";
+    else if(stageName == "ftl" && !flag("ftl_lantern_charged"))
+        guide += "^3STEP 4:^7 Carry the lantern and kill zombies nearby to charge it.";
+    else if(stageName == "ftl")
+        guide += "^3STEP 4:^7 Build the oil lamp at the marked generator.";
+    else if(stageName == "ll")
+        guide += "^3STEP 5:^7 Read the tunnel-sign code and remember the symbols.";
+    else if(stageName == "ts")
+        guide += "^3STEP 6:^7 Activate tunnel signs in the sequence shown by the code.";
+    else if(stageName == "ctw")
+        guide += "^3STEP 7:^7 Guide the wisp along its route to the Guillotine; keep it powered.";
+    else if(stageName == "tpo" && !flag("sq_tpo_found_item"))
+        guide += "^3STEP 8:^7 Place the Time Bomb in the valid area, trigger its round, search corpses.";
+    else if(stageName == "tpo" && !flag("sq_tpo_generator_powered"))
+        guide += "^3STEP 8:^7 Take the switch part to the Guillotine and install it.";
+    else if(stageName == "ip")
+        guide += "^3STEP 9:^7 Follow the active light on the board; solve buttons and maze levers.";
+    else if(stageName == "ows")
+        guide += "^3STEP 10:^7 Start at the fountain and shoot every moving target.";
+    else if(flag("sq_wisp_success"))
+        guide += "^2QUEST:^7 Wisp objective complete; finish the final stage.";
+    else
+        guide += "^3STEP:^7 Follow the active stage and cyan object markers.";
+    guide += "\n^7Stage changes automatically after each stock objective is completed.";
+    guide += "\n^7Choose Maxis or Richtofen tower before the main sequence.";
+    guide += "\n^7Use the live progress HUD if the active action is unclear.";
+    return guide;
 }
 
 MM_EECreateQuestESPMarker()
