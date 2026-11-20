@@ -2943,17 +2943,22 @@ MM_EECollectQuestTargets()
 
 MM_EECollectMobTargets(targets)
 {
-    // The spoon / Hell's Retriever route uses the wolf-head positions.
-    if(!flag("spoon_obtained") && isDefined(level.a_wolf_structs))
+    // These three wolf positions are the stock Soul Catchers, not dog heads.
+    if(!flag("soul_catchers_charged") && isDefined(level.a_wolf_structs))
     {
         foreach(spot in level.a_wolf_structs)
-            targets = self MM_EEAddQuestTarget(targets, spot, "WOLF HEAD - SPOON QUEST");
+            targets = self MM_EEAddQuestTarget(targets, spot, "SOUL CATCHER - FEED 6 ZOMBIES");
     }
+    else if(flag("soul_catchers_charged"))
+        targets = self MM_EEAddQuestEntKey(targets, "retriever_pickup_trigger", "script_noteworthy", "HELL'S RETRIEVER");
+
+    if(!flag("key_found"))
+        targets = self MM_EEAddCraftablePieceTarget(targets, "quest_key1", "p6_zm_al_key", "WARDEN KEY");
 
     if(!flag("spoon_obtained"))
     {
         targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON PICKUP");
-        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / AFTERLIFE");
+        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / AFTERLIFE PORTAL");
     }
 
     if(!flag("warden_blundergat_obtained"))
@@ -2961,9 +2966,6 @@ MM_EECollectMobTargets(targets)
         targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "WARDEN BLUNDERGAT");
         targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - HELL'S RETRIEVER");
     }
-
-    if(!flag("key_found"))
-        targets = self MM_EEAddCraftablePieceTarget(targets, "quest_key1", "p6_zm_al_key", "WARDEN KEY");
 
     if(!flag("nixie_puzzle_completed"))
     {
@@ -2987,13 +2989,9 @@ MM_EECollectMobTargets(targets)
         if(!flag("rigging_found"))
             targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "rigging", "PLANE RIGGING");
 
-        // Refuel cans only exist in the stock registry after each return from the bridge.
+        // Fuel can models only exist while the stock refuelable-plane craftable is active.
         for(fuelIndex = 1; fuelIndex <= 5; fuelIndex++)
             targets = self MM_EEAddCraftablePieceTarget(targets, "refuelable_plane", "fuel" + fuelIndex, "PLANE FUEL CAN");
-
-        if(flag("cloth_found") && flag("fueltanks_found") && flag("engine_found") &&
-           flag("steering_found") && flag("rigging_found"))
-            targets = self MM_EEAddQuestEnt(targets, "plane_fuelable_trigger", "REFUEL THE PLANE");
     }
     else if(!flag("plane_boarded"))
     {
@@ -3315,33 +3313,28 @@ MM_EETrackerGuideBuildText()
 MM_EEGuideMob()
 {
     guide = "^2MOB OF THE DEAD - POP GOES THE WEASEL\n";
-    if(!flag("key_found"))
-        guide += "^3STEP 1:^7 Find the Warden's key; use it to unlock the Afterlife routes.";
-    else if(!flag("quest_completed_thrice"))
-        guide += "^3STEP 2:^7 Complete three bridge / NML trips; after each crash use an electric chair.";
-    else if(!flag("spoon_obtained"))
-        guide += "^3STEP 3:^7 Complete the Spoon quest: charge the wolf heads and collect the Spoon.";
-    else if(!flag("warden_blundergat_obtained"))
-        guide += "^3STEP 4:^7 Use Hell's Retriever to collect the skulls and obtain the Warden's Blundergat.";
-    else if(!flag("nixie_puzzle_completed"))
-        guide += "^3STEP 5:^7 Solve the Nixie-tube puzzle; follow the tube clues and timing.";
+    guide += "^3KEY:^7 " + self MM_EETrackerStatus(flag("key_found")) + " Warden's key / Afterlife access.";
+    guide += "\n^3SOUL CATCHERS:^7 " + self MM_EETrackerStatus(flag("soul_catchers_charged")) + " Feed 6 zombies to each of the 3 wolf heads.";
+    guide += "\n^3HELL'S RETRIEVER:^7 Charge the heads, then complete the hellhole pickup challenge.";
+    guide += "\n^3SPOON:^7 " + self MM_EETrackerStatus(flag("spoon_obtained")) + " Collect it at the Afterlife portal.";
+    guide += "\n^3BLUNDERGAT:^7 " + self MM_EETrackerStatus(flag("warden_blundergat_obtained")) + " Collect the skulls with the Retriever.";
+    guide += "\n^3NML TRIPS:^7 " + self MM_EETrackerStatus(flag("quest_completed_thrice")) + " Return from the bridge three times; use a chair after each crash.";
+    if(!flag("nixie_puzzle_completed"))
+        guide += "\n^3NIXIE:^7 Solve all three tubes; follow their live clues and countdown.";
     else if(isDefined(level.m_headphones))
-        guide += "^3STEP 6:^7 Follow the moving audio-log marker and complete the full audio tour.";
+        guide += "\n^3AUDIO TOUR:^7 Follow the moving headset marker and finish the tour.";
     else if(!flag("plane_built"))
-        guide += "^3STEP 7:^7 Collect missing plane parts and all five fuel cans; finish the refuel.";
+        guide += "\n^3PLANE:^7 Collect missing parts and five fuel cans when they spawn.";
     else if(!flag("plane_boarded"))
-        guide += "^3STEP 8:^7 Board the final plane at the roof trigger.";
+        guide += "\n^3FLIGHT:^7 Board the plane at the roof trigger.";
     else if(!flag("plane_departed"))
-        guide += "^3STEP 9:^7 Stay aboard until take-off.";
+        guide += "\n^3FLIGHT:^7 Stay aboard until take-off.";
     else if(!flag("plane_zapped"))
-        guide += "^3STEP 10:^7 Reach the Golden Gate Bridge and complete the flight sequence.";
+        guide += "\n^3FLIGHT:^7 Reach the Golden Gate Bridge.";
     else if(!flag("plane_crashed"))
-        guide += "^3STEP 11:^7 Wait for the crash sequence, then use the final-flight route.";
+        guide += "\n^3FLIGHT:^7 Finish the crash sequence.";
     else
-        guide += "^3FINAL:^7 Complete the Weasel showdown at the bridge.";
-    guide += "\n^7STATUS:^3 Three NML trips, Spoon, Blundergat, Nixie and plane flags drive progression.";
-    guide += "\n^7CYAN MARKERS:^3 Current items, plane parts, fuel cans and chair triggers.";
-    guide += "\n^7The guide advances automatically as stock quest flags change.";
+        guide += "\n^3FINAL:^7 Complete the Weasel showdown.";
     return guide;
 }
 
