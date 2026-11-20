@@ -2941,27 +2941,26 @@ MM_EECollectQuestTargets()
 
 MM_EECollectMobTargets(targets)
 {
-    if(!flag("spoon_obtained"))
+    if(!flag("quest_completed_thrice") && isDefined(level.a_wolf_structs))
     {
-        targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON");
-        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / SPORK");
+        foreach(spot in level.a_wolf_structs)
+            targets = self MM_EEAddQuestTarget(targets, spot, "WOLF HEAD");
     }
 
-    if(!flag("quest_completed_thrice"))
+    if(!flag("spoon_obtained"))
     {
-        if(isDefined(level.a_wolf_structs))
-        {
-            foreach(spot in level.a_wolf_structs)
-                targets = self MM_EEAddQuestTarget(targets, spot, "WOLF SOULS");
-        }
-        targets = self MM_EEAddQuestEnt(targets, "spinning_tomahawk_pickup", "HELL'S RETRIEVER");
+        targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON / SPORK");
+        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / SPORK");
     }
 
     if(!flag("warden_blundergat_obtained"))
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "WARDEN'S BLUNDERGAT");
-        targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - TOMAHAWK");
+        targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "BLUNDERGAT REWARD");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - RETRIEVER");
     }
+
+    if(!flag("key_found"))
+        targets = self MM_EEAddCraftablePieceTarget(targets, "quest_key1", "p6_zm_al_key", "WARDEN KEY");
 
     if(!flag("nixie_puzzle_completed"))
     {
@@ -2974,18 +2973,37 @@ MM_EECollectMobTargets(targets)
 
     if(!flag("plane_built"))
     {
-        targets = self MM_EEAddQuestEnt(targets, "plane_craftable", "BUILD THE PLANE");
-        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_engine", "PLANE ENGINE");
-        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_clothes_pile", "PLANE CLOTH");
-        targets = self MM_EEAddQuestEnt(targets, "fake_veh_t6_dlc_zombie_part_control", "PLANE STEERING");
-        targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "PLANE FLIGHT");
+        if(!flag("cloth_found"))
+            targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "cloth", "PLANE CLOTH");
+        if(!flag("fueltanks_found"))
+            targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "fueltanks", "PLANE FUEL TANKS");
+        if(!flag("engine_found"))
+            targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "engine", "PLANE ENGINE");
+        if(!flag("steering_found"))
+            targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "steering", "PLANE STEERING");
+        if(!flag("rigging_found"))
+            targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "rigging", "PLANE RIGGING");
+
+        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_engine", "ENGINE PART");
+        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_clothes_pile", "CLOTH PART");
     }
-    else if(!flag("plane_crashed"))
+    else if(!flag("plane_boarded"))
+    {
         targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "BOARD THE PLANE");
+        targets = self MM_EEAddQuestEntKey(targets, "plane_fly_afterlife_trigger", "script_noteworthy", "AFTERLIFE FLIGHT");
+    }
+    else if(!flag("plane_zapped") && !flag("plane_crashed"))
+        targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "PLANE FLIGHT");
+
+    if(flag("spawn_fuel_tanks") && !flag("plane_ready"))
+    {
+        for(fuelIndex = 1; fuelIndex <= 5; fuelIndex++)
+            targets = self MM_EEAddCraftablePieceTarget(targets, "refuelable_plane", "fuel" + fuelIndex, "PLANE FUEL CAN");
+        targets = self MM_EEAddQuestEnt(targets, "plane_fuelable_trigger", "REFUEL THE PLANE");
+    }
 
     return targets;
 }
-
 MM_EECollectTranzitTargets(targets)
 {
     navStarted = self MM_EETrackerStat("sq_transit_started") > 0;
@@ -2993,336 +3011,237 @@ MM_EECollectTranzitTargets(targets)
 
     if(!navStarted || !navApplied)
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
-        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD TABLE");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD TABLE");
     }
 
-    if(isDefined(level.sq_volume))
-        targets = self MM_EEAddQuestTarget(targets, level.sq_volume, "TOWER - EASTER EGG");
+    if(isDefined(level.sq_volume) &&
+       !(self MM_EETrackerStat("sq_transit_maxis_complete") > 0 &&
+         self MM_EETrackerStat("sq_transit_rich_complete") > 0))
+        targets = self MM_EEAddQuestTarget(targets, level.sq_volume, "TOWER OBJECTIVE");
 
-    if(isDefined(level.power_station_zones))
+    if(isDefined(level.sq_progress) && isDefined(level.sq_progress["maxis"]))
     {
-        foreach(zoneName in level.power_station_zones)
+        maxis = level.sq_progress["maxis"];
+
+        if(!isDefined(maxis["A_complete"]) || !maxis["A_complete"])
         {
-            targets = self MM_EEAddQuestEnt(targets, zoneName, "MAXIS POWER / TURBINE");
-            targets = self MM_EEAddQuestStruct(targets, zoneName, "MAXIS POWER / TURBINE");
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - TWO TOWER TURBINES");
+            if(isDefined(maxis["A_turbine_1"]) && !isint(maxis["A_turbine_1"]))
+                targets = self MM_EEAddQuestTarget(targets, maxis["A_turbine_1"], "MAXIS TURBINE 1");
+            if(isDefined(maxis["A_turbine_2"]) && !isint(maxis["A_turbine_2"]))
+                targets = self MM_EEAddQuestTarget(targets, maxis["A_turbine_2"], "MAXIS TURBINE 2");
+        }
+        else if(!isDefined(maxis["B_complete"]) || !maxis["B_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - STUN AVOGADRO");
+        else if(!isDefined(maxis["C_complete"]) || !maxis["C_complete"])
+        {
+            screecherZones = getstructarray("screecher_escape", "targetname");
+            foreach(zone in screecherZones)
+            {
+                if(!isDefined(zone) || !isDefined(zone.origin))
+                    continue;
+                if(isDefined(maxis["C_screecher_1"]) && maxis["C_screecher_1"] == zone)
+                    continue;
+                if(isDefined(maxis["C_screecher_2"]) && maxis["C_screecher_2"] == zone)
+                    continue;
+                targets = self MM_EEAddQuestTarget(targets, zone, "MAXIS - TURBINE LIGHT");
+            }
         }
     }
 
     if(isDefined(level.sq_progress) && isDefined(level.sq_progress["rich"]))
     {
-        if(!isDefined(level.sq_progress["rich"]["A_complete"]) || !level.sq_progress["rich"]["A_complete"])
-            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "RICHTOFEN - JET GUN TOWER");
-        if(!isDefined(level.sq_progress["rich"]["C_complete"]) || !level.sq_progress["rich"]["C_complete"])
-            targets = self MM_EEAddQuestStructArray(targets, "screecher_escape", "targetname", "RICHTOFEN - EMP LIGHT");
-    }
+        rich = level.sq_progress["rich"];
 
-    if(isDefined(level.sq_progress) && isDefined(level.sq_progress["maxis"]))
-    {
-        if(!isDefined(level.sq_progress["maxis"]["A_complete"]) || !level.sq_progress["maxis"]["A_complete"])
-            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - TOWER TURBINES");
-        if(!isDefined(level.sq_progress["maxis"]["B_complete"]) || !level.sq_progress["maxis"]["B_complete"])
-            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "MAXIS - AVOGADRO");
+        if(!isDefined(rich["A_complete"]) || !rich["A_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "RICHTOFEN - JET GUN TOWER");
+        else if(!isDefined(rich["B_complete"]) || !rich["B_complete"])
+            targets = self MM_EEAddQuestEnt(targets, "sq_common_area", "RICHTOFEN - 25 ZOMBIES");
+        else if(!isDefined(rich["C_complete"]) || !rich["C_complete"])
+        {
+            lights = getstructarray("screecher_escape", "targetname");
+            foreach(light in lights)
+            {
+                alreadyOff = false;
+                if(isDefined(level.sq_richtofen_c_screecher_lights))
+                {
+                    foreach(doneLight in level.sq_richtofen_c_screecher_lights)
+                    {
+                        if(isDefined(doneLight) && doneLight == light)
+                            alreadyOff = true;
+                    }
+                }
+                if(!alreadyOff)
+                    targets = self MM_EEAddQuestTarget(targets, light, "RICHTOFEN - EMP LIGHT");
+            }
+        }
     }
 
     return targets;
 }
-
 MM_EECollectDieRiseTargets(targets)
 {
     navBuilt = flag("sq_nav_built");
     navApplied = self MM_EETrackerStat("navcard_applied_zm_highrise") > 0;
+    stageName = "";
+    if(isDefined(level._cur_stage_name))
+        stageName = level._cur_stage_name;
+    else if(isDefined(level._last_stage_started))
+        stageName = level._last_stage_started;
 
     if(!navBuilt || !navApplied)
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
-        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD TABLE");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD TABLE");
+        return targets;
     }
 
     if(!flag("sq_atd_drg_puzzle_complete"))
     {
-        targets = self MM_EEAddQuestEntArray(targets, "elevator_dragon_icon", "targetname", "DRAGON / ELEVATOR PUZZLE");
-        targets = self MM_EEAddQuestEntArray(targets, "trig_atd_drg_puzzle", "targetname", "DRAGON PUZZLE SWITCH");
-        targets = self MM_EEAddQuestEntArray(targets, "atd2_marker_lit", "targetname", "DRAGON ELEVATOR");
-        targets = self MM_EEAddQuestEntArray(targets, "atd2_marker_unlit", "script_noteworthy", "DRAGON ELEVATOR");
+        elevatorTriggers = array("elevator_bldg1b_trigger", "elevator_bldg1d_trigger", "elevator_bldg3b_trigger", "elevator_bldg3c_trigger");
+        elevatorFlags = array("sq_atd_elevator0", "sq_atd_elevator1", "sq_atd_elevator2", "sq_atd_elevator3");
+        for(elevatorIndex = 0; elevatorIndex < elevatorTriggers.size; elevatorIndex++)
+        {
+            if(!flag(elevatorFlags[elevatorIndex]))
+                targets = self MM_EEAddQuestEnt(targets, elevatorTriggers[elevatorIndex], "STAND ON ELEVATOR");
+        }
+        targets = self MM_EEAddQuestEntArray(targets, "trig_atd_drg_puzzle", "targetname", "DRAGON ORDER SWITCH");
+        targets = self MM_EEAddQuestEntArray(targets, "elevator_dragon_icon", "targetname", "DRAGON SYMBOL");
+        targets = self MM_EEAddQuestEntArray(targets, "atd2_marker_unlit", "script_noteworthy", "DRAGON SYMBOL");
+    }
+    else if(!flag("sq_ball_picked_up"))
+        targets = self MM_EEAddQuestEntArray(targets, "sq_dragon_lion_ball", "targetname", "COLLECT THE LION BALL");
+    else if(stageName == "ssp_1" && (!flag("ssp1_ball0_complete") || !flag("ssp1_ball1_complete")))
+        targets = self MM_EEAddQuestEntArray(targets, "sq_sliquify_ball", "targetname", "RICHTOFEN - LIQUIFY BALL");
+    else if(stageName == "ssp_2" && !flag("ssp2_resurrection_done"))
+        targets = self MM_EEAddQuestEnt(targets, "corpse_room_trigger", "MAXIS - CORPSE ROOM");
+    else if(stageName == "pts_1" && !flag("pts_1_springpads_placed"))
+    {
+        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "RICHTOFEN - TRAMPLE STEAM SPOT");
+        targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "LAUNCH ZOMBIES");
+        targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "TOWER LAUNCH TARGET");
+    }
+    else if(stageName == "pts_2" && !flag("pts_2_springpads_placed"))
+    {
+        targets = self MM_EEAddQuestStructArray(targets, "pts_ghoul", "targetname", "MAXIS - TRAMPLE STEAM SPOT");
+        targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "LAUNCH ZOMBIES");
+        targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "TOWER LAUNCH TARGET");
     }
 
-    if(!flag("sq_ball_picked_up"))
-        targets = self MM_EEAddQuestEntArray(targets, "sq_dragon_lion_ball", "targetname", "LION BALL");
-
-    if(!flag("ssp1_complete"))
+    if(flag("sq_branch_complete") && !flag("sq_tower_active") &&
+       isDefined(level.a_wind_order) && isDefined(level.n_cur_leg) &&
+       level.n_cur_leg < level.a_wind_order.size)
     {
-        targets = self MM_EEAddQuestEntKey(targets, "sq_sliquify_r", "script_noteworthy", "RICHTOFEN - DRAGON BALL");
-        targets = self MM_EEAddQuestEntKey(targets, "sq_sliquify_m", "script_noteworthy", "RICHTOFEN - DRAGON BALL");
-    }
-
-    if(!flag("pts_1_springpads_placed") || !flag("pts_2_springpads_placed"))
-    {
-        targets = self MM_EEAddQuestStructArray(targets, "pts_lion", "targetname", "SPRING PAD PLACEMENT");
-        targets = self MM_EEAddQuestStructArray(targets, "pts_ghoul", "targetname", "SPRING PAD PLACEMENT");
-        targets = self MM_EEAddQuestEnt(targets, "pts_tower_trig", "TOWER LAUNCH");
-        targets = self MM_EEAddQuestStruct(targets, "sq_zombie_launch_target", "ZOMBIE LAUNCH TARGET");
-    }
-
-    if(flag("sq_branch_complete") && !flag("sq_tower_active"))
-    {
-        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_north", "script_noteworthy", "PUNCH TOWER LEGS");
-        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_south", "script_noteworthy", "PUNCH TOWER LEGS");
-        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_east", "script_noteworthy", "PUNCH TOWER LEGS");
-        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_west", "script_noteworthy", "PUNCH TOWER LEGS");
+        nextDirection = level.a_wind_order[level.n_cur_leg];
+        targets = self MM_EEAddQuestEntKey(targets, "sq_tower_" + nextDirection, "script_noteworthy", "NEXT TOWER LEG - " + nextDirection);
     }
 
     return targets;
 }
-
 MM_EECollectBuriedTargets(targets)
 {
     stageName = "";
-    if(isDefined(level._last_stage_started))
+    if(isDefined(level._cur_stage_name))
+        stageName = level._cur_stage_name;
+    else if(isDefined(level._last_stage_started))
         stageName = level._last_stage_started;
 
     navBuilt = flag("sq_nav_built");
     navApplied = self MM_EETrackerStat("navcard_applied_zm_buried") > 0;
-
     if(!navBuilt || !navApplied)
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD COMPUTER");
-        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD COMPUTER");
+        targets = self MM_EEAddQuestEnt(targets, "sq_common_buildable_trigger", "BUILD NAVCARD TABLE");
+        targets = self MM_EEAddQuestStruct(targets, "sq_common_key", "NAVCARD TABLE");
+        return targets;
     }
 
     if(stageName == "bt")
     {
-        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "BUILD THE TOWER");
-        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "BUILD THE TOWER");
+        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "RICHTOFEN TOWER SITE");
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "MAXIS TOWER SITE");
     }
     else if(stageName == "mta")
     {
         targets = self MM_EEAddQuestEntArray(targets, "sq_amplifier", "targetname", "AMPLIFIER");
-        targets = self MM_EEAddQuestStructArray(targets, "sq_amplifier_spot", "targetname", "AMPLIFIER PLACEMENT");
+        targets = self MM_EEAddQuestStructArrayNoKey(targets, "sq_amplifier_spot", "AMPLIFIER PLACEMENT");
     }
     else if(stageName == "gl")
     {
-        targets = self MM_EEAddQuestStruct(targets, "sq_ghost_lamp_start", "LANTERN START");
-        targets = self MM_EEAddQuestEnt(targets, "sq_lantern_symbol", "LANTERN");
-        if(isDefined(level.m_lantern))
-            targets = self MM_EEAddQuestTarget(targets, level.m_lantern, "LANTERN");
+        targets = self MM_EEAddQuestStructKey(targets, "sq_ghost_lamp_start", "script_noteworthy", "LANTERN START");
+        if(isDefined(level.vh_lantern))
+        {
+            targets = self MM_EEAddQuestTarget(targets, level.vh_lantern, "FOLLOW THE LANTERN");
+            if(isDefined(level.vh_lantern.m_lantern))
+                targets = self MM_EEAddQuestTarget(targets, level.vh_lantern.m_lantern, "COLLECT THE LANTERN");
+        }
     }
     else if(stageName == "ftl")
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_lantern_symbol", "CHARGE THE LANTERN");
-        if(isDefined(level.m_lantern))
-            targets = self MM_EEAddQuestTarget(targets, level.m_lantern, "CHARGE THE LANTERN");
+        if(isDefined(level.vh_lantern))
+        {
+            targets = self MM_EEAddQuestTarget(targets, level.vh_lantern, "CHARGE THE LANTERN");
+            if(isDefined(level.vh_lantern.m_lantern))
+                targets = self MM_EEAddQuestTarget(targets, level.vh_lantern.m_lantern, "CHARGE THE LANTERN");
+        }
+        targets = self MM_EEAddQuestEnt(targets, "sq_lantern_symbol", "OIL LAMP GENERATOR");
+        if(flag("ftl_lantern_charged") && isDefined(level.sq_lamp_generator_unitrig) && isDefined(level.sq_lamp_generator_unitrig.origin))
+            targets = self MM_EEAddQuestTarget(targets, level.sq_lamp_generator_unitrig, "BUILD OIL LAMP");
     }
-    else if(stageName == "ll" || stageName == "ts")
+    else if(stageName == "ll")
     {
-        targets = self MM_EEAddQuestEntArray(targets, "sq_tunnel_sign", "targetname", "TUNNEL SIGN CODE");
-        targets = self MM_EEAddQuestStructArray(targets, "sq_code_pos", "targetname", "TUNNEL CODE");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_tunnel_sign", "targetname", "READ TUNNEL SIGN");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_code_pos", "targetname", "TUNNEL CODE POSITION");
     }
+    else if(stageName == "ts")
+        targets = self MM_EEAddQuestEntArray(targets, "sq_tunnel_sign", "targetname", "ACTIVATE SIGN IN ORDER");
     else if(stageName == "ctw")
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_wisp", "FOLLOW THE WISP");
+        if(isDefined(level.vh_wisp))
+            targets = self MM_EEAddQuestTarget(targets, level.vh_wisp, "FOLLOW THE WISP");
+        targets = self MM_EEAddQuestEnt(targets, "sq_wisp", "WISP");
         targets = self MM_EEAddQuestEnt(targets, "sq_guillotine", "WISP DESTINATION");
         targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "WISP DESTINATION");
     }
     else if(stageName == "tpo")
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_tpo_timebomb_volume", "TIME BOMB OBJECTIVE");
-        targets = self MM_EEAddQuestEntArray(targets, "sq_tpo_corpse_model", "targetname", "SEARCH CORPSE");
-        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "TIME BOMB SWITCH");
+        if(!flag("sq_tpo_found_item"))
+        {
+            targets = self MM_EEAddQuestEnt(targets, "sq_tpo_timebomb_volume", "PLACE TIME BOMB HERE");
+            targets = self MM_EEAddQuestEntArray(targets, "sq_tpo_corpse_model", "targetname", "SEARCH THIS CORPSE");
+        }
+        else if(!flag("sq_tpo_generator_powered"))
+        {
+            targets = self MM_EEAddQuestEnt(targets, "sq_guillotine", "INSTALL THE SWITCH");
+            if(isDefined(level.sq_tpo_unitrig) && isDefined(level.sq_tpo_unitrig.realorigin))
+            {
+                switchMarker = spawnstruct();
+                switchMarker.origin = level.sq_tpo_unitrig.realorigin;
+                targets = self MM_EEAddQuestTarget(targets, switchMarker, "GUillotine SWITCH");
+            }
+        }
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "MAXIS TIME BOMB AREA");
     }
     else if(stageName == "ip")
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_bp_board", "FINAL PUZZLE BOARD");
+        targets = self MM_EEAddQuestEnt(targets, "sq_bp_board", "PUZZLE BOARD");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_bp_button", "targetname", "BOARD BUTTON");
         targets = self MM_EEAddQuestEntArray(targets, "sq_ml_lever", "targetname", "MAZE LEVER");
-        targets = self MM_EEAddQuestStructArray(targets, "sq_bp_button", "targetname", "PUZZLE BUTTON");
-        targets = self MM_EEAddQuestStructArray(targets, "sq_maze_lever", "targetname", "MAZE LEVER LOCATION");
+        targets = self MM_EEAddQuestStructArray(targets, "sq_maze_lever", "targetname", "MAZE LEVER POSITION");
     }
     else if(stageName == "ows")
     {
-        targets = self MM_EEAddQuestStruct(targets, "sq_ows_fountain", "FOUNTAIN");
-        targets = self MM_EEAddQuestStructArray(targets, "otw_target_spot", "script_noteworthy", "SHOOT THE TARGETS");
+        targets = self MM_EEAddQuestStruct(targets, "sq_ows_fountain", "START AT FOUNTAIN");
+        targets = self MM_EEAddQuestStructArray(targets, "otw_target_spot", "script_noteworthy", "SHOOT MOVING TARGET");
     }
     else
     {
-        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "BURIED QUEST START");
-        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "BURIED QUEST START");
+        targets = self MM_EEAddQuestStruct(targets, "sq_guillotine", "QUEST START");
+        targets = self MM_EEAddQuestStruct(targets, "sq_gallows", "QUEST START");
     }
 
     return targets;
 }
-
-
-// Compact Origins-style, stage-aware walkthrough. Rows are cached by the ESP loop.
-MM_EETrackerGuideBuildText()
-{
-    if(level.script == "zm_prison")
-        return self MM_EEGuideMob();
-    if(level.script == "zm_transit")
-        return self MM_EEGuideTranzit();
-    if(level.script == "zm_highrise")
-        return self MM_EEGuideDieRise();
-    if(level.script == "zm_buried")
-        return self MM_EEGuideBuried();
-    return "^1QUEST GUIDE\n^7Unsupported map.";
-}
-
-MM_EEGuideMob()
-{
-    guide = "^2MOB OF THE DEAD - QUEST GUIDE\n";
-    if(!flag("quest_completed_thrice"))
-        guide += "^3STEP 1:^7 Charge all three dog heads around the prison.";
-    else if(!flag("warden_blundergat_obtained"))
-        guide += "^3STEP 2:^7 Use Hell's Retriever to collect the Warden's skulls.";
-    else if(!flag("key_found"))
-        guide += "^3STEP 3:^7 Find the Warden's key and open the Afterlife route.";
-    else if(!flag("nixie_puzzle_completed"))
-        guide += "^3STEP 4:^7 Solve the three Nixie tubes in the correct sequence.";
-    else if(!flag("plane_built"))
-        guide += "^3STEP 5:^7 Collect cloth, fuel tanks, engine, steering and rigging; build the plane.";
-    else if(!flag("plane_boarded"))
-        guide += "^3STEP 6:^7 Board the plane at the roof flight trigger.";
-    else if(!flag("plane_departed"))
-        guide += "^3STEP 7:^7 Stay aboard and wait for take-off.";
-    else if(!flag("plane_zapped"))
-        guide += "^3STEP 8:^7 Reach the bridge and shoot the Warden.";
-    else if(!flag("plane_crashed"))
-        guide += "^3STEP 9:^7 Finish the crash sequence.";
-    else
-        guide += "^3STEP 10:^7 Finish the final Weasel showdown.";
-    guide += "\n^7CYAN MARKERS:^3 Current objects and interactions to visit.";
-    guide += "\n^7Refuel: collect all five cans when the fuel stage starts.";
-    guide += "\n^7Optional: Golden Spork and audio logs are marked too.";
-    guide += "\n^7The guide advances when stock quest flags change.";
-    return guide;
-}
-
-MM_EEGuideTranzit()
-{
-    navcard = self MM_EETrackerStat("navcard_applied_zm_transit") > 0;
-    maxA = self MM_EETrackerStat("sq_transit_maxis_stage_2") > 0;
-    maxB = self MM_EETrackerStat("sq_transit_maxis_stage_3") > 0;
-    maxC = self MM_EETrackerStat("sq_transit_maxis_complete") > 0;
-    richA = self MM_EETrackerStat("sq_transit_rich_stage_2") > 0;
-    richB = self MM_EETrackerStat("sq_transit_rich_stage_3") > 0;
-    richC = self MM_EETrackerStat("sq_transit_rich_complete") > 0;
-
-    guide = "^2TRANZIT - TOWER QUEST GUIDE\n";
-    if(!navcard)
-        guide += "^3SETUP:^7 Build the Navcard table and apply the correct card.";
-    else
-        guide += "^2SETUP:^7 Navcard applied.";
-    if(!maxA)
-        guide += "\n^3MAXIS A:^7 Place two powered turbines inside the tower area.";
-    else if(!maxB)
-        guide += "\n^3MAXIS B:^7 Stun Avogadro inside the tower while both turbines are powered.";
-    else if(!maxC)
-        guide += "\n^3MAXIS C:^7 Power two different Screecher escape-light zones with turbines.";
-    else
-        guide += "\n^2MAXIS:^7 Route complete.";
-    if(!richA)
-        guide += "\n^3RICHTOFEN A:^7 Build the Jet Gun and fire it at the tower.";
-    else if(!richB)
-        guide += "\n^3RICHTOFEN B:^7 Lure and kill 25 zombies inside the tower objective area.";
-    else if(!richC)
-        guide += "\n^3RICHTOFEN C:^7 EMP all four safety lights after stages A and B.";
-    else
-        guide += "\n^2RICHTOFEN:^7 Route complete.";
-    guide += "\n^7Cyan markers point to the current tower / light objectives.";
-    return guide;
-}
-
-MM_EEGuideDieRise()
-{
-    navBuilt = flag("sq_nav_built");
-    navcard = self MM_EETrackerStat("navcard_applied_zm_highrise") > 0;
-    stageName = "";
-    if(isDefined(level._cur_stage_name))
-        stageName = level._cur_stage_name;
-    else if(isDefined(level._last_stage_started))
-        stageName = level._last_stage_started;
-
-    guide = "^2DIE RISE - TOWER QUEST GUIDE\n";
-    if(!navBuilt)
-        guide += "^3SETUP:^7 Build the Navcard computer.";
-    else if(!navcard)
-        guide += "^3SETUP:^7 Apply the correct Navcard.";
-    else if(!flag("sq_atd_drg_puzzle_complete"))
-        guide += "^3STEP 1:^7 Stand on all four marked elevators, then activate dragon symbols in VO order.";
-    else if(!flag("sq_ball_picked_up"))
-        guide += "^3STEP 2:^7 Shoot the dragon / lion ball and collect it.";
-    else if(stageName == "ssp_1" && (!flag("ssp1_ball0_complete") || !flag("ssp1_ball1_complete")))
-        guide += "^3RICHTOFEN:^7 Use the Sliquifier on both dragon balls.";
-    else if(stageName == "pts_1" && !flag("pts_1_springpads_placed"))
-        guide += "^3RICHTOFEN:^7 Place Trample Steams on lion spots and launch zombies into the tower.";
-    else if(stageName == "ssp_2" && !flag("ssp2_resurrection_done"))
-        guide += "^3MAXIS:^7 Complete the corpse-room resurrection with the Sliquifier.";
-    else if(stageName == "pts_2" && !flag("pts_2_springpads_placed"))
-        guide += "^3MAXIS:^7 Place Trample Steams on ghoul spots and launch zombies to the tower.";
-    else if(flag("sq_branch_complete") && !flag("sq_tower_active"))
-    {
-        guide += "^3FINAL:^7 Punch the four tower legs in randomized wind order.";
-        if(isDefined(level.a_wind_order) && isDefined(level.n_cur_leg) && level.n_cur_leg < level.a_wind_order.size)
-            guide += "\n^7NEXT LEG: ^3" + level.a_wind_order[level.n_cur_leg];
-    }
-    else if(flag("sq_tower_active"))
-        guide += "^2FINAL:^7 Wait for the tower sequence to finish.";
-    else
-        guide += "^3STEP:^7 Follow the active quest stage and cyan markers.";
-    guide += "\n^7SSP = Sliquifier puzzle; PTS = Trample Steam launch stage.";
-    guide += "\n^7Richtofen and Maxis have different ball / launch locations.";
-    guide += "\n^7Only active-stage objects are marked.";
-    return guide;
-}
-
-MM_EEGuideBuried()
-{
-    navBuilt = flag("sq_nav_built");
-    navcard = self MM_EETrackerStat("navcard_applied_zm_buried") > 0;
-    stageName = "";
-    if(isDefined(level._cur_stage_name))
-        stageName = level._cur_stage_name;
-    else if(isDefined(level._last_stage_started))
-        stageName = level._last_stage_started;
-
-    guide = "^2BURIED - TOWER QUEST GUIDE\n";
-    if(!navBuilt)
-        guide += "^3SETUP:^7 Build the Navcard computer.";
-    else if(!navcard)
-        guide += "^3SETUP:^7 Apply the correct Navcard.";
-    else if(stageName == "bt")
-        guide += "^3STEP 1:^7 Build your chosen tower: place four parts at Gallows or Guillotine.";
-    else if(stageName == "mta")
-        guide += "^3STEP 2:^7 Place all four amplifiers at their marked positions.";
-    else if(stageName == "gl")
-        guide += "^3STEP 3:^7 Follow the ghost lantern; collect it when it crashes.";
-    else if(stageName == "ftl" && !flag("ftl_lantern_charged"))
-        guide += "^3STEP 4:^7 Carry the lantern and kill zombies nearby to charge it.";
-    else if(stageName == "ftl")
-        guide += "^3STEP 4:^7 Build the oil lamp at the marked generator.";
-    else if(stageName == "ll")
-        guide += "^3STEP 5:^7 Read the tunnel-sign code and remember the symbols.";
-    else if(stageName == "ts")
-        guide += "^3STEP 6:^7 Activate tunnel signs in the sequence shown by the code.";
-    else if(stageName == "ctw")
-        guide += "^3STEP 7:^7 Guide the wisp along its route to the Guillotine; keep it powered.";
-    else if(stageName == "tpo" && !flag("sq_tpo_found_item"))
-        guide += "^3STEP 8:^7 Place the Time Bomb in the valid area, trigger its round, search corpses.";
-    else if(stageName == "tpo" && !flag("sq_tpo_generator_powered"))
-        guide += "^3STEP 8:^7 Take the switch part to the Guillotine and install it.";
-    else if(stageName == "ip")
-        guide += "^3STEP 9:^7 Follow the active light on the board; solve buttons and maze levers.";
-    else if(stageName == "ows")
-        guide += "^3STEP 10:^7 Start at the fountain and shoot every moving target.";
-    else if(flag("sq_wisp_success"))
-        guide += "^2QUEST:^7 Wisp objective complete; finish the final stage.";
-    else
-        guide += "^3STEP:^7 Follow the active stage and cyan object markers.";
-    guide += "\n^7Stage changes automatically after each stock objective is completed.";
-    guide += "\n^7Choose Maxis or Richtofen tower before the main sequence.";
-    guide += "\n^7Use the live progress HUD if the active action is unclear.";
-    return guide;
-}
-
 MM_EECreateQuestESPMarker()
 {
     hud = newClientHudElem(self);
