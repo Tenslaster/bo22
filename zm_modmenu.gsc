@@ -3295,6 +3295,20 @@ MM_EETrackerESPLoop()
         labels[i] = self MM_EECreateQuestESPLabel();
     }
 
+    // Pinned step-by-step guide, following the Origins staff-guide layout.
+    guideRowCount = 6;
+    guideHuds = [];
+    guideLastRows = [];
+    for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
+    {
+        guideHuds[rowIndex] = self MM_NewText(-22, 112 + (rowIndex * 17), 0.92);
+        guideHuds[rowIndex].horzAlign = "right";
+        guideHuds[rowIndex].alignX = "right";
+        guideHuds[rowIndex].x = -22;
+        guideHuds[rowIndex].sort = 1100;
+        guideHuds[rowIndex].color = (0.9, 0.95, 1);
+    }
+
     self.mmEEESPDots = dots;
     self.mmEEESPLabels = labels;
 
@@ -3342,9 +3356,8 @@ MM_EETrackerESPLoop()
             labels[slot].x = markerPos[0];
             labels[slot].y = markerPos[1];
             labels[slot].z = markerPos[2] + 10;
-            // Keep the HUD string stable. A live distance suffix creates a new
-            // configstring as the player moves and eventually overflows BO2's
-            // fixed configstring table (G_FindConfigstringIndex).
+
+            // Never append changing distances: new HUD strings can exhaust configstrings.
             labelText = "^3" + targets[bestIdx].label;
             if(!isDefined(lastLabelText[slot]) || lastLabelText[slot] != labelText)
             {
@@ -3352,6 +3365,22 @@ MM_EETrackerESPLoop()
                 lastLabelText[slot] = labelText;
             }
             labels[slot].alpha = 1;
+        }
+
+        guideLines = strtok(self MM_EETrackerGuideBuildText(), "\n");
+        for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
+        {
+            if(rowIndex < guideLines.size)
+            {
+                if(!isDefined(guideLastRows[rowIndex]) || guideLastRows[rowIndex] != guideLines[rowIndex])
+                {
+                    guideHuds[rowIndex] setText(guideLines[rowIndex]);
+                    guideLastRows[rowIndex] = guideLines[rowIndex];
+                }
+                guideHuds[rowIndex].alpha = 1;
+            }
+            else
+                guideHuds[rowIndex].alpha = 0;
         }
 
         wait 0.15;
@@ -3367,12 +3396,16 @@ MM_EETrackerESPLoop()
         if(isDefined(label))
             label destroy();
     }
+    foreach(guideHud in guideHuds)
+    {
+        if(isDefined(guideHud))
+            guideHud destroy();
+    }
 
     self.mmEEESPDots = [];
     self.mmEEESPLabels = [];
     self.mmEEESPActive = false;
 }
-
 MM_ToggleStatusHUD()
 {
     self MM_Toggle("statushud", "Live Match HUD", ::MM_StatusHUDLoop);
