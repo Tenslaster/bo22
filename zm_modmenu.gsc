@@ -2484,6 +2484,7 @@ MM_EETrackerLoop()
                 hud = self MM_NewText(385, 86, 0.68);
                 hud.color = (0.85, 1, 0.85);
                 hud.sort = 1003;
+                lastTrackerText = undefined;
             }
 
             trackerText = self MM_EETrackerBuildText();
@@ -2497,6 +2498,7 @@ MM_EETrackerLoop()
         {
             hud destroy();
             hud = undefined;
+            lastTrackerText = undefined;
         }
 
         wait 0.45;
@@ -2590,7 +2592,7 @@ MM_EETrackerMob()
         nextText = "Finish the final Weasel showdown";
 
     return "^2MOB OF THE DEAD - POP GOES THE WEASEL"
-        + "\\n^7Three dog heads: " + self MM_EETrackerStatus(dogs)
+        + "\\n^7Three NML trips: " + self MM_EETrackerStatus(dogs)
         + "   Spoon: " + self MM_EETrackerStatus(spoon)
         + "\\n^7Warden's Blundergat: " + self MM_EETrackerStatus(blundergat)
         + "   Nixie codes: " + self MM_EETrackerStatus(nixie)
@@ -2941,22 +2943,23 @@ MM_EECollectQuestTargets()
 
 MM_EECollectMobTargets(targets)
 {
-    if(!flag("quest_completed_thrice") && isDefined(level.a_wolf_structs))
+    // The spoon / Hell's Retriever route uses the wolf-head positions.
+    if(!flag("spoon_obtained") && isDefined(level.a_wolf_structs))
     {
         foreach(spot in level.a_wolf_structs)
-            targets = self MM_EEAddQuestTarget(targets, spot, "WOLF HEAD");
+            targets = self MM_EEAddQuestTarget(targets, spot, "WOLF HEAD - SPOON QUEST");
     }
 
     if(!flag("spoon_obtained"))
     {
-        targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON / SPORK");
-        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / SPORK");
+        targets = self MM_EEAddQuestEnt(targets, "pickup_spoon", "SPOON PICKUP");
+        targets = self MM_EEAddQuestEnt(targets, "afterlife_show_spork", "SPOON / AFTERLIFE");
     }
 
     if(!flag("warden_blundergat_obtained"))
     {
-        targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "BLUNDERGAT REWARD");
-        targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - RETRIEVER");
+        targets = self MM_EEAddQuestEnt(targets, "sq_bg_reward_pickup", "WARDEN BLUNDERGAT");
+        targets = self MM_EEAddQuestEntArray(targets, "sq_bg_macguffin", "targetname", "SKULL - HELL'S RETRIEVER");
     }
 
     if(!flag("key_found"))
@@ -2984,26 +2987,32 @@ MM_EECollectMobTargets(targets)
         if(!flag("rigging_found"))
             targets = self MM_EEAddCraftablePieceTarget(targets, "plane", "rigging", "PLANE RIGGING");
 
-        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_engine", "ENGINE PART");
-        targets = self MM_EEAddQuestEnt(targets, "plane_hideable_clothes_pile", "CLOTH PART");
+        // Refuel cans only exist in the stock registry after each return from the bridge.
+        for(fuelIndex = 1; fuelIndex <= 5; fuelIndex++)
+            targets = self MM_EEAddCraftablePieceTarget(targets, "refuelable_plane", "fuel" + fuelIndex, "PLANE FUEL CAN");
+
+        if(flag("cloth_found") && flag("fueltanks_found") && flag("engine_found") &&
+           flag("steering_found") && flag("rigging_found"))
+            targets = self MM_EEAddQuestEnt(targets, "plane_fuelable_trigger", "REFUEL THE PLANE");
     }
     else if(!flag("plane_boarded"))
     {
         targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "BOARD THE PLANE");
-        targets = self MM_EEAddQuestEntKey(targets, "plane_fly_afterlife_trigger", "script_noteworthy", "AFTERLIFE FLIGHT");
+        targets = self MM_EEAddQuestEntKey(targets, "plane_fly_afterlife_trigger", "script_noteworthy", "FINAL AFTERLIFE FLIGHT");
     }
     else if(!flag("plane_zapped") && !flag("plane_crashed"))
         targets = self MM_EEAddQuestEnt(targets, "plane_fly_trigger", "PLANE FLIGHT");
 
-    if(flag("spawn_fuel_tanks") && !flag("plane_ready"))
+    // After the bridge crash, the electric-chair triggers start the next NML trip.
+    if(flag("plane_crashed") && !flag("quest_completed_thrice"))
     {
-        for(fuelIndex = 1; fuelIndex <= 5; fuelIndex++)
-            targets = self MM_EEAddCraftablePieceTarget(targets, "refuelable_plane", "fuel" + fuelIndex, "PLANE FUEL CAN");
-        targets = self MM_EEAddQuestEnt(targets, "plane_fuelable_trigger", "REFUEL THE PLANE");
+        for(chairIndex = 1; chairIndex <= 4; chairIndex++)
+            targets = self MM_EEAddQuestEnt(targets, "trigger_electric_chair_" + chairIndex, "TRAVEL TO NML");
     }
 
     return targets;
 }
+
 MM_EECollectTranzitTargets(targets)
 {
     navStarted = self MM_EETrackerStat("sq_transit_started") > 0;
@@ -3301,31 +3310,34 @@ MM_EETrackerGuideBuildText()
 
 MM_EEGuideMob()
 {
-    guide = "^2MOB OF THE DEAD - QUEST GUIDE\n";
-    if(!flag("quest_completed_thrice"))
-        guide += "^3STEP 1:^7 Charge all three dog heads around the prison.";
+    guide = "^2MOB OF THE DEAD - POP GOES THE WEASEL\n";
+    if(!flag("key_found"))
+        guide += "^3STEP 1:^7 Find the Warden's key; use it to unlock the Afterlife routes.";
+    else if(!flag("quest_completed_thrice"))
+        guide += "^3STEP 2:^7 Complete three bridge / NML trips; after each crash use an electric chair.";
+    else if(!flag("spoon_obtained"))
+        guide += "^3STEP 3:^7 Complete the Spoon quest: charge the wolf heads and collect the Spoon.";
     else if(!flag("warden_blundergat_obtained"))
-        guide += "^3STEP 2:^7 Use Hell's Retriever to collect the Warden's skulls.";
-    else if(!flag("key_found"))
-        guide += "^3STEP 3:^7 Find the Warden's key and open the Afterlife route.";
+        guide += "^3STEP 4:^7 Use Hell's Retriever to collect the skulls and obtain the Warden's Blundergat.";
     else if(!flag("nixie_puzzle_completed"))
-        guide += "^3STEP 4:^7 Solve the three Nixie tubes in the correct sequence.";
+        guide += "^3STEP 5:^7 Solve the Nixie-tube puzzle; follow the tube clues and timing.";
+    else if(isDefined(level.m_headphones))
+        guide += "^3STEP 6:^7 Follow the moving audio-log marker and complete the full audio tour.";
     else if(!flag("plane_built"))
-        guide += "^3STEP 5:^7 Collect cloth, fuel tanks, engine, steering and rigging; build the plane.";
+        guide += "^3STEP 7:^7 Collect missing plane parts and all five fuel cans; finish the refuel.";
     else if(!flag("plane_boarded"))
-        guide += "^3STEP 6:^7 Board the plane at the roof flight trigger.";
+        guide += "^3STEP 8:^7 Board the final plane at the roof trigger.";
     else if(!flag("plane_departed"))
-        guide += "^3STEP 7:^7 Stay aboard and wait for take-off.";
+        guide += "^3STEP 9:^7 Stay aboard until take-off.";
     else if(!flag("plane_zapped"))
-        guide += "^3STEP 8:^7 Reach the bridge and shoot the Warden.";
+        guide += "^3STEP 10:^7 Reach the Golden Gate Bridge and complete the flight sequence.";
     else if(!flag("plane_crashed"))
-        guide += "^3STEP 9:^7 Finish the crash sequence.";
+        guide += "^3STEP 11:^7 Wait for the crash sequence, then use the final-flight route.";
     else
-        guide += "^3STEP 10:^7 Finish the final Weasel showdown.";
-    guide += "\n^7CYAN MARKERS:^3 Current quest objects and interactions.";
-    guide += "\n^7Refuel: collect all five cans when the fuel stage starts.";
-    guide += "\n^7Optional: Golden Spork and audio logs are marked too.";
-    guide += "\n^7The guide advances as stock quest flags change.";
+        guide += "^3FINAL:^7 Complete the Weasel showdown at the bridge.";
+    guide += "\n^7STATUS:^3 Three NML trips, Spoon, Blundergat, Nixie and plane flags drive progression.";
+    guide += "\n^7CYAN MARKERS:^3 Current items, plane parts, fuel cans and chair triggers.";
+    guide += "\n^7The guide advances automatically as stock quest flags change.";
     return guide;
 }
 
@@ -3485,7 +3497,7 @@ MM_EETrackerESPLoop()
     }
 
     // Pinned step-by-step guide, following the Origins staff-guide layout.
-    guideRowCount = 6;
+    guideRowCount = 8;
     guideHuds = [];
     guideLastRows = [];
     for(rowIndex = 0; rowIndex < guideRowCount; rowIndex++)
