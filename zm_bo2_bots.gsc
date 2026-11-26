@@ -135,9 +135,11 @@ init()
 {
     setdvar("kill_overlapping_players", 0);
 
-    // Start explicitly in stay mode; wander is only enabled by the F6 command.
     if(!isdefined(level.bot_command_mode))
-        level.bot_command_mode = "stay";
+        level.bot_command_mode = getdvarintdefault("zm_bot_quest_autoplay", 0) ? "quest" : "stay";
+
+    // The optional menu uses this callback without a hard dependency on the bot scripts.
+    level.bo22_set_bot_mode = ::bot_set_command_mode;
 
     bot_set_dvars();
     flag_wait("initial_blackscreen_passed");
@@ -146,6 +148,8 @@ init()
     // Install the map-only replacement before any generator can be started.
     if(getdvar("mapname") == "zm_tomb")
         bot_origins_install_capture_zone_hook();
+    else if(getdvar("mapname") == "zm_nuked")
+        bot_nuketown_install_mannequin_hook();
 
     if(!isdefined(level.using_bot_weapon_logic))
         level.using_bot_weapon_logic = 1;
@@ -162,7 +166,10 @@ init()
 
     bot_amount = getdvarintdefault("zm_bots", 7);
     for(i = 0; i < bot_amount; i++)
-        spawn_bot();
+    {
+        if(!spawn_bot())
+            break;
+    }
 
     foreach(player in get_players())
     {
@@ -176,22 +183,19 @@ init()
 
 spawn_bot()
 {
-	bot = addtestclient();
-	
-	bot waittill("spawned_player");
-	
-	bot thread maps\mp\zombies\_zm::spawnspectator();
-	
-	if(isdefined(bot))
-	{
-		bot.pers["isbot"] = 1;
-		
-		bot thread onspawn();
-	}
-	
-	wait 1;
-	
-	bot [[level.spawnplayer]]();
+    bot = addtestclient();
+    if(!isdefined(bot))
+        return false;
+
+    bot waittill("spawned_player");
+    bot thread maps\mp\zombies\_zm::spawnspectator();
+    bot.pers["isbot"] = 1;
+    bot thread onspawn();
+
+    wait 1;
+    if(isdefined(bot))
+        bot [[level.spawnplayer]]();
+    return isdefined(bot);
 }
 
 onspawn()
@@ -2839,19 +2843,19 @@ bot_command_mode_monitor()
 
 bot_cycle_command_mode()
 {
-    if(!isdefined(level.bot_command_mode))
-        level.bot_command_mode = "stay";
+    switch(level.bot_command_mode)
+    {
+        case "stay": self bot_set_command_mode("wander"); break;
+        case "wander": self bot_set_command_mode("wander_further"); break;
+        case "wander_further": self bot_set_command_mode("follow"); break;
+        case "follow": self bot_set_command_mode("quest"); break;
+        default: self bot_set_command_mode("stay"); break;
+    }
+}
 
-    if(level.bot_command_mode == "stay")
-        level.bot_command_mode = "wander";
-    else if(level.bot_command_mode == "wander")
-        level.bot_command_mode = "wander_further";
-    else if(level.bot_command_mode == "wander_further")
-        level.bot_command_mode = "follow";
-    else if(level.bot_command_mode == "follow")
-        level.bot_command_mode = "quest";
-    else
-        level.bot_command_mode = "stay";
+bot_set_command_mode(mode)
+{
+    level.bot_command_mode = mode;
 	
     level.bot_commander = self;
 	
@@ -2869,7 +2873,7 @@ bot_cycle_command_mode()
 	bot_set_dvars();
 	
     if(level.bot_command_mode == "quest")
-        self iprintlnbold("Bots: QUEST MODE - collecting parts / doing objectives / preserving 1 zombie");
+        self iprintlnbold("Bots: QUEST MODE - prioritizing map objectives");
     else
         self iprintlnbold("Bots: " + level.bot_command_mode);
 }
@@ -5259,6 +5263,54 @@ bot_auto_quest_think()
     }
 }
 
+// Core uses zombie_total for queued spawns. A lone visible zombie during a
+// spawn wave is not the end of the round.
+bot_quest_should_spare_zombie(enemies)
+{
+    if(level.bot_command_mode != "quest" || !isdefined(level.round_number) ||
+       (isdefined(level.zombie_total) && level.zombie_total > 0))
+        return false;
+
+    hold_seconds = getdvarintdefault("zm_bot_quest_hold_seconds", 35);
+    if(hold_seconds == 0)
+        return false;
+
+    last = undefined;
+    foreach(zombie in enemies)
+    {
+        if(!isdefined(zombie) || !isalive(zombie))
+            continue;
+        if(isdefined(last))
+            return false;
+        last = zombie;
+    }
+
+    if(!isdefined(last) || is_true(last.in_the_ground) || bot_is_special_zombie(last))
+        return false;
+
+    if(!isdefined(level.bot_quest_hold_round) || level.bot_quest_hold_round != level.round_number)
+    {
+        level.bot_quest_hold_round = level.round_number;
+        level.bot_quest_hold_until = gettime() + max(0, hold_seconds) * 1000;
+    }
+
+    // A negative value retains the manual hold until the player switches modes.
+    if(hold_seconds < 0)
+        return true;
+    if(gettime() >= level.bot_quest_hold_until)
+        return false;
+
+    switch(getdvar("mapname"))
+    {
+        case "zm_tomb": return !bot_origins_quest_needs_kills();
+        case "zm_prison": return !bot_mob_quest_needs_kills();
+        case "zm_transit": return !bot_tranzit_quest_needs_kills();
+        case "zm_buried": return !bot_buried_quest_needs_kills();
+        case "zm_highrise": return !bot_die_rise_quest_needs_kills();
+    }
+    return true;
+}
+
 // Navigate to a destination with a bounded number of alternate nav-node
 // waypoints. Die Rise gets first chance to use its real elevator network.
 bot_quest_navigate_to(target_origin, goal_name, range, max_time)
@@ -5337,12 +5389,16 @@ bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_
         return false;
 
     target.bot_auto_quest_owner = self;
-    target.bot_auto_quest_until = gettime() + 12000;
+    // Navigation can include several waypoints or a full elevator cycle.
+    target.bot_auto_quest_until = gettime() + 65000;
 
     if(!self bot_quest_navigate_to(target.origin, goal_name, range, 10000))
     {
-        target.bot_auto_quest_owner = undefined;
-        target.bot_auto_quest_until = undefined;
+        if(isdefined(target) && target.bot_auto_quest_owner == self)
+        {
+            target.bot_auto_quest_owner = undefined;
+            target.bot_auto_quest_until = undefined;
+        }
         return false;
     }
 
@@ -5352,7 +5408,7 @@ bot_quest_use_target(target, goal_name, range, use_pulses, allow_afterlife, aim_
 
     while(gettime() < deadline)
     {
-        if(!self bot_objective_can_run() && !afterlife_objective)
+        if(!isalive(self) || (!self bot_objective_can_run() && !afterlife_objective))
             break;
 
         if(!isdefined(target) || !isdefined(target.origin))
@@ -5563,7 +5619,8 @@ bot_quest_primary_weapon()
             continue;
         if(issubstr(weapon, "staff_") || weapon == "jetgun_zm" || weapon == "slipgun_zm")
             continue;
-        return weapon;
+        if(self getweaponammoclip(weapon) + self getweaponammostock(weapon) > 0)
+            return weapon;
     }
     return undefined;
 }

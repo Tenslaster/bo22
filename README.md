@@ -22,6 +22,7 @@ A modular **GSC scripting project for Call of Duty: Black Ops II Zombies on Plut
 ## Contents
 
 - [What is BO22?](#what-is-bo22)
+- [Start a bot quest run](#start-a-bot-quest-run)
 - [Features](#features)
 - [How the bot system works](#how-the-bot-system-works)
 - [Map-by-map guide](#map-by-map-guide)
@@ -55,6 +56,33 @@ It is split into three main parts:
 BO22 is intended for a Zombies match in which the scripts are loaded and you have permission to run them. It is **not** a standalone .exe, a Plutonium server plugin, or a client-only tool that can control a server you do not own.
 
 > **Important:** Objective automation is state-dependent. Bots check real map entities, inventory, triggers, and stock game conditions. A feature being implemented does not mean every quest or Easter Egg is guaranteed to finish unattended in every match.
+
+## Start a bot quest run
+
+Install the eight bot scripts from the same revision. Install the optional menu to use **Bot Quest Controls → Start Quest Mode**. In bot-only mode, press **Action Slot 3** until Quest appears. Action Slot 4 teleports the group to you.
+
+To start a match with quest movement already enabled, set these DVARs before loading the map.
+
+```text
+set zm_bots 3
+set zm_bot_quest_autoplay 1
+set zm_bot_quest_hold_seconds 35
+```
+
+One host plus three bots fills a four-player lobby. The number of real players required by a quest depends on how the stock scripts validate its participants. For TranZit, pick Maxis or Richtofen before the run starts. The other maps follow their live quest state.
+
+Use **Easter Egg Tracker → Show Live Progress HUD** for the next stock step. **Bot Quest Controls → Show Bot Quest Status** reports the command mode, living bot count and selected TranZit route. **Return Bots to Follow** restores formation movement and the normal pace of rounds.
+
+| Map | Quest work in this update | Conditions to check during a run |
+|---|---|---|
+| Origins | Matching upgraded-staff plinths, robot fire-link button, Beacon throw, soul rounds and portal tracking | Staff ownership, robot hatch windows, the Beacon, Zombie Blood and each player's punch tablet |
+| Mob of the Dead | Afterlife shocks and final Nixie codes, audio log handoff, bridge return and final-fight targeting | Original difficulty, Afterlife lives, three bridge trips, required side quests and the stock final-flight roster |
+| TranZit | Constructed power switch, Maxis turbine and Avogadro steps, Richtofen Jet Gun positioning and tower kills | Two working turbines for Maxis, Jet Gun and synchronized EMPs for Richtofen |
+| Die Rise | Power switch, elevator badges, ordered dragon symbols and both branches' live stages | Nav table, separate elevator positions, required weapons and Trample Steams |
+| Buried | Squad support for charging the lamp and live aim on moving fountain targets | Tower construction, route equipment, Time Bomb and the stock position checks |
+| Nuketown Zombies | Live meteor targets, mannequin head hits and the clock power-up | The population counter, music already playing and accessible targets |
+
+The host may still need to satisfy player-specific requirements and assist with timed team interactions. End-to-end unattended runs have yet to be verified in Plutonium.
 
 ## Features
 
@@ -128,9 +156,9 @@ Some objectives require the host or a player to perform an earlier step first. T
 | **Wander** | Move around nearby reachable areas while continuing their normal combat and support logic. |
 | **Wander Further** | Use a wider roaming behaviour to explore farther from their starting position. |
 | **Follow** | Use the player who issued the command as the team leader and move toward that player. |
-| **Quest** | Stop ordinary roaming/following, prioritize the autonomous part, buildable, and map-quest workers, and stop attacking when only one living zombie remains so the round stays open. |
+| **Quest** | Stop ordinary roaming/following, prioritize the autonomous part, buildable, and map-quest workers, and briefly spare the last regular zombie when the current step can use the time. |
 
-The bot mode is shared by the bot group. Press **Action Slot 3** to cycle through Stay → Wander → Wander Further → Follow → Quest → Stay. **Action Slot 4** remains the group teleport command. In Quest mode, bots stop normal roaming and let their autonomous collection and map-objective workers choose movement goals. They stop firing when one living zombie remains; that last zombie is preserved until you switch to another mode.
+The group shares one mode. Cycle it with **Action Slot 3** or use the host menu to switch directly to Quest or Follow.
 
 ---
 
@@ -205,10 +233,10 @@ The worker waits for the stock rotation lock and keeps a short-lived ownership c
 
 The robot routine is deliberately conservative because a mistimed approach can put a bot beneath a moving foot.
 
-1. It selects a walking robot whose hatch state is explicitly marked closed and whose matching left/right foot is valid.
+1. It selects a walking robot with a known hatch state and a valid left or right hatch foot.
 2. It reserves that robot and its matching footprint so multiple bots do not all chase the same entry.
 3. It stages outside the footprint, using a wider approach offset rather than standing directly beside the sole.
-4. It aims at the live sole attached to the robot's actual hatch foot and uses a normal bullet weapon. It does not intentionally shoot the opposite foot or the robot body.
+4. If the hatch is closed, it targets the active sole with a normal bullet weapon. It can approach a hatch that is already open.
 5. It watches the live hatch state. If the moving footprint gets too close, the bot cancels the approach and retreats.
 6. Once the stock hatch opens, it follows the matching `trig_stomp_kill_<foot>_<robot>` trigger as it moves.
 7. It only considers entry successful after the game reports that the bot has been teleported into that same robot head.
@@ -221,6 +249,7 @@ After entry, the stock in-head pickup/craftable logic remains responsible for co
 
 The main quest worker contains support for the later Little Lost Girl stages:
 
+- **Staff placement:** Match each upgraded staff to its plinth. Bots use the stock head landing markers to select the required robot and interact after the teleport finishes.
 - **Robot-button stage:** use an actual fire-link button during the required three-robot round, then damage the floor target with the Beacon while its stock window is valid.
 - **Zombie Blood plane:** wait until Zombie Blood is active, then shoot the moving biplane using its current position. The bot does not waste shots before the power-up condition is met.
 - **Maxis Drone pickup:** approach the pilot's real quadrotor pickup and let the stock callback set the retrieved state.
@@ -378,13 +407,13 @@ The script supports the turbine/tower progression logic:
 - The first two turbine placements are handled as separate placements.
 - Later, when the route reaches the Screecher-light stage, bots can deploy turbines in two different valid light zones.
 - After both turbines have powered the tower stage, the worker can hold position at the tower volume to attract the Avogadro into the required area.
-- The Maxis branch does not waste EMP grenades on the Avogadro step; that step is based on the powered turbines and the Avogadro touching the tower volume.
+- With both turbines powered, a bot with an EMP can stun the Avogadro inside the tower volume. In Quest mode bots use the constructed power switch to cycle map power and leave it off for Maxis.
 
 ### Richtofen route
 
 The Richtofen branch has separate logic:
 
-- If the bot owns the Jet Gun and the tower-overheat stage is still incomplete, it moves to the correct tower volume and fires the Jet Gun until its heat reaches the required state or the task times out.
+- If the bot owns the Jet Gun and the tower-overheat stage is still incomplete, it equips the Jet Gun before entering the tower volume and fires until the stock overheat event or a timeout.
 - During the tower-kill counter stage, bots can hold the required tower volume while their normal combat loop kills zombies.
 - During the Screecher safety-light stage, bots with an EMP grenade can move to an unfinished light zone and throw the EMP so the native quest handler receives the event.
 
@@ -537,12 +566,12 @@ The Richtofen branch has a separate flow:
 
 Nuketown has a smaller, focused map module. It supports the meteor/mannequin progression interactions:
 
-- The bot reads the map's meteor counter and targets the corresponding meteor/bear interaction location.
+- The bot finds the remaining meteor-bear locations from their live entities, including when a player collects them out of order.
 - It uses the map's real use interaction so the stock counter can advance.
-- When the meteor count reaches three, the bot can shoot the destructible male mannequins while the map's music-override state allows it.
+- When the meteor count reaches three, bots target unfinished mannequin heads. The native break event still controls the mannequin counter and music playback.
 - During the relevant population-count state, the bot can move to the clock power-up location.
 
-This module focuses on these map-specific tasks. It is not a full Nuketown Easter Egg automation system.
+These are Nuketown music Easter eggs.
 
 </details>
 
@@ -687,10 +716,10 @@ Stay → Wander → Wander Further → Follow → Quest → Stay
 The current mode is printed on screen. The mode applies to the whole bot group.
 
 **Quest Mode**
-- Stops ordinary Stay/Follow/Wander movement so the bots' autonomous collection, buildable, craftable, and map-quest workers can choose their own destinations.
-- Keeps the normal survival/combat logic active while more than one zombie remains.
-- Stops the bots from attacking when only one living zombie remains, preserving that zombie while the bots work on parts and quest objectives.
-- Switch back to any other mode to resume normal zombie targeting.
+
+- Gives map objectives priority over normal wandering and following. Bots keep fighting and can still retreat from danger.
+- With the default hold, gives bots up to 35 seconds to work with one regular zombie left after the last queued spawn. Supported kill or soul stages can resume fighting immediately.
+- Set `zm_bot_quest_hold_seconds` to `0` to advance rounds immediately or `-1` to hold the last regular zombie until you switch modes. An indefinite hold can stall kill-based objectives.
 
 **Key 4 — Teleport bots**
 
@@ -789,6 +818,8 @@ The current bot configuration uses these DVARs:
 |---|---|---|
 | `zm_bots` | Number of bots created during initialization. | `7` |
 | `zm_bot_quest_route` | Selects TranZit's bot quest branch. | `maxis` |
+| `zm_bot_quest_autoplay` | Starts the group in Quest mode when set to `1` before loading the map. | `0` |
+| `zm_bot_quest_hold_seconds` | Maximum time to spare the last regular zombie in Quest mode. Set `0` for immediate progression or `-1` for a manual hold. | `35` |
 
 ### Changing the bot count
 
@@ -836,17 +867,13 @@ If the DVAR is empty or unset, the module uses the Maxis route.
 
 ## Validation status and known limitations
 
-The latest Origins changes have received a source-level review against the stock Plutonium T6 Origins scripts and static structural checks. **They have not been confirmed by a Plutonium GSC compile or a complete live Origins match in this update.** Treat live testing as the final verification step.
+All nine GSC files compiled with xensik GSC Tool targeting T6 PC and the stock Plutonium script references. Live multiplayer and complete bot-only routes have yet to be verified in Plutonium.
 
-- Map objectives are conditional. If a required weapon, item, part, trigger, round, weather condition, or quest stage is missing, the bot may wait or skip that objective.
-- A bot may need a reachable navigation path. A task can fail if a player blocks the route, the bot is trapped, or the map geometry prevents pathfinding.
-- Some Easter Egg stages require player-specific items or states. A shared squad can make progress, but not every step is automatically completed for every player.
-- The host-only menu actions are intentionally unavailable to clients without host permissions.
-- The menu's **Complete Little Lost Girl** option requests the ending sequence and can finish the match.
-- The project uses stock game callbacks where possible. If a stock function is not available in the loaded Plutonium build or map, the compiler can report an unresolved external or the action can be unavailable.
-- GSC gameplay and compilation have to be validated in the actual target game. Static checks can catch structural problems but cannot prove that every engine call, trigger, animation, or quest stage works at runtime.
-- Origins tasks involving robot feet, moving drone routes, crypt orbs, and player-specific tablets are especially sensitive to live entity timing and should be tested in an actual match.
-- A GitHub commit alone does not prove that a script compiles or that an objective works in every match.
+- Quest stages depend on the native round, difficulty, map events, equipment and valid player roster.
+- Reachability and moving triggers can delay or prevent an action. Check the live tracker to see which step the map has accepted.
+- Team steps can still need the host. For example, Origins may require each player's punch tablet, and Buried may require players in the Time Bomb volume.
+- **Complete Little Lost Girl** is a separate host menu action that requests the ending sequence and can finish the match.
+
 
 ---
 

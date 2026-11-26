@@ -100,6 +100,15 @@ bot_combat_think(damage, attacker, direction)
 	if(!self hasgoal("flee") && !self bot_flee_blocked() && self bot_should_kite())
 		self bot_flee_goal(true);
 
+	// Quest interactions own weapon input as well as aim. A normal combat
+	// tick can otherwise suppress a scripted shot or fire at the wrong target.
+	if(is_true(self.bot.is_objective_using))
+	{
+		self allowattack(1);
+		self pressads(0);
+		return;
+	}
+
 	// These actions keep their own input/aim, but emergency threat tracking and
 	// fleeing above remain active while the animation or interaction is running.
 	if(is_true(self.bot.is_getting_shield) || is_true(self.bot.is_throwing_grenade) ||
@@ -2294,23 +2303,10 @@ bot_best_enemy()
         return 0;
     }
 
-    // Quest mode deliberately leaves one living zombie alive. This gives the
-    // autonomous part/build/quest workers time to finish without the squad
-    // ending the round. All bots use the same live zombie count.
-    if(isdefined(level.bot_command_mode) && level.bot_command_mode == "quest")
+    if(self bot_quest_should_spare_zombie(enemies))
     {
-        alive_count = 0;
-        foreach(zombie in enemies)
-        {
-            if(isdefined(zombie) && isalive(zombie) && !is_true(zombie.in_the_ground))
-                alive_count++;
-        }
-
-        if(alive_count <= 1)
-        {
-            self bot_clear_enemy();
-            return 0;
-        }
+        self bot_clear_enemy();
+        return 0;
     }
 
     wallshoot_range = getdvarfloatdefault("bot_wallshoot_dist", 200);

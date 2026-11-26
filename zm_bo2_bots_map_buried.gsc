@@ -8,8 +8,25 @@
 // Edit this file for behavior that belongs only to this map.
 // -----------------------------------------------------------------------------
 
+bot_buried_quest_needs_kills()
+{
+    return isdefined(level._cur_stage_name) && level._cur_stage_name == "ftl";
+}
+
 bot_quest_buried()
 {
+    stage = level._cur_stage_name;
+
+    // Lamp kills and timed targets need the whole squad. Keep stage-start
+    // interactions with the leader while assistants fight at the objectives.
+    if(isdefined(stage) && stage == "ftl" && self bot_buried_lamp_support())
+        return;
+    if(isdefined(stage) && stage == "ows" && flag("sq_ows_start") && !flag("sq_ows_success"))
+    {
+        self bot_buried_ows_shoot_active_targets();
+        return;
+    }
+
     // Keep Easter-egg trigger ownership single-leader. In wander mode each bot
     // may solve its own Trample Steam gap; in follow mode only the leader
     // deploys a pad so the whole squad does not stack on the same launch point.
@@ -25,8 +42,6 @@ bot_quest_buried()
         self.bot.buried_runtime_started = 1;
         self thread bot_buried_runtime_watch();
     }
-
-    stage = level._cur_stage_name;
 
     // Tower Snare: activate the three signs belonging to the already-built
     // tower route. The stock damage watcher accepts Galvaknuckles (tazer
@@ -810,8 +825,20 @@ bot_buried_ows_shoot_active_targets()
 
     target.bot_buried_ows_retry = gettime() + 650;
 
-    self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
-        target.origin, weapon, "bot_buried_ows_shot", 2800, 4, 0.10);
+    self.bot.is_objective_using = 1;
+    self switchtoweaponimmediate(weapon);
+    wait 0.2;
+
+    // Moving signs can cross the sightline between shots.
+    for(shot = 0; shot < 4 && isdefined(target) && isalive(self); shot++)
+    {
+        self lookat(target.origin + (0, 0, 12));
+        self pressattackbutton(0.1);
+        wait 0.16;
+    }
+
+    self clearlookat();
+    self.bot.is_objective_using = undefined;
 
     return true;
 }

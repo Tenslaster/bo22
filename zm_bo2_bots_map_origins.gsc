@@ -1490,6 +1490,82 @@ bot_quest_origins_punch_souls()
     return true;
 }
 
+bot_origins_quest_needs_kills()
+{
+    if((flag("ee_sam_portal_active") && !flag("ee_souls_absorbed")) ||
+       (flag("ee_mech_zombie_hole_opened") && !flag("ee_mech_zombie_fight_completed")))
+        return true;
+
+    if(isdefined(level._cur_stage_name) && level._cur_stage_name == "step_6")
+        return true;
+
+    if(isdefined(level.a_elemental_staffs))
+    {
+        foreach(staff in level.a_elemental_staffs)
+        {
+            if(isdefined(staff.charger) && is_true(staff.charger.is_inserted) &&
+               !is_true(staff.charger.is_charged))
+                return true;
+        }
+    }
+    return false;
+}
+
+// Use the stock head landing markers to identify the robot that owns a plinth.
+bot_origins_staff_plinth_robot(plinth)
+{
+    best_robot = undefined;
+    best_dist = 600 * 600;
+
+    for(robot_id = 0; robot_id < 3; robot_id++)
+    {
+        landings = getstructarray("head_" + robot_id + "_teleport_player", "targetname");
+        foreach(landing in landings)
+        {
+            dist = distancesquared(plinth.origin, landing.origin);
+            if(dist < best_dist)
+            {
+                best_dist = dist;
+                best_robot = robot_id;
+            }
+        }
+    }
+    return best_robot;
+}
+
+bot_origins_place_upgraded_staff()
+{
+    if(!flag("ee_all_staffs_upgraded") || flag("ee_all_staffs_placed"))
+        return false;
+
+    head_stubs = getstructarray("robot_head_staff", "targetname");
+    foreach(head in head_stubs)
+    {
+        if(!isdefined(head.m_plinth) || isdefined(head.m_plinth.m_staff) ||
+           !isdefined(head.script_noteworthy) ||
+           !self hasweapon("staff_" + head.script_noteworthy + "_upgraded_zm"))
+            continue;
+
+        robot_id = bot_origins_staff_plinth_robot(head);
+        if(isdefined(self.in_giant_robot_head))
+        {
+            if(isdefined(robot_id) && robot_id == self.in_giant_robot_head)
+            {
+                self scripts\zm\zm_bo2_bots::bot_quest_use_target(head, "bot_origins_staff_plinth", 36, 4, 0, 0);
+                return true;
+            }
+        }
+        else if(head.script_noteworthy == "fire")
+        {
+            self scripts\zm\zm_bo2_bots::bot_quest_use_target(head, "bot_origins_staff_plinth", 36, 4, 0, 0);
+            return true;
+        }
+        else if(isdefined(robot_id) && self bot_origins_enter_robot(robot_id))
+            return true;
+    }
+    return false;
+}
+
 bot_quest_origins_main_steps()
 {
     if(flag("ee_souls_absorbed"))
@@ -1498,35 +1574,47 @@ bot_quest_origins_main_steps()
         self cancelgoal("bot_origins_soul_chamber_hold");
     }
 
-    // Step 3: activate a real fire-link unitrigger during the three-robot
-    // round, then hit the damage target with the Beacon during its window.
-    if(flag("three_robot_round") && !flag("ee_mech_zombie_hole_opened"))
+    // The stock button is in a robot head and opens a limited Beacon window.
+    if(flag("three_robot_round") && flag("ee_all_staffs_placed") && !flag("ee_mech_zombie_hole_opened"))
     {
-        if(!isdefined(level.bot_origins_firelink_next_press) ||
-           gettime() >= level.bot_origins_firelink_next_press)
+        if(isdefined(self.in_giant_robot_head))
         {
-            buttons = getentarray("fire_link_button", "targetname");
-            foreach(button in buttons)
+            if(!flag("fire_link_enabled"))
             {
-                if(isdefined(button) && isdefined(button.origin))
+                links = getstructarray("fire_link", "targetname");
+                foreach(link in links)
                 {
-                    self scripts\zm\zm_bo2_bots::bot_quest_use_target(button, "bot_origins_fire_link", 24, 1);
-                    level.bot_origins_firelink_next_press = gettime() + 6000;
-                    return true;
+                    if(isdefined(link.origin) && distancesquared(self.origin, link.origin) < 450 * 450)
+                    {
+                        self scripts\zm\zm_bo2_bots::bot_quest_use_target(link, "bot_origins_fire_link", 26, 2, 0, 0);
+                        break;
+                    }
                 }
             }
+            return true;
         }
 
         if(self hasweapon("beacon_zm"))
         {
             hole = getent("fire_link_damage", "targetname");
-            if(isdefined(hole) && isdefined(hole.origin))
+            if(isdefined(hole) && isdefined(hole.origin) &&
+               self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(hole.origin, "bot_origins_beacon_position", 360, 1))
             {
-                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(hole.origin, "beacon_zm", "bot_origins_fire_link_shot", 700, 1, 0.1);
+                if(flag("fire_link_enabled") && !flag("ee_mech_zombie_hole_opened"))
+                {
+                    self.bot.is_objective_using = 1;
+                    self throwgrenade("beacon_zm", hole.origin);
+                    wait 0.8;
+                    self.bot.is_objective_using = undefined;
+                }
                 return true;
             }
+            return false;
         }
-        return true;
+
+        if(!flag("fire_link_enabled"))
+            return self bot_origins_enter_robot();
+        return false;
     }
 
     // Step 5: the biplane accepts damage only from a player while Zombie Blood
@@ -1956,7 +2044,11 @@ bot_quest_origins_robot_wind_parts()
        level.staff_part_count["elemental_staff_air"] <= 0)
         return false;
 
-    // The stock head pickup/craftable worker owns collection after teleport.
+    return self bot_origins_enter_robot();
+}
+
+bot_origins_enter_robot(requested_robot)
+{
     if(isdefined(self.in_giant_robot_head))
         return true;
 
@@ -1985,10 +2077,8 @@ bot_quest_origins_robot_wind_parts()
 
         robot_id = robot.giant_robot_id;
 
-        // isdefined(false) is still true in GSC. Explicitly require a CLOSED
-        // hatch, otherwise bots waste the walk cycle on an already-open foot.
-        if(!isdefined(level.gr_foot_hatch_closed[robot_id]) ||
-           !level.gr_foot_hatch_closed[robot_id])
+        if((isdefined(requested_robot) && robot_id != requested_robot) ||
+           !isdefined(level.gr_foot_hatch_closed[robot_id]))
             continue;
 
         if(robot.hatch_foot != "left" && robot.hatch_foot != "right")
@@ -2059,14 +2149,14 @@ bot_quest_origins_robot_wind_parts()
 
     if(arrived && isalive(self) && !isdefined(self.in_giant_robot_head) &&
        isdefined(best_robot.is_walking) && best_robot.is_walking &&
-       isdefined(level.gr_foot_hatch_closed[robot_id]) &&
-       level.gr_foot_hatch_closed[robot_id])
+       isdefined(level.gr_foot_hatch_closed[robot_id]))
     {
         sole = getent("target_sole_" + robot_id, "targetname");
 
         // Shoot the live sole attached to hatch_foot (left/right), never the
         // opposite foot or the robot body.
-        if(isdefined(sole) && isdefined(sole.origin))
+        if(is_true(level.gr_foot_hatch_closed[robot_id]) &&
+           isdefined(sole) && isdefined(sole.origin))
         {
             bullet_weapon = self bot_origins_robot_bullet_weapon();
 
@@ -2844,6 +2934,17 @@ bot_quest_origins()
         return;
 
     if(isdefined(self.in_giant_robot_head))
+    {
+        if(!is_true(self.teleporting) && !is_true(self.giant_robot_transition) &&
+           !self bot_origins_place_upgraded_staff())
+            self bot_quest_origins_main_steps();
+        return;
+    }
+
+    if(self bot_origins_place_upgraded_staff())
+        return;
+
+    if(flag("ee_all_staffs_placed") && !flag("ee_souls_absorbed") && self bot_quest_origins_main_steps())
         return;
 
     if(flag("ee_souls_absorbed"))
@@ -2954,27 +3055,6 @@ bot_quest_origins()
             {
                 self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("upgraded_staff_pickup", "active");
                 self scripts\zm\zm_bo2_bots::bot_quest_use_target(staff_upgraded.trigger, "bot_origins_staff_pickup", 40, 4);
-                return;
-            }
-        }
-    }
-
-    // Step two of Little Lost Girl: put each upgraded staff into its matching
-    // robot-head plinth. The stock trigger checks the actual weapon name.
-    if(flag("ee_all_staffs_upgraded") && !flag("ee_all_staffs_placed"))
-    {
-        head_stubs = getstructarray("robot_head_staff", "targetname");
-        foreach(head in head_stubs)
-        {
-            if(!isdefined(head) || !isdefined(head.script_noteworthy) || !isdefined(head.m_plinth))
-                continue;
-
-            weapon_name = "staff_" + head.script_noteworthy + "_upgraded_zm";
-            if(self hasweapon(weapon_name) &&
-               (!isdefined(head.m_plinth.m_staff) || !isdefined(head.m_plinth.m_staff.origin)))
-            {
-                self scripts\zm\zm_bo2_bots::bot_ai_telemetry_objective("matching_robot_staff_placement", "active");
-                self scripts\zm\zm_bo2_bots::bot_quest_use_target(head, "bot_origins_staff_plinth", 40, 5);
                 return;
             }
         }

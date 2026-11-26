@@ -8,11 +8,37 @@
 // Edit this file for behavior that belongs only to this map.
 // -----------------------------------------------------------------------------
 
+bot_mob_quest_needs_kills()
+{
+    return isdefined(level.soul_catchers) && !flag("soul_catchers_charged");
+}
+
+bot_mob_final_flight_ready()
+{
+    return flag("quest_completed_thrice") && flag("spoon_obtained") &&
+           flag("warden_blundergat_obtained") && is_true(level.bot_mob_audio_started) &&
+           !isdefined(level.m_headphones) && !flag("plane_is_away") &&
+           !is_true(level.final_flight_activated);
+}
+
 bot_quest_mob_plane()
 {
+    // Being on the plane or in the finale owns Afterlife and movement.
+    if(is_true(self.on_a_plane))
+        return;
+    if(is_true(level.final_flight_activated))
+    {
+        if(flag("plane_crashed") && self bot_mob_is_afterlife())
+            self scripts\zm\zm_bo2_bots::bot_self_revive_afterlife();
+        return;
+    }
+
+    on_bridge = isdefined(level.characters_in_nml) && isdefined(self.character_name) &&
+                isinarray(level.characters_in_nml, self.character_name);
+
     // Living bots must enter through the same stock Afterlife kill trigger as
     // human players before they can operate the map's electrical objectives.
-    if(!self bot_mob_is_afterlife() && self bot_mob_afterlife_entry_think())
+    if(!on_bridge && !self bot_mob_is_afterlife() && self bot_mob_afterlife_entry_think())
         return;
 
     if(self bot_mob_is_afterlife() && self bot_mob_afterlife_should_return())
@@ -21,31 +47,23 @@ bot_quest_mob_plane()
         return;
     }
 
-    if(self bot_quest_mob_sidequests())
+    if(!on_bridge && self bot_quest_mob_sidequests())
         return;
 
     if(is_true(self.afterlife))
     {
-        if(flag("quest_completed_thrice") && flag("spoon_obtained") && flag("warden_blundergat_obtained") &&
-           is_true(level.bot_mob_final_nixie_started) && is_true(level.bot_mob_audio_started) &&
-           !isdefined(level.m_headphones))
+        if(bot_mob_final_flight_ready())
         {
             final_trigger = getent("plane_fly_afterlife_trigger", "script_noteworthy");
-            if(isdefined(final_trigger) && !is_true(level.bot_quest_final_flight_claimed))
-            {
-                level.bot_quest_final_flight_claimed = 1;
-                self scripts\zm\zm_bo2_bots::bot_quest_use_target(final_trigger, "bot_mob_final_flight", 72, 5, 1);
-                if(!isdefined(level.final_flight_activated) || !level.final_flight_activated)
-                    level.bot_quest_final_flight_claimed = undefined;
-            }
+            if(isdefined(final_trigger))
+                self scripts\zm\zm_bo2_bots::bot_quest_use_target(final_trigger, "bot_mob_final_flight", 56, 4, 1);
         }
         return;
     }
 
     // Everyone who boarded the plane must return from the bridge by using a
     // stock electric-chair trigger. Different bots reserve different chairs.
-    if(isdefined(level.characters_in_nml) && isdefined(self.character_name) &&
-       isinarray(level.characters_in_nml, self.character_name))
+    if(on_bridge)
     {
         best_trigger = undefined;
         best_distance = 999999999;
@@ -152,11 +170,18 @@ bot_mob_final_fight_think()
     if(!isdefined(target))
         return true;
 
+    self.bot.is_objective_using = 1;
     if(best_distance > 300 * 300)
     {
         self addgoal(target.origin, 120, 2, "bot_mob_final_fight_chase");
         wait 0.25;
         self cancelgoal("bot_mob_final_fight_chase");
+    }
+
+    if(!isdefined(target) || !isalive(target))
+    {
+        self.bot.is_objective_using = undefined;
+        return true;
     }
 
     // Prefer a loaded primary; keep changing weapons if the active one is empty.
@@ -195,12 +220,11 @@ bot_mob_final_fight_think()
         // Use the stock Zombies sight trace instead of the MP-only bot helper.
         if(sighttracepassed(self geteyeapprox(), target.origin + (0, 0, 36), 0, self))
             self pressattackbutton(0.2);
-        else
-            self pressattackbutton(0.1);
         wait 0.25;
     }
 
     self clearlookat();
+    self.bot.is_objective_using = undefined;
     return true;
 }
 
@@ -255,13 +279,16 @@ bot_quest_mob_sidequests()
     // player's current_tomahawk_weapon and emits the acquisition event used by
     // the Warden Blundergat quest.
     if(!is_true(self.afterlife) && flag("soul_catchers_charged") &&
-       !self hasweapon("bouncing_tomahawk_zm") && !self hasweapon("upgraded_tomahawk_zm"))
+       !self hasweapon("bouncing_tomahawk_zm") && !self hasweapon("upgraded_tomahawk_zm") &&
+       (!isdefined(self.bot.mob_retriever_retry) || gettime() >= self.bot.mob_retriever_retry))
     {
         retriever = getent("retriever_pickup_trigger", "script_noteworthy");
         if(isdefined(retriever) && isdefined(retriever.origin))
         {
-            self scripts\zm\zm_bo2_bots::bot_quest_use_target(retriever, "bot_mob_retriever_pickup", 80, 4);
-            return true;
+            self scripts\zm\zm_bo2_bots::bot_quest_use_target(retriever, "bot_mob_retriever_pickup", 45, 4);
+            self.bot.mob_retriever_retry = gettime() + 6000;
+            if(self hasweapon("bouncing_tomahawk_zm"))
+                return true;
         }
     }
 
@@ -269,78 +296,8 @@ bot_quest_mob_sidequests()
     if(is_true(self.afterlife) && self bot_mob_afterlife_panel_think())
         return true;
 
-    // Mob's main Nixie code is entered with Afterlife electricity, not the
-    // use button. Reserve one controller so several ghosts cannot over-rotate
-    // the same tube while the stock notifier is checking the three digits.
-    if(is_true(self.afterlife) && flag("quest_completed_thrice") &&
-       flag("spoon_obtained") && flag("warden_blundergat_obtained") &&
-       isdefined(level.a_important_codes) && isdefined(level.a_nixie_tube_code) &&
-       !isdefined(level.m_headphones))
-    {
-        final_codes = array(386, 481, 101, 872);
-        active_code = undefined;
-        foreach(code in final_codes)
-        {
-            if(isinarray(level.a_important_codes, code))
-            {
-                active_code = code;
-                break;
-            }
-        }
-
-        if(isdefined(active_code))
-        {
-            if(isdefined(level.bot_mob_nixie_owner) && level.bot_mob_nixie_owner != self &&
-               isdefined(level.bot_mob_nixie_owner_until) && gettime() < level.bot_mob_nixie_owner_until &&
-               isalive(level.bot_mob_nixie_owner))
-                return true;
-
-            level.bot_mob_nixie_owner = self;
-            level.bot_mob_nixie_owner_until = gettime() + 12000;
-            level.bot_mob_final_nixie_started = 1;
-
-            for(tube_index = 1; tube_index <= 3; tube_index++)
-            {
-                tube = getent("nixie_tube_" + tube_index, "targetname");
-                if(!isdefined(tube) || !isdefined(tube.origin) ||
-                   !isdefined(level.a_nixie_tube_code[tube_index]))
-                    continue;
-
-                // Split the required three-digit code locally; no map-only
-                // function reference is needed from this shared bot module.
-                if(tube_index == 1)
-                    desired_digit = int((active_code - active_code % 100) / 100);
-                else if(tube_index == 2)
-                {
-                    digit_remainder = active_code % 100;
-                    digit_remainder = digit_remainder - active_code % 10;
-                    desired_digit = int(digit_remainder / 10);
-                }
-                else
-                    desired_digit = active_code % 10;
-
-                current_digit = level.a_nixie_tube_code[tube_index];
-                if(current_digit == desired_digit)
-                    continue;
-
-                // The stock afterlife script advances a tube when it receives
-                // damage from lightning_hands_zm. Fire one pulse, then let the
-                // next think re-read the live digit before sending another.
-                if(isdefined(tube.bot_mob_nixie_next_shot) &&
-                   gettime() < tube.bot_mob_nixie_next_shot)
-                    return true;
-
-                tube.bot_mob_nixie_next_shot = gettime() + 650;
-                self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
-                    tube.origin, "lightning_hands_zm", "bot_mob_nixie_tube", 180, 1, 0.12);
-                return true;
-            }
-
-            // The code is already correct; keep the same controller alive
-            // while the stock notifier emits nixie_<code> and removes it.
-            return true;
-        }
-    }
+    if(is_true(self.afterlife) && self bot_mob_work_final_nixie())
+        return true;
 
     // After the four Nixie codes are accepted, Mob plays the six audio logs
     // at scripted stop locations. Each log except the first has a touch volume
@@ -752,10 +709,86 @@ bot_mob_afterlife_can_work_target(target)
     return self bot_mob_afterlife_can_work_origin(target.origin);
 }
 
+// The stock finale registers the four codes only after each tube has been
+// shocked once. Keep working from the live digits after registration.
+bot_mob_final_nixie_target()
+{
+    if(!flag("quest_completed_thrice") || !flag("spoon_obtained") ||
+       !flag("warden_blundergat_obtained") || !isdefined(level.a_nixie_tube_code) ||
+       !isdefined(level.a_important_codes) || isdefined(level.m_headphones) ||
+       is_true(level.bot_mob_audio_started))
+        return undefined;
+
+    active_code = undefined;
+    foreach(code in array(386, 481, 101, 872))
+    {
+        if(isinarray(level.a_important_codes, code))
+        {
+            active_code = code;
+            level.bot_mob_final_nixie_started = 1;
+            break;
+        }
+    }
+
+    if(!isdefined(active_code) && is_true(level.bot_mob_final_nixie_started))
+        return undefined;
+
+    digits = [];
+    if(isdefined(active_code))
+        digits = array(int(active_code / 100), int((active_code % 100) / 10), active_code % 10);
+
+    for(index = 1; index <= 3; index++)
+    {
+        tube = getent("nixie_tube_" + index, "targetname");
+        if(!isdefined(tube) || !self bot_mob_afterlife_can_work_target(tube))
+            continue;
+
+        tube.bot_mob_nixie_index = index;
+        if(isdefined(active_code))
+        {
+            if(isdefined(level.a_nixie_tube_code[index]) && level.a_nixie_tube_code[index] != digits[index - 1])
+                return tube;
+        }
+        else if(!is_true(tube.bot_mob_final_nixie_touched))
+            return tube;
+    }
+    return undefined;
+}
+
+bot_mob_work_final_nixie()
+{
+    if(flag("nixie_puzzle_solved"))
+        return false;
+
+    tube = self bot_mob_final_nixie_target();
+    if(!isdefined(tube))
+        return false;
+
+    if(isdefined(level.bot_mob_nixie_owner) && level.bot_mob_nixie_owner != self &&
+       gettime() < level.bot_mob_nixie_owner_until && isalive(level.bot_mob_nixie_owner))
+        return false;
+
+    level.bot_mob_nixie_owner = self;
+    level.bot_mob_nixie_owner_until = gettime() + 15000;
+    index = tube.bot_mob_nixie_index;
+    before = level.a_nixie_tube_code[index];
+    if(self scripts\zm\zm_bo2_bots::bot_quest_fire_at(
+        tube.origin, "lightning_hands_zm", "bot_mob_nixie_tube", 180, 1, 0.12) &&
+       isdefined(tube) && isdefined(level.a_nixie_tube_code[index]) &&
+       (!isdefined(before) || level.a_nixie_tube_code[index] != before))
+        tube.bot_mob_final_nixie_touched = 1;
+    if(level.bot_mob_nixie_owner == self)
+        level.bot_mob_nixie_owner = undefined;
+    return true;
+}
+
 bot_mob_afterlife_should_return()
 {
     if(!self bot_mob_is_afterlife() || !isdefined(self.e_afterlife_corpse))
         return false;
+
+    if(is_true(level.final_flight_activated))
+        return flag("plane_crashed") && !is_true(self.on_a_plane);
 
     // Never revive in the middle of a real objective interaction.
     if(is_true(self.bot.is_objective_using))
@@ -868,59 +901,8 @@ bot_mob_afterlife_needs_entry()
 
     // Nixie work is only actionable when a valid code and a reachable tube
     // that still needs to rotate are both present.
-    if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
-       flag("warden_blundergat_obtained") &&
-       isdefined(level.a_important_codes) && isdefined(level.a_nixie_tube_code) &&
-       !isdefined(level.m_headphones))
-    {
-        nixie_owner_busy = false;
-        if(isdefined(level.bot_mob_nixie_owner) &&
-           level.bot_mob_nixie_owner != self &&
-           isdefined(level.bot_mob_nixie_owner_until) &&
-           gettime() < level.bot_mob_nixie_owner_until &&
-           isalive(level.bot_mob_nixie_owner))
-            nixie_owner_busy = true;
-
-        if(!nixie_owner_busy)
-        {
-            active_code = undefined;
-            final_codes = array(386, 481, 101, 872);
-            foreach(code in final_codes)
-            {
-                if(isinarray(level.a_important_codes, code))
-                {
-                    active_code = code;
-                    break;
-                }
-            }
-
-            if(isdefined(active_code))
-            {
-                for(tube_index = 1; tube_index <= 3; tube_index++)
-                {
-                    tube = getent("nixie_tube_" + tube_index, "targetname");
-                    if(!isdefined(tube) || !isdefined(tube.origin) ||
-                       !isdefined(level.a_nixie_tube_code[tube_index]))
-                        continue;
-
-                    if(tube_index == 1)
-                        desired_digit = int((active_code - active_code % 100) / 100);
-                    else if(tube_index == 2)
-                    {
-                        digit_remainder = active_code % 100;
-                        digit_remainder = digit_remainder - active_code % 10;
-                        desired_digit = int(digit_remainder / 10);
-                    }
-                    else
-                        desired_digit = active_code % 10;
-
-                    if(level.a_nixie_tube_code[tube_index] != desired_digit &&
-                       self bot_mob_afterlife_can_work_target(tube))
-                        return true;
-                }
-            }
-        }
-    }
+    if(isdefined(self bot_mob_final_nixie_target()))
+        return true;
 
     // The audio-log controller moves to the live headset's touch volume.
     if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
@@ -933,12 +915,7 @@ bot_mob_afterlife_needs_entry()
     }
 
     // Keep the ghost until the final-flight trigger has actually been reached.
-    if(flag("quest_completed_thrice") && flag("spoon_obtained") &&
-       flag("warden_blundergat_obtained") &&
-       is_true(level.bot_mob_final_nixie_started) &&
-       is_true(level.bot_mob_audio_started) &&
-       !isdefined(level.m_headphones) &&
-       (!isdefined(level.final_flight_activated) || !level.final_flight_activated))
+    if(bot_mob_final_flight_ready())
     {
         final_trigger = getent("plane_fly_afterlife_trigger", "script_noteworthy");
         if(self bot_mob_afterlife_can_work_target(final_trigger))

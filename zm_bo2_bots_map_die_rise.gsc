@@ -49,8 +49,40 @@ bot_quest_die_rise_tower()
     return isdefined(level.n_cur_leg) && level.n_cur_leg > index;
 }
 
+// The two stock branches run at the same time. Reading the single global
+// stage name would strand one branch when the other announces its stage.
+bot_die_rise_stage_active(branch, name)
+{
+    if(!isdefined(level._zombie_sidequests) ||
+       !isdefined(level._zombie_sidequests[branch]) ||
+       !isdefined(level._zombie_sidequests[branch].active_stage) ||
+       !isdefined(level._zombie_sidequests[branch].stages[name]))
+        return false;
+
+    quest = level._zombie_sidequests[branch];
+    stage = quest.stages[name];
+    return quest.active_stage == stage.stage_number && !is_true(stage.completed);
+}
+
+bot_die_rise_quest_needs_kills()
+{
+    return bot_die_rise_stage_active("sq_1", "pts_1") ||
+           (bot_die_rise_stage_active("sq_2", "ssp_2") && !flag("ssp2_corpses_in_place"));
+}
+
 bot_quest_die_rise()
 {
+    if(level.bot_command_mode == "quest" && !flag("power_on"))
+    {
+        power_switch = getent("use_elec_switch", "targetname");
+        if(isdefined(power_switch))
+            self scripts\zm\zm_bo2_bots::bot_quest_use_target(power_switch, "bot_die_rise_power", 55, 1);
+        return;
+    }
+
+    if(!flag("sq_nav_built"))
+        return;
+
     // The Above the Dragon step needs all four elevator triggers occupied at
     // once. Each bot owns one trigger; the stock quest script sets the flags.
     if(!flag("sq_atd_elevator_activated"))
@@ -79,56 +111,15 @@ bot_quest_die_rise()
         return;
     }
 
-    // The dragon-symbol sequence is randomized by the map. Bots brute-force
-    // complete permutations and verify every step against the live quest index.
-    if(!flag("sq_atd_drg_puzzle_complete") &&
-       (!isdefined(level.bot_quest_dragon_owner) || !isalive(level.bot_quest_dragon_owner)))
+    if(!flag("sq_atd_drg_puzzle_complete"))
     {
-        level.bot_quest_dragon_owner = self;
-        a_trigs = getentarray("trig_atd_drg_puzzle", "targetname");
+        self bot_die_rise_dragon_step();
+        return;
+    }
 
-        if(isdefined(a_trigs) && a_trigs.size == 4)
-        {
-            // Try all 24 permutations once instead of repeatedly sampling
-            // random orders; the stock puzzle resets to index 0 on a wrong
-            // symbol, so exhaustive permutations guarantee the hidden order
-            // is eventually attempted if each trigger is reachable.
-            for(first = 0; first < 4 && !flag("sq_atd_drg_puzzle_complete"); first++)
-            {
-                for(second = 0; second < 4 && !flag("sq_atd_drg_puzzle_complete"); second++)
-                {
-                    if(second == first)
-                        continue;
-                    for(third = 0; third < 4 && !flag("sq_atd_drg_puzzle_complete"); third++)
-                    {
-                        if(third == first || third == second)
-                            continue;
-                        for(fourth = 0; fourth < 4 && !flag("sq_atd_drg_puzzle_complete"); fourth++)
-                        {
-                            if(fourth == first || fourth == second || fourth == third)
-                                continue;
-
-                            order = array(a_trigs[first], a_trigs[second], a_trigs[third], a_trigs[fourth]);
-                            for(step = 0; step < 4; step++)
-                            {
-                                if(flag("sq_atd_drg_puzzle_complete"))
-                                    break;
-
-                                before = level.sq_atd_cur_drg;
-                                self scripts\zm\zm_bo2_bots::bot_quest_use_target(order[step], "bot_die_rise_dragon", 42, 1);
-                                wait 0.25;
-
-                                if(!isdefined(level.sq_atd_cur_drg) || level.sq_atd_cur_drg != before + 1)
-                                    break;
-                            }
-                            wait 0.2;
-                        }
-                    }
-                }
-            }
-        }
-
-        level.bot_quest_dragon_owner = undefined;
+    if(flag("sq_branch_complete"))
+    {
+        self bot_quest_die_rise_tower();
         return;
     }
 
@@ -138,7 +129,7 @@ bot_quest_die_rise()
     sniper_names = array("dsr50_zm", "dsr50_upgraded_zm", "dsr50_upgraded_zm+vzoom", "barretm82_zm", "barretm82_upgraded_zm", "barretm82_upgraded_zm+vzoom", "svu_zm", "svu_upgraded_zm", "svu_upgraded_zm+vzoom");
     foreach(name in sniper_names)
     {
-        if(self hasweapon(name))
+        if(self hasweapon(name) && self getweaponammoclip(name) + self getweaponammostock(name) > 0)
         {
             sniper = name;
             break;
@@ -146,7 +137,7 @@ bot_quest_die_rise()
     }
 
     balls = getentarray("sq_dragon_lion_ball", "targetname");
-    if(isdefined(balls) && balls.size > 0 && isdefined(sniper))
+    if(bot_die_rise_stage_active("sq", "slb") && isdefined(balls) && balls.size > 0 && isdefined(sniper))
     {
         self.bot.is_objective_using = 1;
         self switchtoweaponimmediate(sniper);
@@ -172,7 +163,7 @@ bot_quest_die_rise()
 
     // Pick up and set down the stock lion balls once the map has exposed their
     // triggers. The spring-pad placement worker below handles available pads.
-    if(!isdefined(self.zm_sq_has_ball))
+    if(bot_die_rise_stage_active("sq_2", "pts_2") && !isdefined(self.zm_sq_has_ball))
     {
         ball_names = array("sq_sliquify_r", "sq_sliquify_m");
         foreach(ball_name in ball_names)
@@ -186,7 +177,7 @@ bot_quest_die_rise()
             }
         }
     }
-    else if(isdefined(self.a_place_ball_trigs))
+    else if(bot_die_rise_stage_active("sq_2", "pts_2") && isdefined(self.a_place_ball_trigs))
     {
         foreach(place_trigger in self.a_place_ball_trigs)
         {
@@ -205,29 +196,36 @@ bot_quest_die_rise()
 
     if(self has_player_equipment(springpad_name))
     {
-        spot_type = "pts_lion";
-        if(isdefined(level._cur_stage_name) && level._cur_stage_name == "pts_1")
+        spot_type = undefined;
+        if(bot_die_rise_stage_active("sq_1", "pts_1") && !flag("pts_1_springpads_placed"))
             spot_type = "pts_ghoul";
-        springpad_spots = getstructarray(spot_type, "targetname");
-        foreach(spot in springpad_spots)
+        else if(bot_die_rise_stage_active("sq_2", "pts_2") && !flag("pts_2_springpads_placed"))
+            spot_type = "pts_lion";
+
+        if(isdefined(spot_type))
         {
-            if(isdefined(spot) && isdefined(spot.origin) &&
-               (!isdefined(spot.springpad) || !isdefined(spot.springpad.origin)))
+            springpad_spots = getstructarray(spot_type, "targetname");
+            foreach(spot in springpad_spots)
             {
-                self scripts\zm\zm_bo2_bots::bot_quest_deploy_equipment(springpad_name, spot.origin, "bot_die_rise_springpad");
-                return;
+                if(isdefined(spot.origin) && !isdefined(spot.springpad.origin))
+                {
+                    self scripts\zm\zm_bo2_bots::bot_quest_deploy_equipment(springpad_name, spot.origin, "bot_die_rise_springpad");
+                    return;
+                }
             }
         }
     }
 
     // Richtofen's first Dragon stage uses the Sliquifier to dissolve each
     // sphere. The native watcher requires 20 damage callbacks per sphere.
-    if(isdefined(level._cur_stage_name) && level._cur_stage_name == "ssp_1" && self hasweapon("slipgun_zm"))
+    if(bot_die_rise_stage_active("sq_1", "ssp_1") &&
+       self hasweapon("slipgun_zm") && self getweaponammoclip("slipgun_zm") + self getweaponammostock("slipgun_zm") > 0)
     {
         ssp_balls = getentarray("sq_sliquify_ball", "targetname");
-        foreach(ssp_ball in ssp_balls)
+        for(i = 0; i < ssp_balls.size; i++)
         {
-            if(isdefined(ssp_ball) && isdefined(ssp_ball.origin))
+            ssp_ball = ssp_balls[i];
+            if(isdefined(ssp_ball) && isdefined(ssp_ball.origin) && !flag("ssp1_ball" + i + "_complete"))
             {
                 self scripts\zm\zm_bo2_bots::bot_quest_fire_at(ssp_ball.origin, "slipgun_zm", "bot_die_rise_sliquify", 700, 22, 0.1);
                 return;
@@ -238,13 +236,13 @@ bot_quest_die_rise()
     // Maxis' resurrection stage requires the squad to accumulate 15 corpses
     // in the corpse-room volume. Keep bots in the room while the combat loop
     // creates the real death events.
-    if(isdefined(level._cur_stage_name) && level._cur_stage_name == "ssp_2" && !flag("ssp2_corpses_in_place"))
+    if(bot_die_rise_stage_active("sq_2", "ssp_2") && !flag("ssp2_corpses_in_place"))
     {
         corpse_room = getent("corpse_room_trigger", "targetname");
         if(isdefined(corpse_room) && isdefined(corpse_room.origin))
             self scripts\zm\zm_bo2_bots::bot_quest_hold_in_volume(corpse_room.origin, "bot_die_rise_corpse_room", 190, 4.0);
     }
-    else if(isdefined(level._cur_stage_name) && level._cur_stage_name == "ssp_2" &&
+    else if(bot_die_rise_stage_active("sq_2", "ssp_2") &&
             flag("ssp2_corpses_in_place") && !flag("ssp2_resurrection_done") && self hasweapon("knife_ballistic_upgraded_zm"))
     {
         corpse_room = getent("corpse_room_trigger", "targetname");
@@ -257,6 +255,82 @@ bot_quest_die_rise()
     // When no quest interaction is active, let the bot use a reachable stock
     // jump pad. The stock jump-pad script handles the actual launch/landing.
     self bot_quest_die_rise_traverse();
+}
+
+// Trial one touch at a time. Keep the verified prefix so a wrong symbol
+// costs one reset instead of restarting a full permutation search.
+bot_die_rise_dragon_step()
+{
+    if(!isdefined(level.sq_atd_cur_drg) || level.sq_atd_cur_drg >= 4)
+        return;
+
+    if(isdefined(level.bot_quest_dragon_owner) &&
+       level.bot_quest_dragon_owner != self && isalive(level.bot_quest_dragon_owner) &&
+       gettime() < level.bot_quest_dragon_until)
+        return;
+
+    if(!isdefined(level.bot_quest_dragon_order))
+    {
+        level.bot_quest_dragon_order = [];
+        level.bot_quest_dragon_attempts = [];
+    }
+
+    step = level.sq_atd_cur_drg;
+    trigger = level.bot_quest_dragon_order[step];
+    if(!isdefined(trigger))
+    {
+        trigs = getentarray("trig_atd_drg_puzzle", "targetname");
+        best_dist = 999999999;
+        foreach(candidate in trigs)
+        {
+            if(!isdefined(candidate.drg_active) || candidate.drg_active ||
+               (isdefined(candidate.bot_die_rise_dragon_retry) && gettime() < candidate.bot_die_rise_dragon_retry) ||
+               is_true(level.bot_quest_dragon_attempts[step + "_" + candidate getentitynumber()]))
+                continue;
+
+            dist = distancesquared(self.origin, candidate.origin);
+            if(dist < best_dist)
+            {
+                best_dist = dist;
+                trigger = candidate;
+            }
+        }
+    }
+
+    if(!isdefined(trigger))
+    {
+        // A co-op player may have advanced the live puzzle or reset it while a
+        // trial was in flight. Retry unverified candidates in the new state.
+        level.bot_quest_dragon_attempts = [];
+        return;
+    }
+
+    level.bot_quest_dragon_owner = self;
+    level.bot_quest_dragon_until = gettime() + 52000;
+    approach = self.origin;
+    arrived = self scripts\zm\zm_bo2_bots::bot_quest_move_to(trigger.origin, "bot_die_rise_dragon_touch", 16, 9000);
+    if(!arrived && !self istouching(trigger))
+    {
+        trigger.bot_die_rise_dragon_retry = gettime() + 3000;
+        if(level.bot_quest_dragon_owner == self)
+            level.bot_quest_dragon_owner = undefined;
+        return;
+    }
+    wait 0.6;
+
+    if(level.sq_atd_cur_drg == step + 1 && is_true(trigger.drg_active))
+        level.bot_quest_dragon_order[step] = trigger;
+    else if(self istouching(trigger) && !is_true(trigger.drg_active) && level.sq_atd_cur_drg == 0)
+    {
+        level.bot_quest_dragon_order[step] = undefined;
+        level.bot_quest_dragon_attempts[step + "_" + trigger getentitynumber()] = 1;
+    }
+
+    if(self istouching(trigger))
+        self scripts\zm\zm_bo2_bots::bot_quest_move_to(approach, "bot_die_rise_dragon_leave", 24, 5000);
+
+    if(level.bot_quest_dragon_owner == self)
+        level.bot_quest_dragon_owner = undefined;
 }
 
 bot_quest_die_rise_stack_elevators()

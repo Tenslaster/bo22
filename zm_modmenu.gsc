@@ -632,6 +632,7 @@ MM_MenuTitle(name)
         case "espcolor":       return "ESP COLOR";
 
         case "eetracker":      return "EASTER EGG TRACKER";
+        case "botquest":       return "BOT QUEST CONTROLS";
 
         case "origins":        return "ORIGINS TOOLS";
         case "origstaffs":     return "STAFFS & PUNCHES";
@@ -837,6 +838,8 @@ BuildMenuStructure()
 
     if(self MM_EETrackerAvailable())
         self addSubMenu("main", "Easter Egg Tracker", "eetracker");
+    if(self isHost() && self MM_EETrackerAvailable())
+        self addSubMenu("main", "Bot Quest Controls", "botquest");
     if(self isHost())
         self addSubMenu("main", "Players Menu", "players");
 }
@@ -1221,7 +1224,22 @@ MM_Menu_MapTools()
     if(self MM_EETrackerAvailable())
     {
         self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
-        self addToggleOpt("eetracker", "Quest Guide ESP (Steps + Markers)", ::MM_ToggleEETrackerESP, "eetargets");
+        if(self MM_EETrackerESPAvailable())
+            self addToggleOpt("eetracker", "Quest Guide ESP (Steps + Markers)", ::MM_ToggleEETrackerESP, "eetargets");
+        else if(level.script == "zm_tomb")
+            self addToggleOpt("eetracker", "Staff Upgrade Guide ESP", ::MM_OriginsToggleStaffGuide, "origstaffguide");
+    }
+
+    if(self isHost() && self MM_EETrackerAvailable())
+    {
+        self addMenuOpt("botquest", "Start Quest Mode", ::MM_SetBotQuestMode, "quest");
+        self addMenuOpt("botquest", "Return Bots to Follow", ::MM_SetBotQuestMode, "follow");
+        self addMenuOpt("botquest", "Show Bot Quest Status", ::MM_ShowBotQuestStatus);
+        if(level.script == "zm_transit")
+        {
+            self addMenuOpt("botquest", "Choose TranZit Maxis Route", ::MM_SetBotQuestRoute, "maxis");
+            self addMenuOpt("botquest", "Choose TranZit Richtofen Route", ::MM_SetBotQuestRoute, "richtofen");
+        }
     }
 
     // --- ORIGINS ---
@@ -2723,9 +2741,60 @@ MM_InfAmmoAllLoop()
  // Reads the stock quest flags / sidequest stats; it does not change quest state.
  // ============================================================================
 
+MM_SetBotQuestMode(mode)
+{
+    if(!self isHost())
+        return;
+    if(!isDefined(level.bo22_set_bot_mode))
+    {
+        self iprintln("^1Install the BO22 bot scripts to use this control.");
+        return;
+    }
+    self [[level.bo22_set_bot_mode]](mode);
+}
+
+MM_SetBotQuestRoute(route)
+{
+    if(!self isHost() || level.script != "zm_transit")
+        return;
+    if(isDefined(level.bot_command_mode) && level.bot_command_mode == "quest")
+    {
+        self iprintln("^3Return bots to Follow before selecting a route.");
+        return;
+    }
+    setDvar("zm_bot_quest_route", route);
+    self iprintln("^2TranZit bot route: ^7" + route);
+}
+
+MM_ShowBotQuestStatus()
+{
+    if(!self isHost())
+        return;
+    if(!isDefined(level.bo22_set_bot_mode) || !isDefined(level.bot_command_mode))
+    {
+        self iprintln("^1The BO22 bot scripts have not initialized.");
+        return;
+    }
+
+    bots = 0;
+    foreach(player in get_players())
+    {
+        if(isDefined(player.bot) && isAlive(player))
+            bots++;
+    }
+    self iprintln("^2Bot mode: ^7" + level.bot_command_mode + " ^2| Alive: ^7" + bots);
+    if(level.script == "zm_transit")
+    {
+        route = "maxis";
+        if(getDvar("zm_bot_quest_route") == "richtofen")
+            route = "richtofen";
+        self iprintln("^2TranZit bot route: ^7" + route);
+    }
+}
+
 MM_EETrackerAvailable()
 {
-    return level.script == "zm_prison" || level.script == "zm_transit" || level.script == "zm_buried" || level.script == "zm_highrise";
+    return self MM_EETrackerESPAvailable() || level.script == "zm_tomb" || level.script == "zm_nuked";
 }
 
 MM_EETrackerInit()
@@ -2737,7 +2806,7 @@ MM_EETrackerInit()
         self.mmToggle = [];
 
     if(!isDefined(self.mmToggle["eetracker"]))
-        self.mmToggle["eetracker"] = true;
+        self.mmToggle["eetracker"] = self MM_EETrackerESPAvailable();
 
     if(!isDefined(self.mmEETrackerStarted) || !self.mmEETrackerStarted)
     {
@@ -2824,8 +2893,50 @@ MM_EETrackerBuildText()
         return self MM_EETrackerBuried();
     if(level.script == "zm_highrise")
         return self MM_EETrackerDieRise();
+    if(level.script == "zm_tomb")
+        return MM_EETrackerOrigins();
+    if(level.script == "zm_nuked")
+        return MM_EETrackerNuketown();
 
     return "^1EASTER EGG TRACKER\n^7This map is not supported.";
+}
+
+MM_EETrackerOrigins()
+{
+    if(flag("ee_samantha_released"))
+        return "^2ORIGINS\n^7Little Lost Girl complete.";
+    if(flag("ee_quadrotor_disabled") && flag("ee_souls_absorbed"))
+        return "^3ORIGINS\n^7Enter Samantha's portal.";
+    if(flag("ee_souls_absorbed"))
+        return "^3ORIGINS\n^7Send the Maxis Drone through the portal.";
+    if(flag("ee_sam_portal_active"))
+        return "^3ORIGINS\n^7Fill Samantha's portal with zombie souls.";
+    if(flag("ee_maxis_drone_retrieved"))
+        return "^3ORIGINS\n^7Upgrade the One Inch Punch.";
+    if(flag("ee_mech_zombie_fight_completed"))
+        return "^3ORIGINS\n^7Recover the Maxis Drone in Zombie Blood.";
+    if(flag("ee_mech_zombie_hole_opened"))
+        return "^3ORIGINS\n^7Deploy the drone and defeat the Panzers.";
+    if(flag("ee_all_staffs_placed"))
+        return "^3ORIGINS\n^7Press the robot button and throw the Beacon.";
+    if(flag("ee_all_staffs_upgraded"))
+        return "^3ORIGINS\n^7Place the staffs in the matching plinths.";
+    if(flag("ee_all_staffs_crafted"))
+        return "^3ORIGINS\n^7Solve the staff puzzles and charge the staffs.";
+    return "^3ORIGINS\n^7Collect the parts and build the four staffs.";
+}
+
+MM_EETrackerNuketown()
+{
+    if(!isDefined(level.meteor_counter))
+        return "^3NUKETOWN\n^7Waiting for music objectives.";
+    if(is_true(level.music_override))
+        return "^2NUKETOWN\n^7A music Easter Egg is playing.";
+    if(level.meteor_counter < 3)
+        return "^3NUKETOWN\n^7Meteor bears " + level.meteor_counter + "/3";
+    if(isDefined(level.mannequin_count) && level.mannequin_count > 0)
+        return "^3NUKETOWN\n^7Find and shoot the remaining mannequin heads.";
+    return "^2NUKETOWN\n^7Meteor bears and mannequins complete.";
 }
 
 MM_EETrackerMob()
@@ -3105,7 +3216,8 @@ MM_EETrackerBuried()
 
 MM_EETrackerESPAvailable()
 {
-    return self MM_EETrackerAvailable();
+    return level.script == "zm_prison" || level.script == "zm_transit" ||
+           level.script == "zm_buried" || level.script == "zm_highrise";
 }
 
 MM_EEAddQuestTarget(targets, target, label)
