@@ -1,5 +1,5 @@
 // ============================================================================
-//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v4.0
+//  ULTIMATE ZM MOD MENU  -  Plutonium T6 (Black Ops II Zombies)  -  v5.0
 //  Install: %localappdata%\Plutonium\storage\t6\scripts\zm\zm_modmenu.gsc
 //
 //  Controls (menu closed):  AIM + MELEE ............ open menu
@@ -8,6 +8,9 @@
 //                           MELEE ................... back / close
 //  Free-roam: the boundary toggle stops the stock player-volume / kill-brush monitor.
 //  Noclip: Attack forward, ADS backward, Frag up, Tactical down.
+//  Layout: 5 options visible at a time, selection bar, scrollbar and an
+//  option counter in the footer. Sub menus are marked with ">" and the header
+//  shows where you are (e.g. ZOMBIES > SPEED & HEALTH).
 //
 //  Maps: TranZit / Nuketown / Die Rise / Mob of the Dead / Buried / Origins
 //  Perk actions include physical vending machines and each map's registered
@@ -59,7 +62,7 @@ MM_OnPlayerSpawned()
             self MM_ApplySpawnSettings();
             if(firstSpawn)
             {
-                self iprintlnbold("^2ULTIMATE ZM MENU v4.0 LOADED");
+                self iprintlnbold("^2ULTIMATE ZM MENU v5.0 LOADED");
                 self iprintln("^7Aim + Melee: open | Slot 1/2: scroll | Jump: select | Melee: back");
                 firstSpawn = false;
             }
@@ -114,7 +117,9 @@ SetupMenu()
 }
 
 // HUD elements only exist while the menu is open (ZM already uses many HUD
-// elements per player, so this avoids hitting the engine limit).
+// elements per player, so this keeps the pool small: 5 shaders + 7 texts).
+// Layout: header bar, accent line, FIVE option rows with a moving selection
+// bar, a scrollbar thumb on the right and a one-line footer.
 MM_CreateMenuHud()
 {
     self MM_DestroyMenuHud();
@@ -122,30 +127,67 @@ MM_CreateMenuHud()
     self.mmRowText = [];
     self.mmTitleText = undefined;
     self.mmFooterText = undefined;
+    self.mmFirst = undefined;
 
-    self.menuBg = newClientHudElem(self);
-    self.menuBg.horzAlign = "left";
-    self.menuBg.vertAlign = "top";
-    self.menuBg.alignX = "left";
-    self.menuBg.alignY = "top";
-    self.menuBg.x = 12;
-    self.menuBg.y = 80;
-    self.menuBg.sort = 1000;
-    self.menuBg.foreground = true;
-    self.menuBg.hideWhenInMenu = true;
-    self.menuBg.alpha = 0.6;
-    self.menuBg.color = (0, 0, 0);
-    self.menuBg setShader("white", 320, 235);
+    px = 14;
+    py = 78;
+    pw = 330;
 
-    self.menuTitle = self MM_NewText(22, 86, 1.3);
-    self.menuFooter = self MM_NewText(22, 292, 1.1);
+    self.mmMaxRows = 5;
+    self.mmRowH = 24;
+    self.mmRowY = py + 42;
 
-    // Keep the HUD pool small and predictable. Some Plutonium HUD layouts
-    // only render the first few client text elements reliably; the menu uses
-    // an eight-row viewport and scrolls through every option.
+    self.menuBg     = self MM_NewShader(px, py, pw, 190, (0.03, 0.03, 0.05), 0.82, 1000);
+    self.menuHeader = self MM_NewShader(px, py, pw, 32, (0.0, 0.30, 0.17), 0.95, 1001);
+    self.menuAccent = self MM_NewShader(px, py + 32, pw, 2, (0.2, 1, 0.55), 1, 1002);
+    self.menuHL     = self MM_NewShader(px + 4, self.mmRowY, pw - 20, 22, (0.15, 0.75, 0.4), 0.45, 1003);
+    self.menuThumb  = self MM_NewShader(px + pw - 8, self.mmRowY, 3, 20, (0.2, 1, 0.55), 0.85, 1003);
+
+    self.menuTitle  = self MM_NewMenuText(px + 12, py + 8, 1.35);
+    self.menuFooter = self MM_NewMenuText(px + 12, py + 170, 1.0);
+
     self.menuRows = [];
-    for(i = 0; i < 8; i++)
-        self.menuRows[i] = self MM_NewText(22, 112 + (i * 19), 1.25);
+    for(i = 0; i < self.mmMaxRows; i++)
+        self.menuRows[i] = self MM_NewMenuText(px + 14, self.mmRowY + 3 + (i * self.mmRowH), 1.2);
+}
+
+MM_NewShader(px, py, w, h, col, a, srt)
+{
+    e = newClientHudElem(self);
+    e.horzAlign = "left";
+    e.vertAlign = "top";
+    e.alignX = "left";
+    e.alignY = "top";
+    e.x = px;
+    e.y = py;
+    e.sort = srt;
+    e.foreground = true;
+    e.hideWhenInMenu = true;
+    e.alpha = a;
+    e.color = col;
+    e setShader("white", w, h);
+    return e;
+}
+
+// Separate from MM_NewText on purpose: other HUDs in this script (ESP, trackers)
+// use MM_NewText and must keep their own sort order.
+MM_NewMenuText(px, py, scale)
+{
+    h = newClientHudElem(self);
+    h.horzAlign = "left";
+    h.vertAlign = "top";
+    h.alignX = "left";
+    h.alignY = "top";
+    h.x = px;
+    h.y = py;
+    h.font = "objective";
+    h.fontScale = scale;
+    h.sort = 1010;
+    h.foreground = true;
+    h.hideWhenInMenu = true;
+    h.alpha = 1;
+    h.color = (1, 1, 1);
+    return h;
 }
 
 MM_NewText(px, py, scale)
@@ -171,6 +213,14 @@ MM_DestroyMenuHud()
 {
     if(isDefined(self.menuBg))
         self.menuBg destroy();
+    if(isDefined(self.menuHeader))
+        self.menuHeader destroy();
+    if(isDefined(self.menuAccent))
+        self.menuAccent destroy();
+    if(isDefined(self.menuHL))
+        self.menuHL destroy();
+    if(isDefined(self.menuThumb))
+        self.menuThumb destroy();
     if(isDefined(self.menuTitle))
         self.menuTitle destroy();
     if(isDefined(self.menuFooter))
@@ -185,6 +235,10 @@ MM_DestroyMenuHud()
         }
     }
     self.menuBg = undefined;
+    self.menuHeader = undefined;
+    self.menuAccent = undefined;
+    self.menuHL = undefined;
+    self.menuThumb = undefined;
     self.menuTitle = undefined;
     self.menuFooter = undefined;
     self.menuRows = undefined;
@@ -209,7 +263,16 @@ addMenuOpt(menuName, text, func, arg, arg2)
 addSubMenu(parent, text, child)
 {
     self addMenuOpt(parent, text, ::SwitchMenu, child);
+    last = self.menuOpts[parent].size - 1;
+    self.menuOpts[parent][last].isSub = true;
     self.menuParents[child] = parent;
+}
+
+// Only links a sub menu when it actually has entries (map-aware lists).
+MM_AddSubIfAny(parent, text, child)
+{
+    if(isDefined(self.menuOpts[child]) && self.menuOpts[child].size > 0)
+        self addSubMenu(parent, text, child);
 }
 
 // Menu entry that shows an [ON]/[OFF] tag. "key" must match the key used by the toggle function.
@@ -246,6 +309,7 @@ MM_GoTo(menuName, restoreCursor)
     if(menuName == "players" && self isHost())
         self MM_BuildPlayersList();
 
+    self.mmFirst = undefined;
     self.menuCursor = 0;
     if(restoreCursor && isDefined(self.menuCursors[menuName]))
         self.menuCursor = self.menuCursors[menuName];
@@ -514,39 +578,111 @@ MM_MenuTitle(name)
     switch(name)
     {
         case "main":           return "MAIN MENU";
-        case "freeroam":       return "FREE ROAM / NO DEATH BARRIERS";
-        case "roamspots":      return "SAVED FREE-ROAM POSITIONS";
-        case "movement":       return "MOVEMENT & FLIGHT";
-        case "teleport":       return "TELEPORT & SAVED LOCATIONS";
-        case "teleportslots":  return "THREE SAVED LOCATIONS";
-        case "world":          return "WORLD & GAME CONTROL";
-        case "allguns":        return "ALL REGISTERED MAP WEAPONS";
-        case "powerups":       return "ALL REGISTERED POWERUPS";
-        case "personal":       return "PERSONAL MODS";
-        case "permaperks":     return "PERSISTENT UPGRADES / PERMA-PERKS";
-        case "survival":       return "SURVIVAL & AUTOMATION";
-        case "weapons":        return "WEAPON MODS";
-        case "heavyweapons":   return "HEAVY / EXPLOSIVE ARSENAL";
+
+        case "personal":       return "PLAYER MODS";
+        case "view":           return "VIEW & HUD";
+
+        case "movement":       return "MOVEMENT";
+        case "walkspeed":      return "WALK SPEED";
+        case "noclipspeed":    return "NOCLIP SPEED";
+
+        case "pointsperks":    return "POINTS & PERKS";
+        case "points":         return "ADD POINTS";
+
+        case "weapons":        return "WEAPONS & AMMO";
+        case "ammo":           return "AMMO & WEAPON MODS";
         case "wonderweapons":  return "WONDER WEAPONS";
+        case "heavyweapons":   return "HEAVY & EXPLOSIVES";
+        case "guns":           return "GUN LIBRARY";
+        case "gun_ar":         return "ASSAULT RIFLES";
+        case "gun_smg":        return "SMGS & LMGS";
+        case "gun_pistol":     return "PISTOLS";
+        case "gun_shotgun":    return "SHOTGUNS";
+        case "gun_sniper":     return "SNIPER RIFLES";
+        case "gun_equip":      return "EQUIPMENT & MELEE";
         case "mapweapons":     return "MAP WEAPONS";
-        case "guns":           return "MORE GUNS";
-        case "lobby":          return "SPAWNS & LOBBY";
-        case "zombies":        return "ZOMBIE MANIPULATION";
-        case "zspawn":         return "SPAWN ZOMBIE TYPES";
-        case "zai":            return "ZOMBIE AI & HEALTH";
-        case "zboss":          return "BOSSES & SPECIAL ENEMIES";
-        case "zeffects":       return "ZOMBIE EFFECTS & CROWD TOOLS";
+        case "allguns":        return "ALL REGISTERED WEAPONS";
+
+        case "zombies":        return "ZOMBIES";
+        case "zkill":          return "KILL & CLEAR";
+        case "zcrowd":         return "CROWD CONTROL";
+        case "zeffects":       return "ZOMBIE EFFECTS";
+        case "zai":            return "SPEED & HEALTH";
+        case "zhp":            return "ZOMBIE HEALTH";
+        case "zspeed":         return "ZOMBIE SPEED";
+        case "zspawn":         return "SPAWN ENEMIES";
+        case "zboss":          return "BOSSES & SPECIALS";
+
+        case "teleport":       return "TELEPORT & FREE ROAM";
+        case "tpjumps":        return "SHORT JUMPS";
+        case "teleportslots":  return "SAVED LOCATIONS";
+
+        case "world":          return "ROUNDS & WORLD";
+        case "rounds":         return "ROUND CONTROL";
+        case "setround":       return "JUMP TO ROUND";
+        case "gamespeed":      return "GAME SPEED";
+        case "gravity":        return "GRAVITY";
+
+        case "lobby":          return "POWER-UP DROPS";
+        case "powerups":       return "ALL REGISTERED POWERUPS";
+
         case "vision":         return "AIMBOT & ESP";
-        case "origins":        return "ORIGINS TOOLS";
-        case "prison":         return "MOB OF THE DEAD TOOLS";
-        case "transit":        return "TRANZIT TOOLS";
-        case "highrise":       return "DIE RISE TOOLS";
-        case "buried":         return "BURIED TOOLS";
+        case "aimcfg":         return "AIM SETTINGS";
+        case "espsize":        return "ESP DOT SIZE";
+        case "espcolor":       return "ESP COLOR";
+
         case "eetracker":      return "EASTER EGG TRACKER";
+
+        case "origins":        return "ORIGINS TOOLS";
+        case "origstaffs":     return "STAFFS & PUNCHES";
+        case "originspunch":   return "ONE INCH PUNCH";
+        case "origdig":        return "DIGGING & GEAR";
+        case "origparts":      return "GENERATORS & PARTS";
+        case "origvehicles":   return "TANK, ROBOTS & DRONE";
+        case "originsteleport": return "ORIGINS TELEPORTS";
+
+        case "prison":         return "MOB OF THE DEAD";
+        case "prunlock":       return "POWER & UNLOCKS";
+        case "prafter":        return "AFTERLIFE";
+        case "prbrutus":       return "BRUTUS & GEAR";
+        case "prplane":        return "PLANE (HOST)";
+
+        case "transit":        return "TRANZIT TOOLS";
+        case "trequip":        return "EQUIPMENT CRAFTABLES";
+        case "trbus":          return "BUS CRAFTABLES";
+        case "trweap":         return "WEAPONS & PACK-A-PUNCH";
+
+        case "highrise":       return "DIE RISE TOOLS";
+        case "hrcraft":        return "CRAFTABLES";
+
+        case "buried":         return "BURIED TOOLS";
+        case "bucraft":        return "CRAFTABLES";
+        case "buegg":          return "EASTER EGG BUILDS";
+
         case "players":        return "PLAYERS";
         case "player_actions": return "PLAYER ACTIONS";
     }
     return name;
+}
+
+// Header text: "CURRENT" on first-level menus, "PARENT > CURRENT" deeper down.
+MM_HeaderText()
+{
+    if(self.currentMenu == "main")
+        return "^2ULTIMATE ZM MENU";
+
+    cur = MM_MenuTitle(self.currentMenu);
+    if(self.currentMenu == "player_actions" && isDefined(self.selectedPlayer))
+        cur = self.selectedPlayer.name;
+
+    parent = self.menuParents[self.currentMenu];
+    if(!isDefined(parent))
+        parent = "main";
+
+    if(parent == "main")
+        return "^2" + cur;
+
+    return "^7" + MM_MenuTitle(parent) + " ^2> " + cur;
 }
 
 UpdateMenuUI()
@@ -561,26 +697,37 @@ UpdateMenuUI()
     if(isDefined(opts))
         total = opts.size;
 
-    maxRows = 8;
+    maxRows = self.mmMaxRows;
+    rowH = self.mmRowH;
+    rowY = self.mmRowY;
+
+    // --- viewport: always exactly 5 rows; the window follows the cursor ---
     first = 0;
     if(total > maxRows)
     {
-        first = self.menuCursor - 1;
+        first = self.mmFirst;
+        if(!isDefined(first))
+            first = self.menuCursor - 2;
+        if(self.menuCursor < first)
+            first = self.menuCursor;
+        if(self.menuCursor > (first + maxRows - 1))
+            first = self.menuCursor - (maxRows - 1);
+        if(first > (total - maxRows))
+            first = total - maxRows;
         if(first < 0)
             first = 0;
-        if(first > total - maxRows)
-            first = total - maxRows;
     }
+    self.mmFirst = first;
 
-    title = "^2>> ^7" + MM_MenuTitle(self.currentMenu) + " ^2<<";
-    if(self.currentMenu == "player_actions" && isDefined(self.selectedPlayer))
-        title = "^2>> ^7" + self.selectedPlayer.name + " ^2<<";
+    // --- header ---
+    title = self MM_HeaderText();
     if(!isDefined(self.mmTitleText) || self.mmTitleText != title)
     {
         self.menuTitle setText(title);
         self.mmTitleText = title;
     }
 
+    // --- rows ---
     for(i = 0; i < maxRows; i++)
     {
         row = self.menuRows[i];
@@ -601,6 +748,8 @@ UpdateMenuUI()
             else
                 label = label + " ^1[OFF]";
         }
+        else if(isDefined(opt.isSub) && opt.isSub)
+            label = label + " ^5>";
 
         if(!isDefined(self.mmRowText[i]) || self.mmRowText[i] != label)
         {
@@ -609,14 +758,40 @@ UpdateMenuUI()
         }
         row.alpha = 1;
         if(idx == self.menuCursor)
-            row.color = (0.2, 1, 0.2);
-        else
             row.color = (1, 1, 1);
+        else
+            row.color = (0.75, 0.75, 0.75);
     }
 
+    // --- selection bar ---
+    sel = self.menuCursor - first;
+    if(total > 0 && sel >= 0 && sel < maxRows)
+    {
+        self.menuHL.y = rowY + (sel * rowH);
+        self.menuHL.alpha = 0.45;
+    }
+    else
+        self.menuHL.alpha = 0;
+
+    // --- scrollbar (only when there is more than one screen) ---
+    if(total > maxRows)
+    {
+        trackH = maxRows * rowH;
+        thumbH = int((trackH * maxRows) / total);
+        if(thumbH < 12)
+            thumbH = 12;
+        frac = (self.menuCursor * 1.0) / (total - 1);
+        self.menuThumb setShader("white", 3, thumbH);
+        self.menuThumb.y = rowY + ((trackH - thumbH) * frac);
+        self.menuThumb.alpha = 0.85;
+    }
+    else
+        self.menuThumb.alpha = 0;
+
+    // --- footer ---
     footer = "^1(empty)   ^7Melee: back";
     if(total > 0)
-        footer = "^3" + (self.menuCursor + 1) + " / " + total + "   ^7Melee: back";
+        footer = "^5" + (self.menuCursor + 1) + " / " + total + "   ^7Jump: select   Melee: back";
 
     if(!isDefined(self.mmFooterText) || self.mmFooterText != footer)
     {
@@ -633,172 +808,118 @@ BuildMenuStructure()
 {
     hasMapWeapons = self MM_BuildMapWeapons();
 
-    // --- MAIN ---
-    self addSubMenu("main", "Free Roam / No Death Barriers", "freeroam");
-    self addSubMenu("main", "Movement & Flight", "movement");
-    self addSubMenu("main", "Teleport & Saved Locations", "teleport");
-    self addSubMenu("main", "World & Game Control", "world");
-    self addSubMenu("main", "Personal Mods", "personal");
-    self addSubMenu("main", "Persistent Upgrades / Perma-Perks", "permaperks");
-    self addSubMenu("main", "Survival & Automation", "survival");
-    self addSubMenu("main", "Weapon Mods", "weapons");
-    if(hasMapWeapons)
-        self addSubMenu("main", "Map Weapons (" + MM_MapName() + ")", "mapweapons");
-    self addSubMenu("main", "Spawns & Lobby", "lobby");
-    self addSubMenu("main", "Zombie Manipulation", "zombies");
+    // Sub menus are built first so empty, map-dependent folders can be hidden.
+    self MM_Menu_Player();
+    self MM_Menu_Movement();
+    self MM_Menu_Weapons(hasMapWeapons);
+    self MM_Menu_Zombies();
+    self MM_Menu_Teleport();
+    self MM_Menu_World();
+    self MM_Menu_Drops();
+    self MM_Menu_Vision();
+    self MM_Menu_MapTools();
+    self MM_Menu_Host();
+
+    // --- MAIN (most used first, map / host tools last) ---
+    self addSubMenu("main", "Player Mods", "personal");
+    self addSubMenu("main", "Movement", "movement");
+    self addSubMenu("main", "Weapons & Ammo", "weapons");
+    self addSubMenu("main", "Points & Perks", "pointsperks");
+    self addSubMenu("main", "Zombies", "zombies");
+    self addSubMenu("main", "Teleport & Free Roam", "teleport");
+    self addSubMenu("main", "Rounds & World", "world");
+    self addSubMenu("main", "Power-Up Drops", "lobby");
     self addSubMenu("main", "Aimbot & ESP", "vision");
-    if(level.script == "zm_tomb")
-        self addSubMenu("main", "Origins Tools", "origins");
-    if(level.script == "zm_prison")
-        self addSubMenu("main", "Mob of the Dead Tools", "prison");
-    if(level.script == "zm_transit")
-        self addSubMenu("main", "TranZit Tools", "transit");
-    if(level.script == "zm_highrise")
-        self addSubMenu("main", "Die Rise Tools", "highrise");
-    if(level.script == "zm_buried")
-        self addSubMenu("main", "Buried Tools", "buried");
+
+    mapHub = MM_MapHubName();
+    if(isDefined(mapHub))
+        self addSubMenu("main", "Map Tools: " + MM_MapName(), mapHub);
+
     if(self MM_EETrackerAvailable())
         self addSubMenu("main", "Easter Egg Tracker", "eetracker");
     if(self isHost())
         self addSubMenu("main", "Players Menu", "players");
+}
 
-    if(self MM_EETrackerAvailable())
-    {
-        self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
-        self addToggleOpt("eetracker", "Quest Guide ESP (Steps + Object Markers)", ::MM_ToggleEETrackerESP, "eetargets");
-    }
+// ----------------------------------------------------------------------------
+//  PLAYER MODS / POINTS & PERKS
+// ----------------------------------------------------------------------------
+MM_Menu_Player()
+{
+    // --- PLAYER MODS ---
+    self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
+    self addToggleOpt("personal", "Super Health", ::ToggleHealth, "health");
+    self addMenuOpt("personal", "Refill Health Now", ::MM_RefillHealth);
+    self addToggleOpt("personal", "Auto Revive (Self)", ::MM_ToggleAutoRevive, "autorevive");
+    self addToggleOpt("personal", "Vampire Mode (Heal on Points)", ::ToggleVampire, "vampire");
+    self addToggleOpt("personal", "Zombies Ignore Me", ::ToggleIgnoreMe, "ignore");
+    self addToggleOpt("personal", "Invisibility", ::ToggleInvis, "invis");
+    self addSubMenu("personal", "View & HUD", "view");
+    self addMenuOpt("personal", "Suicide", ::DoSuicide);
 
-    // --- FREE ROAM / MAP BOUNDARIES ---
-    self addToggleOpt("freeroam", "Disable Out-of-Map Death Monitor", ::ToggleNoDeathBarrier, "noboundary");
-    self addToggleOpt("freeroam", "Auto Recover From Falling Out", ::ToggleVoidRecovery, "voidrecover");
-    self addMenuOpt("freeroam", "Emergency Return to Active Map Area", ::MM_TeleportToNearestActiveVolume);
-    self addMenuOpt("freeroam", "Teleport to Crosshair", ::TeleportToCrosshair);
-    self addMenuOpt("freeroam", "Teleport Forward 128", ::MM_TeleportForward, 128);
-    self addMenuOpt("freeroam", "Teleport Forward 256", ::MM_TeleportForward, 256);
-    self addMenuOpt("freeroam", "Teleport Forward 512", ::MM_TeleportForward, 512);
-    self addMenuOpt("freeroam", "Teleport Up 128", ::MM_TeleportVertical, 128);
-    self addMenuOpt("freeroam", "Teleport Down 128", ::MM_TeleportVertical, -128);
-    self addSubMenu("freeroam", "Saved Free-Roam Positions", "roamspots");
-    self addMenuOpt("roamspots", "Save Position 1", ::MM_SaveRoamPosition, 0);
-    self addMenuOpt("roamspots", "Load Position 1", ::MM_LoadRoamPosition, 0);
-    self addMenuOpt("roamspots", "Save Position 2", ::MM_SaveRoamPosition, 1);
-    self addMenuOpt("roamspots", "Load Position 2", ::MM_LoadRoamPosition, 1);
-    self addMenuOpt("roamspots", "Save Position 3", ::MM_SaveRoamPosition, 2);
-    self addMenuOpt("roamspots", "Load Position 3", ::MM_LoadRoamPosition, 2);
+    self addToggleOpt("view", "Third Person", ::ToggleThirdPerson, "thirdp");
+    self addToggleOpt("view", "Live Match HUD (Round / Points / Health)", ::MM_ToggleStatusHUD, "statushud");
+    self addMenuOpt("view", "FOV 120", ::SetFOV, "120");
+    self addMenuOpt("view", "FOV Default (65)", ::SetFOV, "65");
 
-    // --- MOVEMENT / FLIGHT ---
+    // --- POINTS & PERKS ---
+    self addSubMenu("pointsperks", "Add Points", "points");
+    self addToggleOpt("pointsperks", "Infinite Points", ::ToggleInfPoints, "infpoints");
+    self addMenuOpt("pointsperks", "Give All Perks", ::GiveAllPerks);
+    self addMenuOpt("pointsperks", "Remove All Perks", ::RemoveAllPerks);
+    self addToggleOpt("pointsperks", "Auto Rebuy All Map Perks", ::MM_ToggleAutoPerks, "autoperks");
+    self addMenuOpt("pointsperks", "Unlock All Perma-Perks", ::MM_GiveAllPersistentUpgrades);
+
+    self addMenuOpt("points", "+1,000 Points", ::MM_GiveScore, 1000);
+    self addMenuOpt("points", "+10,000 Points", ::MM_GiveScore, 10000);
+    self addMenuOpt("points", "+50,000 Points", ::MM_GiveScore, 50000);
+    self addMenuOpt("points", "+100,000 Points", ::GivePoints);
+}
+
+// ----------------------------------------------------------------------------
+//  MOVEMENT
+// ----------------------------------------------------------------------------
+MM_Menu_Movement()
+{
     self addToggleOpt("movement", "Noclip", ::ToggleNoclip, "noclip");
     self addToggleOpt("movement", "Jetpack (Hold Jump)", ::ToggleJetpack, "jetpack");
     self addToggleOpt("movement", "Super Jump", ::ToggleSuperJump, "superjump");
     self addToggleOpt("movement", "Auto-Bhop", ::ToggleBhop, "bhop");
     self addToggleOpt("movement", "Unlimited Sprint", ::ToggleInfiniteSprint, "infsprint");
-    self addMenuOpt("movement", "Walk Speed: Normal", ::MM_SetMovementSpeed, 1.0);
-    self addMenuOpt("movement", "Walk Speed: 1.5x", ::MM_SetMovementSpeed, 1.5);
-    self addMenuOpt("movement", "Walk Speed: 2x", ::MM_SetMovementSpeed, 2.0);
-    self addMenuOpt("movement", "Walk Speed: 3x", ::MM_SetMovementSpeed, 3.0);
-    self addMenuOpt("movement", "Walk Speed: 4x", ::MM_SetMovementSpeed, 4.0);
-    self addMenuOpt("movement", "Noclip Speed: Slow", ::MM_SetNoclipSpeed, 15);
-    self addMenuOpt("movement", "Noclip Speed: Normal", ::MM_SetNoclipSpeed, 40);
-    self addMenuOpt("movement", "Noclip Speed: Fast", ::MM_SetNoclipSpeed, 80);
-    self addMenuOpt("movement", "Noclip Speed: Very Fast", ::MM_SetNoclipSpeed, 150);
+    self addToggleOpt("movement", "Max Movespeed", ::ToggleSpeed, "speed");
+    self addSubMenu("movement", "Walk Speed", "walkspeed");
+    self addSubMenu("movement", "Noclip Speed", "noclipspeed");
+    self addMenuOpt("movement", "Restore Default Movement", ::MM_ResetMovement);
 
-    // --- TELEPORT / SAVED POSITIONS ---
-    self addMenuOpt("teleport", "Teleport to Crosshair", ::TeleportToCrosshair);
-    self addMenuOpt("teleport", "Teleport Forward 128", ::MM_TeleportForward, 128);
-    self addMenuOpt("teleport", "Teleport Forward 256", ::MM_TeleportForward, 256);
-    self addMenuOpt("teleport", "Teleport Forward 512", ::MM_TeleportForward, 512);
-    self addMenuOpt("teleport", "Teleport Up 128", ::MM_TeleportVertical, 128);
-    self addMenuOpt("teleport", "Teleport Down 128", ::MM_TeleportVertical, -128);
-    self addMenuOpt("teleport", "Return to Nearest Active Map Area", ::MM_TeleportToNearestActiveVolume);
-    self addSubMenu("teleport", "Three Saved Locations", "teleportslots");
-    self addMenuOpt("teleportslots", "Save Slot 1", ::MM_SaveRoamPosition, 0);
-    self addMenuOpt("teleportslots", "Load Slot 1", ::MM_LoadRoamPosition, 0);
-    self addMenuOpt("teleportslots", "Save Slot 2", ::MM_SaveRoamPosition, 1);
-    self addMenuOpt("teleportslots", "Load Slot 2", ::MM_LoadRoamPosition, 1);
-    self addMenuOpt("teleportslots", "Save Slot 3", ::MM_SaveRoamPosition, 2);
-    self addMenuOpt("teleportslots", "Load Slot 3", ::MM_LoadRoamPosition, 2);
+    self addMenuOpt("walkspeed", "Walk Speed: Normal", ::MM_SetMovementSpeed, 1.0);
+    self addMenuOpt("walkspeed", "Walk Speed: 1.5x", ::MM_SetMovementSpeed, 1.5);
+    self addMenuOpt("walkspeed", "Walk Speed: 2x", ::MM_SetMovementSpeed, 2.0);
+    self addMenuOpt("walkspeed", "Walk Speed: 3x", ::MM_SetMovementSpeed, 3.0);
+    self addMenuOpt("walkspeed", "Walk Speed: 4x", ::MM_SetMovementSpeed, 4.0);
 
-    // --- WORLD / GAME CONTROL ---
-    self addMenuOpt("world", "Gravity: Very Low", ::MM_SetGravity, 50);
-    self addMenuOpt("world", "Gravity: Low", ::MM_SetGravity, 150);
-    self addMenuOpt("world", "Gravity: Medium", ::MM_SetGravity, 300);
-    self addMenuOpt("world", "Gravity: Normal", ::MM_SetGravity, 800);
-    self addMenuOpt("world", "Game Speed: 0.25x", ::SetTimeScale, 0.25);
-    self addMenuOpt("world", "Game Speed: 0.5x", ::SetTimeScale, 0.5);
-    self addMenuOpt("world", "Game Speed: Normal", ::SetTimeScale, 1.0);
-    self addMenuOpt("world", "Game Speed: 2x", ::SetTimeScale, 2.0);
-    self addMenuOpt("world", "Game Speed: 4x", ::SetTimeScale, 4.0);
-    self addMenuOpt("world", "Round 5", ::SetRound, 5);
-    self addMenuOpt("world", "Round 25", ::SetRound, 25);
-    self addMenuOpt("world", "Round 50", ::SetRound, 50);
-    self addMenuOpt("world", "Round 75", ::SetRound, 75);
-    self addMenuOpt("world", "Round 99", ::SetRound, 99);
-    self addMenuOpt("world", "Round 150", ::SetRound, 150);
-    self addMenuOpt("world", "Round 250", ::SetRound, 250);
-    self addMenuOpt("world", "Advance 1 Round", ::MM_AdvanceRound, 1);
-    self addMenuOpt("world", "Advance 5 Rounds", ::MM_AdvanceRound, 5);
-    self addMenuOpt("world", "Advance 10 Rounds", ::MM_AdvanceRound, 10);
-    self addMenuOpt("world", "Reset World (Gravity + Speed)", ::MM_ResetWorld);
+    self addMenuOpt("noclipspeed", "Noclip Speed: Slow", ::MM_SetNoclipSpeed, 15);
+    self addMenuOpt("noclipspeed", "Noclip Speed: Normal", ::MM_SetNoclipSpeed, 40);
+    self addMenuOpt("noclipspeed", "Noclip Speed: Fast", ::MM_SetNoclipSpeed, 80);
+    self addMenuOpt("noclipspeed", "Noclip Speed: Very Fast", ::MM_SetNoclipSpeed, 150);
+}
 
-    // --- PERSISTENT UPGRADES / PERMA-PERKS ---
-    self addMenuOpt("permaperks", "Unlock ALL Available Perma-Perks", ::MM_GiveAllPersistentUpgrades);
+// ----------------------------------------------------------------------------
+//  WEAPONS & AMMO  (map-aware: entries only appear if the map has the gun)
+// ----------------------------------------------------------------------------
+MM_Menu_Weapons(hasMapWeapons)
+{
+    // --- Ammo & weapon mods ---
+    self addToggleOpt("ammo", "Infinite Ammo (Current Weapon)", ::ToggleInfAmmo, "infammo");
+    self addToggleOpt("ammo", "Infinite Ammo (All Weapons)", ::MM_ToggleInfAmmoAll, "infammoall");
+    self addToggleOpt("ammo", "Move = Refill Ammo", ::ToggleMovementAmmo, "moveammo");
+    self addToggleOpt("ammo", "Magic Bullets (Ray Gun)", ::ToggleMagicBullets, "magic");
+    self addMenuOpt("ammo", "Max Ammo (Current)", ::FillCurrentAmmo);
+    self addMenuOpt("ammo", "Max Ammo (All)", ::FillAllAmmo);
+    self addMenuOpt("ammo", "Pack-A-Punch Current", ::PapCurrentWeapon);
+    self addMenuOpt("ammo", "Pack-A-Punch ALL Guns", ::PapAllWeapons);
+    self addMenuOpt("ammo", "Drop Current Weapon", ::DropWeapon);
 
-    // --- PERSONAL ---
-    self addToggleOpt("personal", "God Mode", ::ToggleGodMode, "god");
-    self addToggleOpt("personal", "Noclip", ::ToggleNoclip, "noclip");
-    self addToggleOpt("personal", "Jetpack (Hold Jump)", ::ToggleJetpack, "jetpack");
-    self addToggleOpt("personal", "Super Jump", ::ToggleSuperJump, "superjump");
-    self addToggleOpt("personal", "Auto-Bhop", ::ToggleBhop, "bhop");
-    self addToggleOpt("personal", "Vampire Mode (Heal on Points)", ::ToggleVampire, "vampire");
-    self addToggleOpt("personal", "Move = Refill Ammo", ::ToggleMovementAmmo, "moveammo");
-    self addToggleOpt("personal", "Magic Bullets (Ray Gun)", ::ToggleMagicBullets, "magic");
-    self addToggleOpt("personal", "Super Health", ::ToggleHealth, "health");
-    self addToggleOpt("personal", "Zombies Ignore Me", ::ToggleIgnoreMe, "ignore");
-    self addToggleOpt("personal", "Max Movespeed", ::ToggleSpeed, "speed");
-    self addToggleOpt("personal", "Invisibility", ::ToggleInvis, "invis");
-    self addToggleOpt("personal", "Third Person", ::ToggleThirdPerson, "thirdp");
-    self addMenuOpt("personal", "FOV 120", ::SetFOV, "120");
-    self addMenuOpt("personal", "FOV Default (65)", ::SetFOV, "65");
-    self addMenuOpt("personal", "+1,000 Points", ::MM_GiveScore, 1000);
-    self addMenuOpt("personal", "+10,000 Points", ::MM_GiveScore, 10000);
-    self addMenuOpt("personal", "+50,000 Points", ::MM_GiveScore, 50000);
-    self addMenuOpt("personal", "+100,000 Points", ::GivePoints);
-    self addToggleOpt("personal", "Infinite Points", ::ToggleInfPoints, "infpoints");
-    self addMenuOpt("personal", "Save Position", ::SavePosition);
-    self addMenuOpt("personal", "Load Position", ::LoadPosition);
-    self addMenuOpt("personal", "Teleport To Crosshair", ::TeleportToCrosshair);
-    self addMenuOpt("personal", "Suicide", ::DoSuicide);
-
-    // --- SURVIVAL / AUTOMATION ---
-    self addToggleOpt("survival", "Auto Revive (Self)", ::MM_ToggleAutoRevive, "autorevive");
-    self addToggleOpt("survival", "Auto Rebuy All Map Perks", ::MM_ToggleAutoPerks, "autoperks");
-    self addToggleOpt("survival", "Live Match HUD (Round / Points / Health)", ::MM_ToggleStatusHUD, "statushud");
-    self addMenuOpt("survival", "Restore Default Movement", ::MM_ResetMovement);
-    self addMenuOpt("survival", "Refill Health Now", ::MM_RefillHealth);
-
-    // --- WEAPONS ---
-    self addToggleOpt("weapons", "Infinite Ammo (Current Weapon)", ::ToggleInfAmmo, "infammo");
-    self addToggleOpt("weapons", "Infinite Ammo (All Weapons)", ::MM_ToggleInfAmmoAll, "infammoall");
-    self addMenuOpt("weapons", "Pack-A-Punch Current", ::PapCurrentWeapon);
-    self addMenuOpt("weapons", "Pack-A-Punch ALL Guns", ::PapAllWeapons);
-    self addMenuOpt("weapons", "Max Ammo Current", ::FillCurrentAmmo);
-    self addMenuOpt("weapons", "Max Ammo ALL", ::FillAllAmmo);
-    self addSubMenu("weapons", "Heavy / Explosive Arsenal", "heavyweapons");
-    self addSubMenu("weapons", "Wonder Weapons", "wonderweapons");
-    self addSubMenu("weapons", "More Guns (PaP)", "guns");
-    self addSubMenu("weapons", "All Registered Weapons (This Map)", "allguns");
-
-    // Heavy weapons are only displayed when the active map registers them.
-    self MM_AddWeaponOpt("heavyweapons", "RPG-7 / Rocket Launcher", "usrpg_zm");
-    self MM_AddWeaponOpt("heavyweapons", "RPG-7 (Pack-A-Punched)", "usrpg_upgraded_zm");
-    self MM_AddWeaponOpt("heavyweapons", "War Machine Grenade Launcher", "m32_zm");
-    self MM_AddWeaponOpt("heavyweapons", "War Machine (Pack-A-Punched)", "m32_upgraded_zm");
-    self MM_AddWeaponOpt("heavyweapons", "Monkey Bombs", "cymbal_monkey_zm");
-    self MM_AddWeaponOpt("heavyweapons", "Semtex Grenades", "sticky_grenade_zm");
-    self MM_AddWeaponOpt("heavyweapons", "Claymores", "claymore_zm");
-    self addMenuOpt("heavyweapons", "Give RPG + War Machine Loadout", ::MM_GiveRocketLoadout);
-
-    // Wonder weapons are map-aware; unavailable weapons are omitted.
+    // --- Wonder weapons ---
     self MM_AddWeaponOpt("wonderweapons", "Ray Gun", "ray_gun_zm");
     self MM_AddWeaponOpt("wonderweapons", "Ray Gun (Pack-A-Punched)", "ray_gun_upgraded_zm");
     self MM_AddWeaponOpt("wonderweapons", "Ray Gun Mark II", "raygun_mark2_zm");
@@ -807,119 +928,128 @@ BuildMenuStructure()
     self MM_AddWeaponOpt("wonderweapons", "Blundergat (Mob of the Dead)", "blundergat_zm");
     self MM_AddWeaponOpt("wonderweapons", "Acid Gat / Vitriolic Withering", "blundergat_upgraded_zm");
 
+    // --- Heavy & explosives ---
+    self MM_AddWeaponOpt("heavyweapons", "RPG-7 / Rocket Launcher", "usrpg_zm");
+    self MM_AddWeaponOpt("heavyweapons", "RPG-7 (Pack-A-Punched)", "usrpg_upgraded_zm");
+    self MM_AddWeaponOpt("heavyweapons", "War Machine Grenade Launcher", "m32_zm");
+    self MM_AddWeaponOpt("heavyweapons", "War Machine (Pack-A-Punched)", "m32_upgraded_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Monkey Bombs", "cymbal_monkey_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Semtex Grenades", "sticky_grenade_zm");
+    self MM_AddWeaponOpt("heavyweapons", "Claymores", "claymore_zm");
+    self MM_AddWeaponOpt("heavyweapons", "EMP Grenades", "emp_grenade_zm");
+    self addMenuOpt("heavyweapons", "Give RPG + War Machine Loadout", ::MM_GiveRocketLoadout);
+
+    // --- Gun library, sorted by class ---
+    self MM_AddWeaponOpt("gun_ar", "AN-94 (PaP)", "an94_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "M27 (PaP)", "hk416_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "Type 25 (PaP)", "type95_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "SCAR-H (PaP)", "scar_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "FAL (PaP)", "fnfal_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "M14 (PaP)", "m14_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "STG-44 (PaP)", "mp44_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "M16 (PaP)", "m16_gl_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "MTAR (PaP)", "tar21_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "XM8 (PaP)", "xm8_upgraded_zm");
+    self MM_AddWeaponOpt("gun_ar", "Galil (PaP)", "galil_upgraded_zm");
+
+    self MM_AddWeaponOpt("gun_smg", "HAMR (PaP)", "hamr_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "LSAT (PaP)", "lsat_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "RPD (PaP)", "rpd_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "PDW-57 (PaP)", "pdw57_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "Chicom CQB (PaP)", "qcw05_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "AK74u (PaP)", "ak74u_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "MP5 (PaP)", "mp5k_upgraded_zm");
+    self MM_AddWeaponOpt("gun_smg", "Skorpion EVO (PaP)", "evoskorpion_upgraded_zm");
+
+    self MM_AddWeaponOpt("gun_pistol", "KAP-40 (PaP)", "kard_upgraded_zm");
+    self MM_AddWeaponOpt("gun_pistol", "Python (PaP)", "python_upgraded_zm");
+    self MM_AddWeaponOpt("gun_pistol", "Five-seven Dual Wield (PaP)", "fivesevendw_upgraded_zm");
+    self MM_AddWeaponOpt("gun_pistol", "Executioner (PaP)", "judge_upgraded_zm");
+    self MM_AddWeaponOpt("gun_pistol", "Mustang & Sally / M1911 (PaP)", "m1911_upgraded_zm");
+
+    self MM_AddWeaponOpt("gun_shotgun", "S12 (PaP)", "saiga12_upgraded_zm");
+    self MM_AddWeaponOpt("gun_shotgun", "KSG (PaP)", "ksg_upgraded_zm");
+    self MM_AddWeaponOpt("gun_shotgun", "M1216 (PaP)", "srm1216_upgraded_zm");
+    self MM_AddWeaponOpt("gun_shotgun", "Olympia (PaP)", "rottweil72_upgraded_zm");
+
+    self MM_AddWeaponOpt("gun_sniper", "SVU-AS (PaP)", "svu_upgraded_zm");
+    self MM_AddWeaponOpt("gun_sniper", "DSR 50 (PaP)", "dsr50_upgraded_zm");
+    self MM_AddWeaponOpt("gun_sniper", "Barrett M82A1 (PaP)", "barretm82_upgraded_zm");
+    self MM_AddWeaponOpt("gun_sniper", "Ballista (PaP)", "ballista_upgraded_zm");
+
+    self MM_AddWeaponOpt("gun_equip", "Ballistic Knife (PaP)", "knife_ballistic_upgraded_zm");
+    self MM_AddWeaponOpt("gun_equip", "Zombie Shield", "riotshield_zm");
+    self MM_AddWeaponOpt("gun_equip", "Galvaknuckles", "tazer_knuckles_zm");
+
+    self MM_AddSubIfAny("guns", "Assault Rifles", "gun_ar");
+    self MM_AddSubIfAny("guns", "SMGs & LMGs", "gun_smg");
+    self MM_AddSubIfAny("guns", "Pistols", "gun_pistol");
+    self MM_AddSubIfAny("guns", "Shotguns", "gun_shotgun");
+    self MM_AddSubIfAny("guns", "Sniper Rifles", "gun_sniper");
+    self MM_AddSubIfAny("guns", "Equipment & Melee", "gun_equip");
+
+    // Every weapon / upgraded weapon registered on this map.
     self MM_BuildRegisteredWeaponList();
-    // Each entry only appears if the current map actually has that weapon loaded.
-    self MM_AddWeaponOpt("guns", "HAMR (PaP)", "hamr_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "LSAT (PaP)", "lsat_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "War Machine (PaP)", "m32_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "AN-94 (PaP)", "an94_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "M27 (PaP)", "hk416_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Type 25 (PaP)", "type95_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "SCAR-H (PaP)", "scar_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "FAL (PaP)", "fnfal_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "M14 (PaP)", "m14_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "STG-44 (PaP)", "mp44_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "M16 (PaP)", "m16_gl_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "MTAR (PaP)", "tar21_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "XM8 (PaP)", "xm8_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "RPD (PaP)", "rpd_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Chicom CQB (PaP)", "qcw05_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "AK74u (PaP)", "ak74u_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "MP5 (PaP)", "mp5k_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Skorpion EVO (PaP)", "evoskorpion_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "KAP-40 (PaP)", "kard_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Python (PaP)", "python_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Five-seven Dual Wield (PaP)", "fivesevendw_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Executioner (PaP)", "judge_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "S12 (PaP)", "saiga12_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "KSG (PaP)", "ksg_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "M1216 (PaP)", "srm1216_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Olympia (PaP)", "rottweil72_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "SVU-AS (PaP)", "svu_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "DSR 50 (PaP)", "dsr50_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Barrett M82A1 (PaP)", "barretm82_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Ballista (PaP)", "ballista_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Ballistic Knife (PaP)", "knife_ballistic_upgraded_zm");
-    self MM_AddWeaponOpt("guns", "Semtex", "sticky_grenade_zm");
-    self MM_AddWeaponOpt("guns", "Claymores", "claymore_zm");
-    self MM_AddWeaponOpt("weapons", "Ray Gun Mark II (PaP)", "raygun_mark2_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "Ray Gun (PaP)", "ray_gun_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "RPG (PaP)", "usrpg_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "Galil (PaP)", "galil_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "PDW-57 (PaP)", "pdw57_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "Mustang & Sally / M1911 (PaP)", "m1911_upgraded_zm");
-    self MM_AddWeaponOpt("weapons", "Monkey Bombs", "cymbal_monkey_zm");
-    self MM_AddWeaponOpt("weapons", "EMP Grenades", "emp_grenade_zm");
-    self MM_AddWeaponOpt("weapons", "Zombie Shield", "riotshield_zm");
-    self MM_AddWeaponOpt("weapons", "Galvaknuckles", "tazer_knuckles_zm");
-    self addMenuOpt("weapons", "Give All Available Perks", ::GiveAllPerks);
-    self addMenuOpt("weapons", "Remove All Available Perks", ::RemoveAllPerks);
-    self addMenuOpt("weapons", "Drop Current Weapon", ::DropWeapon);
 
-    // --- LOBBY ---
-    self addMenuOpt("lobby", "Turn On Power", ::TurnOnPower);
-    self addMenuOpt("lobby", "Open All Doors", ::OpenAllDoors);
-    self MM_AddDropOpt("Spawn Max Ammo", "full_ammo");
-    self MM_AddDropOpt("Spawn Insta-Kill", "insta_kill");
-    self MM_AddDropOpt("Spawn Double Points", "double_points");
-    self MM_AddDropOpt("Spawn Nuke", "nuke");
-    self MM_AddDropOpt("Spawn Carpenter", "carpenter");
-    self MM_AddDropOpt("Spawn Fire Sale", "fire_sale");
-    self MM_AddDropOpt("Spawn Free Perk", "free_perk");
-    self MM_AddDropOpt("Spawn Death Machine", "minigun");
-    self MM_AddDropOpt("Spawn Zombie Blood", "zombie_blood");
-    self addSubMenu("lobby", "All Registered Powerups", "powerups");
-    self MM_BuildRegisteredPowerupList();
-    self addMenuOpt("lobby", "Skip Round (+1)", ::SkipRound);
-    self addMenuOpt("lobby", "Jump to Round 10", ::SetRound, 10);
-    self addMenuOpt("lobby", "Jump to Round 25", ::SetRound, 25);
-    self addMenuOpt("lobby", "Jump to Round 50", ::SetRound, 50);
-    self addMenuOpt("lobby", "Jump to Round 100", ::SetRound, 100);
-    self addMenuOpt("lobby", "Game Speed: Slomo", ::SetTimeScale, 0.5);
-    self addMenuOpt("lobby", "Game Speed: Fast", ::SetTimeScale, 2.0);
-    self addMenuOpt("lobby", "Game Speed: Normal", ::SetTimeScale, 1.0);
-    // Use unique, zero-argument handlers here. SetGravity is also a native
-    // BO2 GSC function name, so using it as a custom callback can collide.
-    self addMenuOpt("lobby", "Low Gravity", ::MM_SetLowGravity);
-    self addMenuOpt("lobby", "Normal Gravity", ::MM_SetNormalGravity);
-    if(self isHost())
-    {
-        self addMenuOpt("lobby", "Restart Map", ::RestartMap);
-        self addMenuOpt("lobby", "End Game", ::EndGame);
-    }
+    // --- Weapons hub ---
+    self addSubMenu("weapons", "Ammo & Weapon Mods", "ammo");
+    self MM_AddSubIfAny("weapons", "Wonder Weapons", "wonderweapons");
+    self MM_AddSubIfAny("weapons", "Heavy & Explosives", "heavyweapons");
+    self MM_AddSubIfAny("weapons", "Gun Library", "guns");
+    if(hasMapWeapons)
+        self addSubMenu("weapons", "Map Weapons (" + MM_MapName() + ")", "mapweapons");
+    self addSubMenu("weapons", "All Registered Weapons", "allguns");
+}
 
-    // --- ZOMBIES ---
-    self addMenuOpt("zombies", "Kill All Enemies", ::KillAllZombies);
-    self addMenuOpt("zombies", "Clear Regular Zombies (Keep Bosses)", ::MM_ClearRegularZombies);
-    self addMenuOpt("zombies", "Explode All Zombies", ::ExplodeZombies);
-    self addMenuOpt("zombies", "Burn All Zombies", ::BurnZombies);
-    self addMenuOpt("zombies", "Teleport All To Me", ::TeleportZombies);
-    self addMenuOpt("zombies", "Teleport All To Crosshair", ::TeleportZombiesCrosshair);
-    self addToggleOpt("zombies", "Zombie Magnet", ::ToggleZombieMagnet, "magnet");
-    self addMenuOpt("zombies", "Send Zombies to Moon", ::ZombiesToMoon);
-    self addMenuOpt("zombies", "Launch Zombies Up", ::FlingZombies);
-    self addToggleOpt("zombies", "Freeze All Zombies", ::ToggleFreezeZombies, "freeze");
-    self addMenuOpt("zombies", "Zombie Speed: Sprint", ::SetZombieSpeed, "sprint");
-    self addMenuOpt("zombies", "Zombie Speed: Run", ::SetZombieSpeed, "run");
-    self addMenuOpt("zombies", "Zombie Speed: Walk", ::SetZombieSpeed, "walk");
-    self addMenuOpt("zombies", "Zombie Speed: Default", ::SetZombieSpeed, "default");
-    self addToggleOpt("zombies", "Insta-Kill Aura", ::ToggleKillAura, "killaura");
-    self addMenuOpt("zombies", "Delete All Zombies", ::DeleteZombies);
-    self addMenuOpt("zombies", "Add 24 Zombies To Round", ::RespawnZombies);
-    self addMenuOpt("zombies", "Leave One Zombie Alive", ::MM_LeaveOneZombieAlive);
-    self addMenuOpt("zombies", "Kill Nearest Zombie", ::MM_KillNearestZombie);
-    self addMenuOpt("zombies", "Teleport Nearest Zombie To Me", ::MM_TeleportNearestZombie);
-    self addMenuOpt("zombies", "Teleport Nearest Zombie To Crosshair", ::MM_TeleportNearestZombieToCrosshair);
-    self addSubMenu("zombies", "Spawn Zombie Types", "zspawn");
-    self addSubMenu("zombies", "Zombie AI & Health Controls", "zai");
-    self addSubMenu("zombies", "Boss & Special Enemy Controls", "zboss");
-    self addSubMenu("zombies", "Zombie Effects & Crowd Tools", "zeffects");
+// ----------------------------------------------------------------------------
+//  ZOMBIES
+// ----------------------------------------------------------------------------
+MM_Menu_Zombies()
+{
+    // --- Kill & clear ---
+    self addMenuOpt("zkill", "Kill All Enemies", ::KillAllZombies);
+    self addMenuOpt("zkill", "Clear Regular Zombies (Keep Bosses)", ::MM_ClearRegularZombies);
+    self addMenuOpt("zkill", "Delete All Zombies", ::DeleteZombies);
+    self addMenuOpt("zkill", "Kill Nearest Zombie", ::MM_KillNearestZombie);
+    self addMenuOpt("zkill", "Leave One Zombie Alive", ::MM_LeaveOneZombieAlive);
+    self addToggleOpt("zkill", "Insta-Kill Aura", ::ToggleKillAura, "killaura");
 
-    // Spawn options are filtered against the live map's stock registries.
+    // --- Crowd control ---
+    self addToggleOpt("zcrowd", "Freeze All Zombies", ::ToggleFreezeZombies, "freeze");
+    self addToggleOpt("zcrowd", "Zombie Magnet", ::ToggleZombieMagnet, "magnet");
+    self addMenuOpt("zcrowd", "Teleport All To Me", ::TeleportZombies);
+    self addMenuOpt("zcrowd", "Teleport All To Crosshair", ::TeleportZombiesCrosshair);
+    self addMenuOpt("zcrowd", "Teleport Nearest Zombie To Me", ::MM_TeleportNearestZombie);
+    self addMenuOpt("zcrowd", "Teleport Nearest To Crosshair", ::MM_TeleportNearestZombieToCrosshair);
+
+    // --- Effects ---
+    self addMenuOpt("zeffects", "Explode All Zombies", ::ExplodeZombies);
+    self addMenuOpt("zeffects", "Burn All Zombies", ::BurnZombies);
+    self addMenuOpt("zeffects", "Launch Zombies Up", ::FlingZombies);
+    self addMenuOpt("zeffects", "Send Zombies to the Moon", ::ZombiesToMoon);
+
+    // --- Speed & health ---
+    self addToggleOpt("zai", "Disable Non-Boss Zombie AI", ::MM_ToggleZombiePacify, "zpacify");
+    self addSubMenu("zai", "Zombie Health", "zhp");
+    self addSubMenu("zai", "Zombie Speed", "zspeed");
+
+    self addMenuOpt("zhp", "Set Zombies to 1 HP", ::MM_SetZombieHealth, 1);
+    self addMenuOpt("zhp", "Set Zombies to 50 HP", ::MM_SetZombieHealth, 50);
+    self addMenuOpt("zhp", "Set Zombies to 100 HP", ::MM_SetZombieHealth, 100);
+    self addMenuOpt("zhp", "Set Zombies to 500 HP", ::MM_SetZombieHealth, 500);
+    self addMenuOpt("zhp", "Set Zombies to 1,000 HP", ::MM_SetZombieHealth, 1000);
+
+    self addMenuOpt("zspeed", "Zombie Speed: Sprint", ::SetZombieSpeed, "sprint");
+    self addMenuOpt("zspeed", "Zombie Speed: Run", ::SetZombieSpeed, "run");
+    self addMenuOpt("zspeed", "Zombie Speed: Walk", ::SetZombieSpeed, "walk");
+    self addMenuOpt("zspeed", "Zombie Speed: Default", ::SetZombieSpeed, "default");
+
+    // --- Spawn (filtered against the live map's registries) ---
     self addMenuOpt("zspawn", "Spawn 1 Regular Zombie", ::MM_SpawnZombieBatch, "normal", 1);
     self addMenuOpt("zspawn", "Spawn 5 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 5);
     self addMenuOpt("zspawn", "Spawn 10 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 10);
     self addMenuOpt("zspawn", "Spawn 24 Regular Zombies", ::MM_SpawnZombieBatch, "normal", 24);
+    self addMenuOpt("zspawn", "Add 24 Zombies To Round", ::RespawnZombies);
     if(isDefined(level.dog_spawners) && level.dog_spawners.size > 0)
     {
         self addMenuOpt("zspawn", "Spawn 1 Hellhound", ::MM_SpawnZombieBatch, "dog", 1);
@@ -932,72 +1062,199 @@ BuildMenuStructure()
     }
     self addMenuOpt("zspawn", "Spawn Type Availability", ::MM_ShowZombieSpawnTypes);
 
-    self addToggleOpt("zai", "Disable Non-Boss Zombie AI", ::MM_ToggleZombiePacify, "zpacify");
-    self addMenuOpt("zai", "Set Current Non-Boss Enemies to 1 HP", ::MM_SetZombieHealth, 1);
-    self addMenuOpt("zai", "Set Current Zombies to 50 HP", ::MM_SetZombieHealth, 50);
-    self addMenuOpt("zai", "Set Current Zombies to 100 HP", ::MM_SetZombieHealth, 100);
-    self addMenuOpt("zai", "Set Current Zombies to 500 HP", ::MM_SetZombieHealth, 500);
-    self addMenuOpt("zai", "Set Current Zombies to 1,000 HP", ::MM_SetZombieHealth, 1000);
-    self addMenuOpt("zai", "Zombie Speed: Sprint", ::SetZombieSpeed, "sprint");
-    self addMenuOpt("zai", "Zombie Speed: Run", ::SetZombieSpeed, "run");
-    self addMenuOpt("zai", "Zombie Speed: Walk", ::SetZombieSpeed, "walk");
-    self addMenuOpt("zai", "Zombie Speed: Default", ::SetZombieSpeed, "default");
-
+    // --- Bosses & specials ---
     self addMenuOpt("zboss", "Kill All Quest Bosses", ::MM_KillZombieGroup, "boss");
     self addMenuOpt("zboss", "Kill All Hellhounds", ::MM_KillZombieGroup, "dog");
     self addMenuOpt("zboss", "Kill All Denizens / Leapers", ::MM_KillZombieGroup, "leaper");
     self addMenuOpt("zboss", "Kill All Special Enemies", ::MM_KillZombieGroup, "special");
-    self addMenuOpt("zboss", "Show Live Boss / Special Enemy Count", ::MM_ShowZombieGroupCounts);
+    self addMenuOpt("zboss", "Show Live Boss / Special Count", ::MM_ShowZombieGroupCounts);
 
-    self addMenuOpt("zeffects", "Explode All Regular Zombies", ::ExplodeZombies);
-    self addMenuOpt("zeffects", "Burn All Regular Zombies", ::BurnZombies);
-    self addMenuOpt("zeffects", "Launch All Regular Zombies", ::FlingZombies);
-    self addMenuOpt("zeffects", "Send All Regular Zombies to the Moon", ::ZombiesToMoon);
-    self addToggleOpt("zeffects", "Freeze All Regular Zombies", ::ToggleFreezeZombies, "freeze");
-    self addToggleOpt("zeffects", "Zombie Magnet", ::ToggleZombieMagnet, "magnet");
-    self addToggleOpt("zeffects", "Insta-Kill Aura", ::ToggleKillAura, "killaura");
+    // --- Zombies hub ---
+    self addSubMenu("zombies", "Kill & Clear", "zkill");
+    self addSubMenu("zombies", "Crowd Control", "zcrowd");
+    self addSubMenu("zombies", "Zombie Effects", "zeffects");
+    self addSubMenu("zombies", "Speed & Health", "zai");
+    self addSubMenu("zombies", "Spawn Enemies", "zspawn");
+    self addSubMenu("zombies", "Bosses & Specials", "zboss");
+}
 
-    // --- VISION ---
+// ----------------------------------------------------------------------------
+//  TELEPORT & FREE ROAM
+// ----------------------------------------------------------------------------
+MM_Menu_Teleport()
+{
+    self addMenuOpt("teleport", "Teleport to Crosshair", ::TeleportToCrosshair);
+    self addSubMenu("teleport", "Short Jumps", "tpjumps");
+    self addSubMenu("teleport", "Saved Locations", "teleportslots");
+    self addMenuOpt("teleport", "Return to Nearest Active Map Area", ::MM_TeleportToNearestActiveVolume);
+    self addToggleOpt("teleport", "Disable Out-of-Map Death Monitor", ::ToggleNoDeathBarrier, "noboundary");
+    self addToggleOpt("teleport", "Auto Recover From Falling Out", ::ToggleVoidRecovery, "voidrecover");
+
+    self addMenuOpt("tpjumps", "Teleport Forward 128", ::MM_TeleportForward, 128);
+    self addMenuOpt("tpjumps", "Teleport Forward 256", ::MM_TeleportForward, 256);
+    self addMenuOpt("tpjumps", "Teleport Forward 512", ::MM_TeleportForward, 512);
+    self addMenuOpt("tpjumps", "Teleport Up 128", ::MM_TeleportVertical, 128);
+    self addMenuOpt("tpjumps", "Teleport Down 128", ::MM_TeleportVertical, -128);
+
+    self addMenuOpt("teleportslots", "Quick Save Position", ::SavePosition);
+    self addMenuOpt("teleportslots", "Quick Load Position", ::LoadPosition);
+    self addMenuOpt("teleportslots", "Save Slot 1", ::MM_SaveRoamPosition, 0);
+    self addMenuOpt("teleportslots", "Load Slot 1", ::MM_LoadRoamPosition, 0);
+    self addMenuOpt("teleportslots", "Save Slot 2", ::MM_SaveRoamPosition, 1);
+    self addMenuOpt("teleportslots", "Load Slot 2", ::MM_LoadRoamPosition, 1);
+    self addMenuOpt("teleportslots", "Save Slot 3", ::MM_SaveRoamPosition, 2);
+    self addMenuOpt("teleportslots", "Load Slot 3", ::MM_LoadRoamPosition, 2);
+}
+
+// ----------------------------------------------------------------------------
+//  ROUNDS & WORLD
+// ----------------------------------------------------------------------------
+MM_Menu_World()
+{
+    self addSubMenu("world", "Round Control", "rounds");
+    self addSubMenu("world", "Game Speed", "gamespeed");
+    self addSubMenu("world", "Gravity", "gravity");
+    self addMenuOpt("world", "Turn On Power", ::TurnOnPower);
+    self addMenuOpt("world", "Open All Doors", ::OpenAllDoors);
+    self addMenuOpt("world", "Reset World (Gravity + Speed)", ::MM_ResetWorld);
+    if(self isHost())
+    {
+        self addMenuOpt("world", "Restart Map", ::RestartMap);
+        self addMenuOpt("world", "End Game", ::EndGame);
+    }
+
+    self addMenuOpt("rounds", "Skip Round (+1)", ::SkipRound);
+    self addMenuOpt("rounds", "Advance 5 Rounds", ::MM_AdvanceRound, 5);
+    self addMenuOpt("rounds", "Advance 10 Rounds", ::MM_AdvanceRound, 10);
+    self addSubMenu("rounds", "Jump To Round", "setround");
+
+    self addMenuOpt("setround", "Round 5", ::SetRound, 5);
+    self addMenuOpt("setround", "Round 10", ::SetRound, 10);
+    self addMenuOpt("setround", "Round 25", ::SetRound, 25);
+    self addMenuOpt("setround", "Round 50", ::SetRound, 50);
+    self addMenuOpt("setround", "Round 75", ::SetRound, 75);
+    self addMenuOpt("setround", "Round 99", ::SetRound, 99);
+    self addMenuOpt("setround", "Round 100", ::SetRound, 100);
+    self addMenuOpt("setround", "Round 150", ::SetRound, 150);
+    self addMenuOpt("setround", "Round 250", ::SetRound, 250);
+
+    self addMenuOpt("gamespeed", "Game Speed: 0.25x", ::SetTimeScale, 0.25);
+    self addMenuOpt("gamespeed", "Game Speed: 0.5x", ::SetTimeScale, 0.5);
+    self addMenuOpt("gamespeed", "Game Speed: Normal", ::SetTimeScale, 1.0);
+    self addMenuOpt("gamespeed", "Game Speed: 2x", ::SetTimeScale, 2.0);
+    self addMenuOpt("gamespeed", "Game Speed: 4x", ::SetTimeScale, 4.0);
+
+    self addMenuOpt("gravity", "Gravity: Very Low", ::MM_SetGravity, 50);
+    self addMenuOpt("gravity", "Gravity: Low", ::MM_SetGravity, 150);
+    self addMenuOpt("gravity", "Gravity: Medium", ::MM_SetGravity, 300);
+    self addMenuOpt("gravity", "Gravity: Normal", ::MM_SetGravity, 800);
+}
+
+// ----------------------------------------------------------------------------
+//  POWER-UP DROPS  (menu key stays "lobby" because MM_AddDropOpt uses it)
+// ----------------------------------------------------------------------------
+MM_Menu_Drops()
+{
+    self MM_AddDropOpt("Spawn Max Ammo", "full_ammo");
+    self MM_AddDropOpt("Spawn Insta-Kill", "insta_kill");
+    self MM_AddDropOpt("Spawn Double Points", "double_points");
+    self MM_AddDropOpt("Spawn Nuke", "nuke");
+    self MM_AddDropOpt("Spawn Carpenter", "carpenter");
+    self MM_AddDropOpt("Spawn Fire Sale", "fire_sale");
+    self MM_AddDropOpt("Spawn Free Perk", "free_perk");
+    self MM_AddDropOpt("Spawn Death Machine", "minigun");
+    self MM_AddDropOpt("Spawn Zombie Blood", "zombie_blood");
+    self addSubMenu("lobby", "All Registered Powerups", "powerups");
+    self MM_BuildRegisteredPowerupList();
+}
+
+// ----------------------------------------------------------------------------
+//  AIMBOT & ESP
+// ----------------------------------------------------------------------------
+MM_Menu_Vision()
+{
     self addToggleOpt("vision", "Aimbot", ::ToggleAimbot, "aimbot");
-    self addMenuOpt("vision", "Aim Target: Head (Aimbot + Silent)", ::SetAimTarget, "j_head");
-    self addMenuOpt("vision", "Aim Target: Chest (Aimbot + Silent)", ::SetAimTarget, "j_spinelower");
     self addToggleOpt("vision", "Silent Aim (Bullets To Head)", ::ToggleSilentAim, "silentaim");
-    self addMenuOpt("vision", "Silent Aim FOV: Narrow", ::SetSilentFov, 0.97);
-    self addMenuOpt("vision", "Silent Aim FOV: Wide", ::SetSilentFov, 0.85);
-    self addMenuOpt("vision", "Silent Aim FOV: Full 360", ::SetSilentFov, -1);
     self addToggleOpt("vision", "ESP (Zombie Dots)", ::ToggleESP, "esp");
     self addToggleOpt("vision", "ESP (Parts - All Maps)", ::MM_TogglePartsESP, "partesp");
-    self addMenuOpt("vision", "ESP Dot: Tiny", ::SetESPSize, 2);
-    self addMenuOpt("vision", "ESP Dot: Small", ::SetESPSize, 4);
-    self addMenuOpt("vision", "ESP Dot: Medium", ::SetESPSize, 7);
-    self addMenuOpt("vision", "ESP Color: Red", ::SetESPColor, (1, 0, 0));
-    self addMenuOpt("vision", "ESP Color: Green", ::SetESPColor, (0, 1, 0));
-    self addMenuOpt("vision", "ESP Color: Blue", ::SetESPColor, (0, 0, 1));
-    self addMenuOpt("vision", "ESP Color: Yellow", ::SetESPColor, (1, 1, 0));
-    self addMenuOpt("vision", "ESP Color: White", ::SetESPColor, (1, 1, 1));
-    self addMenuOpt("vision", "ESP Color: Pink", ::SetESPColor, (1, 0.2, 0.8));
+    self addSubMenu("vision", "Aim Settings", "aimcfg");
+    self addSubMenu("vision", "ESP Dot Size", "espsize");
+    self addSubMenu("vision", "ESP Color", "espcolor");
 
-    // --- ORIGINS (only present on zm_tomb) ---
+    self addMenuOpt("aimcfg", "Aim Target: Head", ::SetAimTarget, "j_head");
+    self addMenuOpt("aimcfg", "Aim Target: Chest", ::SetAimTarget, "j_spinelower");
+    self addMenuOpt("aimcfg", "Silent Aim FOV: Narrow", ::SetSilentFov, 0.97);
+    self addMenuOpt("aimcfg", "Silent Aim FOV: Wide", ::SetSilentFov, 0.85);
+    self addMenuOpt("aimcfg", "Silent Aim FOV: Full 360", ::SetSilentFov, -1);
+
+    self addMenuOpt("espsize", "ESP Dot: Tiny", ::SetESPSize, 2);
+    self addMenuOpt("espsize", "ESP Dot: Small", ::SetESPSize, 4);
+    self addMenuOpt("espsize", "ESP Dot: Medium", ::SetESPSize, 7);
+
+    self addMenuOpt("espcolor", "ESP Color: Red", ::SetESPColor, (1, 0, 0));
+    self addMenuOpt("espcolor", "ESP Color: Green", ::SetESPColor, (0, 1, 0));
+    self addMenuOpt("espcolor", "ESP Color: Blue", ::SetESPColor, (0, 0, 1));
+    self addMenuOpt("espcolor", "ESP Color: Yellow", ::SetESPColor, (1, 1, 0));
+    self addMenuOpt("espcolor", "ESP Color: White", ::SetESPColor, (1, 1, 1));
+    self addMenuOpt("espcolor", "ESP Color: Pink", ::SetESPColor, (1, 0.2, 0.8));
+}
+
+// ----------------------------------------------------------------------------
+//  MAP TOOLS (one hub per map, sub-grouped)
+// ----------------------------------------------------------------------------
+MM_MapHubName()
+{
+    switch(level.script)
+    {
+        case "zm_tomb":     return "origins";
+        case "zm_prison":   return "prison";
+        case "zm_transit":  return "transit";
+        case "zm_highrise": return "highrise";
+        case "zm_buried":   return "buried";
+    }
+    return undefined;
+}
+
+MM_Menu_MapTools()
+{
+    // --- Easter egg tracker (only on maps that support it) ---
+    if(self MM_EETrackerAvailable())
+    {
+        self addToggleOpt("eetracker", "Show Live Progress HUD", ::MM_ToggleEETracker, "eetracker");
+        self addToggleOpt("eetracker", "Quest Guide ESP (Steps + Markers)", ::MM_ToggleEETrackerESP, "eetargets");
+    }
+
+    // --- ORIGINS ---
     if(level.script == "zm_tomb")
     {
-        self addMenuOpt("origins", "Give Myself Shovel", ::MM_OriginsGiveShovel);
-        self addMenuOpt("origins", "Give Myself Golden Shovel", ::MM_OriginsGiveGoldenShovel);
-        self addMenuOpt("origins", "Give Myself Golden Helmet", ::MM_OriginsGiveGoldenHelmet);
-        self addToggleOpt("origins", "Dig Site ESP", ::MM_OriginsToggleDigESP, "origdigesp");
-        self addMenuOpt("origins", "Staff Progress Tracker", ::MM_OriginsStaffProgress);
-        self addToggleOpt("origins", "Staff Upgrade Guide ESP", ::MM_OriginsToggleStaffGuide, "origstaffguide");
-        self addMenuOpt("origins", "Stage All 4 Staff Crystals in Crazy Place", ::MM_OriginsStageAllCrystals);
-        self addMenuOpt("origins", "Maxis Drone: Recall / Recover", ::MM_OriginsRecoverDrone);
-        self addSubMenu("origins", "One Inch Punch", "originspunch");
-        self addToggleOpt("origins", "Robot Foot Warning", ::MM_OriginsToggleRobotWarning, "origrobotwarn");
-        self addMenuOpt("origins", "Tank Status", ::MM_OriginsTankStatus);
-        self addMenuOpt("origins", "Call Tank (500 Points)", ::MM_OriginsCallTank);
+        self addSubMenu("origins", "Staffs & Punches", "origstaffs");
+        self addSubMenu("origins", "Digging & Gear", "origdig");
+        self addSubMenu("origins", "Generators & Parts", "origparts");
+        self addSubMenu("origins", "Tank, Robots & Drone", "origvehicles");
         self addSubMenu("origins", "Crazy Place / Map Teleports", "originsteleport");
-        self addMenuOpt("origins", "Collect All Shared Parts", ::MM_OriginsCollectAllSharedParts);
-        self addToggleOpt("origins", "Auto-Collect Shared Parts", ::MM_OriginsToggleAutoCollect, "origcollect");
-        self addMenuOpt("origins", "Force All Four Staff Upgrades", ::MM_OriginsUpgradeAllStaffs);
-        self addMenuOpt("origins", "Turn On All Generators (Pack-a-Punch)", ::MM_OriginsTurnOnAllGenerators);
         self addToggleOpt("origins", "Ignore Mud Slowdown", ::MM_OriginsToggleNoMudSlow, "nomud");
+        if(self isHost())
+            self addMenuOpt("origins", "Complete Little Lost Girl (ends match)", ::MM_OriginsConfirmCompleteSecret);
+
+        self addMenuOpt("origstaffs", "Stage All 4 Staff Crystals", ::MM_OriginsStageAllCrystals);
+        self addMenuOpt("origstaffs", "Force All Four Staff Upgrades", ::MM_OriginsUpgradeAllStaffs);
+        self addMenuOpt("origstaffs", "Staff Progress Tracker", ::MM_OriginsStaffProgress);
+        self addToggleOpt("origstaffs", "Staff Upgrade Guide ESP", ::MM_OriginsToggleStaffGuide, "origstaffguide");
+        self addSubMenu("origstaffs", "One Inch Punch", "originspunch");
+
+        self addMenuOpt("origdig", "Give Myself Shovel", ::MM_OriginsGiveShovel);
+        self addMenuOpt("origdig", "Give Myself Golden Shovel", ::MM_OriginsGiveGoldenShovel);
+        self addMenuOpt("origdig", "Give Myself Golden Helmet", ::MM_OriginsGiveGoldenHelmet);
+        self addToggleOpt("origdig", "Dig Site ESP", ::MM_OriginsToggleDigESP, "origdigesp");
+
+        self addMenuOpt("origparts", "Turn On All Generators (Pack-a-Punch)", ::MM_OriginsTurnOnAllGenerators);
+        self addMenuOpt("origparts", "Collect All Shared Parts", ::MM_OriginsCollectAllSharedParts);
+        self addToggleOpt("origparts", "Auto-Collect Shared Parts", ::MM_OriginsToggleAutoCollect, "origcollect");
+
+        self addMenuOpt("origvehicles", "Tank Status", ::MM_OriginsTankStatus);
+        self addMenuOpt("origvehicles", "Call Tank (500 Points)", ::MM_OriginsCallTank);
+        self addToggleOpt("origvehicles", "Robot Foot Warning", ::MM_OriginsToggleRobotWarning, "origrobotwarn");
+        self addMenuOpt("origvehicles", "Maxis Drone: Recall / Recover", ::MM_OriginsRecoverDrone);
 
         self addMenuOpt("originspunch", "Basic One Inch Punch", ::MM_OriginsGivePunch, "normal");
         self addMenuOpt("originspunch", "Upgraded One Inch Punch", ::MM_OriginsGivePunch, "upgraded");
@@ -1014,102 +1271,127 @@ BuildMenuStructure()
         self addMenuOpt("originsteleport", "Return via Wind Portal", ::MM_OriginsTeleportMainMap, 2);
         self addMenuOpt("originsteleport", "Return via Lightning Portal", ::MM_OriginsTeleportMainMap, 3);
         self addMenuOpt("originsteleport", "Return via Ice Portal", ::MM_OriginsTeleportMainMap, 4);
-
-        if(self isHost())
-            self addMenuOpt("origins", "Complete Little Lost Girl (ends match)", ::MM_OriginsConfirmCompleteSecret);
         self.menuParents["origins"] = "main";
     }
 
-    // --- MOB OF THE DEAD (only present on zm_prison) ---
+    // --- MOB OF THE DEAD ---
     if(level.script == "zm_prison")
     {
-        self addMenuOpt("prison", "Unlock Everything", ::MM_PrisonUnlockEverything);
-        self addMenuOpt("prison", "Power All Perk Machines", ::MM_PrisonPowerPerks);
-        self addMenuOpt("prison", "Power The Gondola", ::MM_PrisonPowerGondola);
-        self addMenuOpt("prison", "Open Afterlife Doors", ::MM_PrisonOpenAfterlifeDoors);
-        self addMenuOpt("prison", "Send Gondola (Free)", ::MM_PrisonSendGondola);
-        self addMenuOpt("prison", "Afterlife: Refill My Life", ::MM_PrisonAfterlifeRefill);
-        self addToggleOpt("prison", "Afterlife: Infinite Mana", ::MM_PrisonToggleInfMana, "prmana");
-        self addMenuOpt("prison", "Spawn Brutus", ::MM_PrisonSpawnBrutus, false);
-        self addMenuOpt("prison", "Spawn Brutus (Ignore Limit)", ::MM_PrisonSpawnBrutus, true);
-        self addMenuOpt("prison", "Kill Brutus", ::MM_PrisonKillBrutus);
-        self addMenuOpt("prison", "Give Spoon", ::MM_PrisonGiveSpoon, false);
-        self addMenuOpt("prison", "Give Golden Spork", ::MM_PrisonGiveSpoon, true);
+        self addSubMenu("prison", "Power & Unlocks", "prunlock");
+        self addSubMenu("prison", "Afterlife", "prafter");
+        self addSubMenu("prison", "Brutus & Gear", "prbrutus");
+        if(self isHost())
+            self addSubMenu("prison", "Plane (Host)", "prplane");
+
+        self addMenuOpt("prunlock", "Unlock Everything", ::MM_PrisonUnlockEverything);
+        self addMenuOpt("prunlock", "Power All Perk Machines", ::MM_PrisonPowerPerks);
+        self addMenuOpt("prunlock", "Power The Gondola", ::MM_PrisonPowerGondola);
+        self addMenuOpt("prunlock", "Open Afterlife Doors", ::MM_PrisonOpenAfterlifeDoors);
+        self addMenuOpt("prunlock", "Send Gondola (Free)", ::MM_PrisonSendGondola);
+
+        self addMenuOpt("prafter", "Afterlife: Refill My Life", ::MM_PrisonAfterlifeRefill);
+        self addToggleOpt("prafter", "Afterlife: Infinite Mana", ::MM_PrisonToggleInfMana, "prmana");
+        if(self isHost())
+            self addMenuOpt("prafter", "Afterlife: Refill Everyone's Life", ::MM_PrisonAfterlifeRefillAll);
+
+        self addMenuOpt("prbrutus", "Spawn Brutus", ::MM_PrisonSpawnBrutus, false);
+        self addMenuOpt("prbrutus", "Spawn Brutus (Ignore Limit)", ::MM_PrisonSpawnBrutus, true);
+        self addMenuOpt("prbrutus", "Kill Brutus", ::MM_PrisonKillBrutus);
+        self addMenuOpt("prbrutus", "Give Spoon", ::MM_PrisonGiveSpoon, false);
+        self addMenuOpt("prbrutus", "Give Golden Spork", ::MM_PrisonGiveSpoon, true);
+
         if(self isHost())
         {
-            self addMenuOpt("prison", "Afterlife: Refill Everyone's Life", ::MM_PrisonAfterlifeRefillAll);
-            self addMenuOpt("prison", "Build Plane (Skip Parts)", ::MM_PrisonBuildPlane);
-            self addMenuOpt("prison", "Refuel Plane (Skip 5 Cans)", ::MM_PrisonRefuelPlane);
+            self addMenuOpt("prplane", "Build Plane (Skip Parts)", ::MM_PrisonBuildPlane);
+            self addMenuOpt("prplane", "Refuel Plane (Skip 5 Cans)", ::MM_PrisonRefuelPlane);
         }
         self.menuParents["prison"] = "main";
     }
 
-    // --- TRANZIT (only present on zm_transit) ---
+    // --- TRANZIT ---
     if(level.script == "zm_transit")
     {
-        self addMenuOpt("transit", "Build Power Switch", ::MM_MapBuildable, "zm_transit", "powerswitch");
         self addMenuOpt("transit", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_transit");
-        self addMenuOpt("transit", "Build Turbine", ::MM_MapBuildable, "zm_transit", "turbine");
-        self addMenuOpt("transit", "Build Zombie Shield", ::MM_MapBuildable, "zm_transit", "riotshield_zm");
-        self addMenuOpt("transit", "Build Jet Gun", ::MM_MapBuildable, "zm_transit", "jetgun_zm");
-        self addMenuOpt("transit", "Build Turret", ::MM_MapBuildable, "zm_transit", "turret");
-        self addMenuOpt("transit", "Build Electric Trap", ::MM_MapBuildable, "zm_transit", "electric_trap");
-        self addMenuOpt("transit", "Build Bus Cattle Catcher", ::MM_MapBuildable, "zm_transit", "cattlecatcher");
-        self addMenuOpt("transit", "Build Bus Hatch", ::MM_MapBuildable, "zm_transit", "bushatch");
-        self addMenuOpt("transit", "Build Diner Hatch", ::MM_MapBuildable, "zm_transit", "dinerhatch");
-        self addMenuOpt("transit", "Build Bus Ladder", ::MM_MapBuildable, "zm_transit", "busladder");
-        self addMenuOpt("transit", "Build Pack-a-Punch", ::MM_MapBuildable, "zm_transit", "pap");
-        self addMenuOpt("transit", "Build Navcard Table", ::MM_MapBuildable, "zm_transit", "sq_common");
+        self addSubMenu("transit", "Equipment Craftables", "trequip");
+        self addSubMenu("transit", "Bus Craftables", "trbus");
+        self addSubMenu("transit", "Weapons & Pack-a-Punch", "trweap");
+
+        self addMenuOpt("trequip", "Build Power Switch", ::MM_MapBuildable, "zm_transit", "powerswitch");
+        self addMenuOpt("trequip", "Build Turbine", ::MM_MapBuildable, "zm_transit", "turbine");
+        self addMenuOpt("trequip", "Build Zombie Shield", ::MM_MapBuildable, "zm_transit", "riotshield_zm");
+        self addMenuOpt("trequip", "Build Turret", ::MM_MapBuildable, "zm_transit", "turret");
+        self addMenuOpt("trequip", "Build Electric Trap", ::MM_MapBuildable, "zm_transit", "electric_trap");
+        self addMenuOpt("trequip", "Build Navcard Table", ::MM_MapBuildable, "zm_transit", "sq_common");
+
+        self addMenuOpt("trbus", "Build Bus Cattle Catcher", ::MM_MapBuildable, "zm_transit", "cattlecatcher");
+        self addMenuOpt("trbus", "Build Bus Hatch", ::MM_MapBuildable, "zm_transit", "bushatch");
+        self addMenuOpt("trbus", "Build Diner Hatch", ::MM_MapBuildable, "zm_transit", "dinerhatch");
+        self addMenuOpt("trbus", "Build Bus Ladder", ::MM_MapBuildable, "zm_transit", "busladder");
+
+        self addMenuOpt("trweap", "Build Jet Gun", ::MM_MapBuildable, "zm_transit", "jetgun_zm");
+        self addMenuOpt("trweap", "Build Pack-a-Punch", ::MM_MapBuildable, "zm_transit", "pap");
         self.menuParents["transit"] = "main";
     }
 
-    // --- DIE RISE (only present on zm_highrise) ---
+    // --- DIE RISE ---
     if(level.script == "zm_highrise")
     {
         self addMenuOpt("highrise", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_highrise");
-        self addMenuOpt("highrise", "Build Trample Steam", ::MM_MapBuildable, "zm_highrise", "springpad_zm");
-        self addMenuOpt("highrise", "Build Sliquifier", ::MM_MapBuildable, "zm_highrise", "slipgun_zm");
-        self addMenuOpt("highrise", "Build Escape Pod Keys", ::MM_MapBuildable, "zm_highrise", "keys_zm");
-        self addMenuOpt("highrise", "Build Elevator Control Key", ::MM_MapBuildable, "zm_highrise", "ekeys_zm");
-        self addMenuOpt("highrise", "Build Navcard Table", ::MM_MapBuildable, "zm_highrise", "sq_common");
         self addMenuOpt("highrise", "Call All Elevators to First Stop", ::MM_HighriseSendElevators, 0);
+        self addSubMenu("highrise", "Craftables", "hrcraft");
+
+        self addMenuOpt("hrcraft", "Build Trample Steam", ::MM_MapBuildable, "zm_highrise", "springpad_zm");
+        self addMenuOpt("hrcraft", "Build Sliquifier", ::MM_MapBuildable, "zm_highrise", "slipgun_zm");
+        self addMenuOpt("hrcraft", "Build Escape Pod Keys", ::MM_MapBuildable, "zm_highrise", "keys_zm");
+        self addMenuOpt("hrcraft", "Build Elevator Control Key", ::MM_MapBuildable, "zm_highrise", "ekeys_zm");
+        self addMenuOpt("hrcraft", "Build Navcard Table", ::MM_MapBuildable, "zm_highrise", "sq_common");
         self.menuParents["highrise"] = "main";
     }
 
-    // --- BURIED (only present on zm_buried) ---
+    // --- BURIED ---
     if(level.script == "zm_buried")
     {
         self addMenuOpt("buried", "Activate Power Switch", ::MM_MapPowerSwitch, "zm_buried");
         self addMenuOpt("buried", "Open Leroy's Cell", ::MM_BuriedOpenCell);
-        self addMenuOpt("buried", "Build Turbine", ::MM_MapBuildable, "zm_buried", "turbine");
-        self addMenuOpt("buried", "Build Trample Steam", ::MM_MapBuildable, "zm_buried", "springpad_zm");
-        self addMenuOpt("buried", "Build Subwoofer", ::MM_MapBuildable, "zm_buried", "subwoofer_zm");
-        self addMenuOpt("buried", "Build Head Chopper", ::MM_MapBuildable, "zm_buried", "headchopper_zm");
-        self addMenuOpt("buried", "Build Cell Key", ::MM_MapBuildable, "zm_buried", "keys_zm");
-        self addMenuOpt("buried", "Build Navcard Table", ::MM_MapBuildable, "zm_buried", "sq_common");
-        self addMenuOpt("buried", "Build Maxis Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_m_tower");
-        self addMenuOpt("buried", "Build Richtofen Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_r_tower");
+        self addSubMenu("buried", "Craftables", "bucraft");
+        self addSubMenu("buried", "Easter Egg Builds", "buegg");
+
+        self addMenuOpt("bucraft", "Build Turbine", ::MM_MapBuildable, "zm_buried", "turbine");
+        self addMenuOpt("bucraft", "Build Trample Steam", ::MM_MapBuildable, "zm_buried", "springpad_zm");
+        self addMenuOpt("bucraft", "Build Subwoofer", ::MM_MapBuildable, "zm_buried", "subwoofer_zm");
+        self addMenuOpt("bucraft", "Build Head Chopper", ::MM_MapBuildable, "zm_buried", "headchopper_zm");
+        self addMenuOpt("bucraft", "Build Cell Key", ::MM_MapBuildable, "zm_buried", "keys_zm");
+
+        self addMenuOpt("buegg", "Build Navcard Table", ::MM_MapBuildable, "zm_buried", "sq_common");
+        self addMenuOpt("buegg", "Build Maxis Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_m_tower");
+        self addMenuOpt("buegg", "Build Richtofen Tower", ::MM_MapBuildable, "zm_buried", "buried_sq_bt_r_tower");
         self.menuParents["buried"] = "main";
     }
+}
 
-    // --- PLAYERS (host only) ---
-    if(self isHost())
-    {
-        self MM_BuildPlayersList();
+// ----------------------------------------------------------------------------
+//  PLAYERS (HOST)
+// ----------------------------------------------------------------------------
+MM_Menu_Host()
+{
+    if(!self isHost())
+        return;
 
-        self addMenuOpt("player_actions", "[+] Give Mod Menu Access", ::ActionGiveMenu);
-        self addMenuOpt("player_actions", "[-] Take Mod Menu Access", ::ActionTakeMenu);
-        self addMenuOpt("player_actions", "Toggle God Mode", ::ActionGodMode);
-        self addMenuOpt("player_actions", "Toggle Free-Roam / No Death Barriers", ::ActionBoundary);
-        self addMenuOpt("player_actions", "Give All Perks", ::ActionGivePerks);
-        self addMenuOpt("player_actions", "Give +100k Points", ::ActionPoints);
-        self addMenuOpt("player_actions", "Revive", ::ActionRevive);        self addMenuOpt("player_actions", "Teleport To Them", ::ActionTeleportTo);
-        self addMenuOpt("player_actions", "Bring Them To Me", ::ActionBring);
-        self addMenuOpt("player_actions", "Freeze Player (Troll)", ::ActionFreeze);
-        self addMenuOpt("player_actions", "Launch Player (Troll)", ::ActionSendToMoon);
-        self addMenuOpt("player_actions", "Kill Player", ::ActionKill);
-        self.menuParents["player_actions"] = "players";
-    }
+    self MM_BuildPlayersList();
+
+    self addMenuOpt("player_actions", "[+] Give Mod Menu Access", ::ActionGiveMenu);
+    self addMenuOpt("player_actions", "[-] Take Mod Menu Access", ::ActionTakeMenu);
+    self addMenuOpt("player_actions", "Toggle God Mode", ::ActionGodMode);
+    self addMenuOpt("player_actions", "Toggle Free-Roam / No Death Barriers", ::ActionBoundary);
+    self addMenuOpt("player_actions", "Give All Perks", ::ActionGivePerks);
+    self addMenuOpt("player_actions", "Give +100k Points", ::ActionPoints);
+    self addMenuOpt("player_actions", "Revive", ::ActionRevive);
+    self addMenuOpt("player_actions", "Teleport To Them", ::ActionTeleportTo);
+    self addMenuOpt("player_actions", "Bring Them To Me", ::ActionBring);
+    self addMenuOpt("player_actions", "Freeze Player (Troll)", ::ActionFreeze);
+    self addMenuOpt("player_actions", "Launch Player (Troll)", ::ActionSendToMoon);
+    self addMenuOpt("player_actions", "Kill Player", ::ActionKill);
+    self.menuParents["player_actions"] = "players";
 }
 
 // Builds the weapon folder for the CURRENT map only. Returns true if it has any entries.
